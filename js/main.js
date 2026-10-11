@@ -10,6 +10,8 @@
   /* Prices live in the sheet's Settings tab; strings carry placeholders such as {p102} or {kip1}. These are the
      fallback values used until (or unless) the sheet answers. */
   var CONFIG = { prices: { '101': 30, '102': 60, '103': 90, '001': 30 }, kip: { one: 250000, round: 500000, train: 70000 } };
+  // 2026-12-07 -> 07/12/26 (the WhatsApp message uses Day/Month/Year)
+  function dmy(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? m[3] + '/' + m[2] + '/' + m[1].slice(2) : (iso || ''); }
   function fmtNum(n) {
     var sep = current === 'fr' ? ' ' : (current === 'de' ? '.' : ',');
     return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, sep);
@@ -521,15 +523,15 @@
       return '\nTraveller ' + (i + 1) + ': ' + v('first') + ' ' + v('last') +
         '\n- First name: ' + v('first') + '\n- Last name: ' + v('last') +
         '\n- Gender: ' + v('gender') + '\n- Nationality: ' + v('nat') +
-        '\n- Passport: ' + v('pass').toUpperCase() + ' (issued ' + v('issued') + ', expires ' + v('expires') + ')' +
+        '\n- Passport: ' + v('pass').toUpperCase() + ' (issued ' + dmy(v('issued')) + ', expires ' + dmy(v('expires')) + ')' +
         '\n- Food: ' + v('food') + lunchLine;
     });
     var msg = 'Hello! I would like to book:\n' + tourLabel(tour) + '\nBooking ref: ' + ref + '\n' +
-      'Date: ' + date + '\nPeople: ' + people.length +
+      'Date: ' + dmy(date) + '\nPeople: ' + people.length +
       '\nPayment method: ' + pay +
       '\nTransfer from Luang Prabang: ' + transfer +
-      (transfer !== 'No' ? '\nPickup date (Luang Prabang to Nong Khiaw): ' + pickup : '') +
-      (transfer === 'Round trip' ? '\nReturn date (Nong Khiaw to Luang Prabang): ' + ret : '') +
+      (transfer !== 'No' ? '\nPickup date (Luang Prabang to Nong Khiaw): ' + dmy(pickup) : '') +
+      (transfer === 'Round trip' ? '\nReturn date (Nong Khiaw to Luang Prabang): ' + dmy(ret) : '') +
       (transfer === 'Round trip' ? '\nReturn drop-off: ' + (train ? 'Luang Prabang train station (+' +
         String(CONFIG.kip.train).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' kip per person)' : 'city centre near the night market') : '') +
       (transfer !== 'No' ? '\nAccommodation: ' + hotel + '\nGoogle Maps: ' + mapLink : '') + pickupLines + '\n' +

@@ -24,6 +24,7 @@ add(/class="info" id="info"/g, '4. Good to know');
 add(/<section class="story"/g, '5. Our story');
 add(/<section class="gallery"/g, '6. Gallery');
 add(/<section class="reviews"/g, '7. Reviews');
+add(/<section class="how" id="how"/g, '7b. How to book');
 add(/<section class="faq" id="faq"/g, '8. FAQ');
 add(/class="policy reveal" id="policy"/g, '9. Booking & cancellation policy');
 add(/<section class="book" id="book"/g, '10. Booking form & contact');

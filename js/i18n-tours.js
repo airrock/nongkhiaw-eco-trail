@@ -90,6 +90,15 @@ en: {
   inc_camp2: 'English-speaking local guide · entrance fees · tent, sleeping mat and blankets · one big bottle of water per day',
   br_102: 'Small backpack, comfortable hiking shoes, a jacket or warm clothes (cold at night and early morning), headlamp, mosquito repellent, camera, swimming suit and a change of clothes',
   lbl_train: 'Drop me at Luang Prabang train station on the way back (+{kipTrain} kip per person)', lbl_pickup_who: 'Pickup for this traveller', pk_same: 'Same as the group', pk_other: 'A different place', pk_none: 'No transfer needed', lbl_pk_place: 'Accommodation of this traveller', lbl_pk_map: 'Google Maps link of this accommodation', hint_pk: 'Traveller {n}: please add the accommodation name and its Google Maps link.',
+  how_tag: 'How to book', how_h: 'Book in 7 simple steps', how_sub: 'It is easy. Follow these steps on this website.',
+  hs1t: 'Visit our website', hs1p: 'Go to nongkhiawlaos.com on your phone or computer.',
+  hs2t: 'Browse our tours', hs2p: 'Look at the tours above and choose the one you like.',
+  hs3t: 'Click “Book this tour”', hs3p: 'Press the button on your chosen tour. It takes you to the booking form.',
+  hs4t: 'Fill in the booking form', hs4p: 'Add the date, the number of people, and each traveller’s name and passport details. You can also add a pickup and a takeaway lunch.',
+  hs5t: 'Check and send', hs5p: 'Check your details and press the send button. WhatsApp opens with your booking ready to send.',
+  hs6t: 'We confirm your booking', hs6p: 'We reply on WhatsApp to confirm your tour and arrange the details.',
+  hs7t: 'Pay when you arrive', hs7p: 'Pay at our office in Nong Khiaw, in the way you chose in the form (cash, card or BCEL QR).',
+  how_help: 'Need help? Message us on WhatsApp.',
   lbl_lunch: 'Takeaway lunch for the boat (optional, not included in the tour price)', lunch_none: 'No, thanks', lbl_lunch_choice: 'Choice', hint_lunch: 'Traveller {n}: please choose an option for the lunch.', unit_kip: 'kip'
 },
 
@@ -180,6 +189,15 @@ lo: {
   inc_camp2: 'ໄກດ໌ທ້ອງຖິ່ນເວົ້າພາສາອັງກິດ · ຄ່າເຂົ້າຊົມ · ເຕັນ, ເສື່ອນອນ ແລະ ຜ້າຫົ່ມ · ນ້ຳດື່ມຕຸກໃຫຍ່ 1 ຕຸກຕໍ່ມື້',
   br_102: 'ກະເປົາເປ້ນ້ອຍ, ເກີບຍ່າງປ່າ, ເສື້ອກັນໜາວ (ກາງຄືນ ແລະ ເຊົ້າໜາວ), ໄຟສາຍຫົວ, ຢາກັນຍຸງ, ກ້ອງຖ່າຍຮູບ, ຊຸດລອຍນ້ຳ ແລະ ເສື້ອຜ້າປ່ຽນ',
   lbl_train: 'ສົ່ງຂ້ອຍທີ່ສະຖານີລົດໄຟຫຼວງພະບາງຕອນກັບ (+{kipTrain} ກີບຕໍ່ຄົນ)', lbl_pickup_who: 'ການຮັບຂອງນັກທ່ອງທ່ຽວຄົນນີ້', pk_same: 'ຄືກັບກຸ່ມ', pk_other: 'ບ່ອນອື່ນ', pk_none: 'ບໍ່ຕ້ອງການລົດຮັບສົ່ງ', lbl_pk_place: 'ທີ່ພັກຂອງນັກທ່ອງທ່ຽວຄົນນີ້', lbl_pk_map: 'ລິ້ງ Google Maps ຂອງທີ່ພັກນີ້', hint_pk: 'ນັກທ່ອງທ່ຽວ {n}: ກະລຸນາໃສ່ຊື່ທີ່ພັກ ແລະ ລິ້ງ Google Maps.',
+  how_tag: 'ວິທີຈອງ', how_h: 'ຈອງງ່າຍໆ 7 ຂັ້ນຕອນ', how_sub: 'ງ່າຍຫຼາຍ. ເຮັດຕາມຂັ້ນຕອນເຫຼົ່ານີ້ໃນເວັບໄຊນີ້.',
+  hs1t: 'ເຂົ້າເວັບໄຊຂອງພວກເຮົາ', hs1p: 'ເຂົ້າ nongkhiawlaos.com ຜ່ານໂທລະສັບ ຫຼື ຄອມພິວເຕີ.',
+  hs2t: 'ເບິ່ງທົວຂອງພວກເຮົາ', hs2p: 'ເບິ່ງທົວຂ້າງເທິງ ແລ້ວເລືອກອັນທີ່ທ່ານມັກ.',
+  hs3t: 'ກົດ “ຈອງທົວນີ້”', hs3p: 'ກົດປຸ່ມຢູ່ທົວທີ່ທ່ານເລືອກ ແລ້ວຈະໄປທີ່ຟອມຈອງ.',
+  hs4t: 'ຕື່ມຟອມຈອງ', hs4p: 'ໃສ່ວັນທີ, ຈຳນວນຄົນ, ຊື່ ແລະ ຂໍ້ມູນໜັງສືຜ່ານແດນຂອງແຕ່ລະຄົນ. ທ່ານສາມາດເພີ່ມການຮັບທີ່ພັກ ແລະ ອາຫານທ່ຽງແບບເອົາໄປກິນໄດ້ນຳ.',
+  hs5t: 'ກວດສອບ ແລະ ສົ່ງ', hs5p: 'ກວດຂໍ້ມູນຂອງທ່ານ ແລ້ວກົດປຸ່ມສົ່ງ. WhatsApp ຈະເປີດພ້ອມຂໍ້ຄວາມຈອງທີ່ພ້ອມສົ່ງ.',
+  hs6t: 'ພວກເຮົາຢືນຢັນການຈອງ', hs6p: 'ພວກເຮົາຕອບທາງ WhatsApp ເພື່ອຢືນຢັນທົວ ແລະ ນັດລາຍລະອຽດ.',
+  hs7t: 'ຈ່າຍເມື່ອທ່ານມາຮອດ', hs7p: 'ຈ່າຍທີ່ຫ້ອງການຂອງພວກເຮົາໃນຫນອງຂຽວ ຕາມວິທີທີ່ທ່ານເລືອກໃນຟອມ (ເງິນສົດ, ບັດ ຫຼື BCEL QR).',
+  how_help: 'ຕ້ອງການຄວາມຊ່ວຍເຫຼືອ? ສົ່ງຂໍ້ຄວາມຫາພວກເຮົາທາງ WhatsApp.',
   lbl_lunch: 'ອາຫານທ່ຽງແບບເອົາໄປກິນເທິງເຮືອ (ທາງເລືອກ, ບໍ່ລວມໃນລາຄາທົວ)', lunch_none: 'ບໍ່, ຂອບໃຈ', lbl_lunch_choice: 'ທາງເລືອກ', hint_lunch: 'ນັກທ່ອງທ່ຽວ {n}: ກະລຸນາເລືອກຕົວເລືອກຂອງອາຫານທ່ຽງ.', unit_kip: 'ກີບ'
 },
 
@@ -270,6 +288,15 @@ th: {
   inc_camp2: 'ไกด์ท้องถิ่นพูดภาษาอังกฤษ · ค่าเข้าชม · เต็นท์ แผ่นรองนอน และผ้าห่ม · น้ำดื่มขวดใหญ่ 1 ขวดต่อวัน',
   br_102: 'เป้ใบเล็ก รองเท้าเดินป่า เสื้อกันหนาว (กลางคืนและเช้าหนาว) ไฟฉายคาดหัว ยากันยุง กล้องถ่ายรูป ชุดว่ายน้ำ และเสื้อผ้าเปลี่ยน',
   lbl_train: 'ส่งฉันที่สถานีรถไฟหลวงพระบางขากลับ (+{kipTrain} กีบต่อคน)', lbl_pickup_who: 'การรับของผู้เดินทางคนนี้', pk_same: 'เหมือนกับกลุ่ม', pk_other: 'สถานที่อื่น', pk_none: 'ไม่ต้องการรถรับส่ง', lbl_pk_place: 'ที่พักของผู้เดินทางคนนี้', lbl_pk_map: 'ลิงก์ Google Maps ของที่พักนี้', hint_pk: 'ผู้เดินทาง {n}: กรุณาใส่ชื่อที่พักและลิงก์ Google Maps',
+  how_tag: 'วิธีจอง', how_h: 'จองง่าย ๆ ใน 7 ขั้นตอน', how_sub: 'ง่ายมาก ทำตามขั้นตอนบนเว็บไซต์นี้ได้เลย',
+  hs1t: 'เข้าเว็บไซต์ของเรา', hs1p: 'เปิด nongkhiawlaos.com บนมือถือหรือคอมพิวเตอร์',
+  hs2t: 'เลือกดูทัวร์', hs2p: 'ดูทัวร์ด้านบนแล้วเลือกทัวร์ที่คุณชอบ',
+  hs3t: 'กด “จองทัวร์นี้”', hs3p: 'กดปุ่มที่ทัวร์ที่คุณเลือก ระบบจะพาไปที่แบบฟอร์มจอง',
+  hs4t: 'กรอกแบบฟอร์มจอง', hs4p: 'ใส่วันที่ จำนวนคน และชื่อกับข้อมูลหนังสือเดินทางของผู้เดินทางแต่ละคน คุณยังเพิ่มการรับที่พักและอาหารกลางวันแบบห่อได้ด้วย',
+  hs5t: 'ตรวจสอบและส่ง', hs5p: 'ตรวจสอบข้อมูลแล้วกดปุ่มส่ง WhatsApp จะเปิดขึ้นพร้อมข้อความการจองที่พร้อมส่ง',
+  hs6t: 'เรายืนยันการจองของคุณ', hs6p: 'เราจะตอบทาง WhatsApp เพื่อยืนยันทัวร์และนัดหมายรายละเอียด',
+  hs7t: 'จ่ายเมื่อมาถึง', hs7p: 'จ่ายที่ออฟฟิศของเราในหนองเขียว ตามวิธีที่คุณเลือกในแบบฟอร์ม (เงินสด บัตร หรือ BCEL QR)',
+  how_help: 'ต้องการความช่วยเหลือ? ส่งข้อความหาเราทาง WhatsApp ได้เลย',
   lbl_lunch: 'อาหารกลางวันแบบห่อสำหรับกินบนเรือ (ไม่บังคับ ไม่รวมในราคาทัวร์)', lunch_none: 'ไม่เป็นไร ขอบคุณ', lbl_lunch_choice: 'ตัวเลือก', hint_lunch: 'ผู้เดินทาง {n}: กรุณาเลือกตัวเลือกของอาหารกลางวัน', unit_kip: 'กีบ'
 },
 
@@ -360,6 +387,15 @@ zh: {
   inc_camp2: '英语本地向导 · 门票 · 帐篷、睡垫和毯子 · 每天一大瓶水',
   br_102: '小背包、舒适的登山鞋、外套或保暖衣物（夜间和清晨很冷）、头灯、驱蚊液、相机、泳衣和换洗衣物',
   lbl_train: '返程送到琅勃拉邦火车站（每人加收{kipTrain}基普）', lbl_pickup_who: '该旅客的接送', pk_same: '与团队相同', pk_other: '其他地点', pk_none: '无需接送', lbl_pk_place: '该旅客的住宿', lbl_pk_map: '该住宿的 Google 地图链接', hint_pk: '旅客 {n}：请填写住宿名称及其 Google 地图链接。',
+  how_tag: '如何预订', how_h: '7 个简单步骤完成预订', how_sub: '很简单，按照以下步骤在本网站操作即可。',
+  hs1t: '访问我们的网站', hs1p: '用手机或电脑打开 nongkhiawlaos.com。',
+  hs2t: '浏览行程', hs2p: '查看上方的行程，选择你喜欢的一个。',
+  hs3t: '点击“预订此行程”', hs3p: '点击所选行程上的按钮，页面会跳转到预订表单。',
+  hs4t: '填写预订表单', hs4p: '填写日期、人数，以及每位旅客的姓名和护照信息。还可以添加接送和外带午餐。',
+  hs5t: '检查并发送', hs5p: '确认信息无误后点击发送按钮，WhatsApp 将打开并带有已写好的预订信息。',
+  hs6t: '我们确认你的预订', hs6p: '我们会通过 WhatsApp 回复，确认行程并安排细节。',
+  hs7t: '到达后付款', hs7p: '在 Nong Khiaw 的办公室付款，方式按你在表单中的选择（现金、银行卡或 BCEL QR）。',
+  how_help: '需要帮助？请通过 WhatsApp 联系我们。',
   lbl_lunch: '船上外带午餐（可选，不含在行程价格内）', lunch_none: '不需要', lbl_lunch_choice: '选项', hint_lunch: '旅客 {n}：请选择午餐的选项。', unit_kip: '基普'
 },
 
@@ -450,6 +486,15 @@ ko: {
   inc_camp2: '영어를 하는 현지 가이드 · 입장료 · 텐트, 매트, 담요 · 하루 큰 생수 한 병',
   br_102: '작은 배낭, 편한 등산화, 재킷 또는 따뜻한 옷(밤과 이른 아침은 춥습니다), 헤드랜턴, 모기 기피제, 카메라, 수영복, 갈아입을 옷',
   lbl_train: '돌아올 때 루앙프라방 기차역에 내려 주세요 (1인 +{kipTrain}킵)', lbl_pickup_who: '이 여행자의 픽업', pk_same: '일행과 동일', pk_other: '다른 장소', pk_none: '교통편 필요 없음', lbl_pk_place: '이 여행자의 숙소', lbl_pk_map: '이 숙소의 Google 지도 링크', hint_pk: '여행자 {n}: 숙소 이름과 Google 지도 링크를 입력해 주세요.',
+  how_tag: '예약 방법', how_h: '간단한 7단계로 예약하세요', how_sub: '아주 쉬워요. 이 웹사이트에서 아래 순서대로 따라 해 보세요.',
+  hs1t: '웹사이트 방문', hs1p: '휴대폰이나 컴퓨터에서 nongkhiawlaos.com에 접속하세요.',
+  hs2t: '투어 둘러보기', hs2p: '위의 투어를 살펴보고 마음에 드는 투어를 고르세요.',
+  hs3t: '“이 투어 예약” 클릭', hs3p: '선택한 투어의 버튼을 누르면 예약 양식으로 이동합니다.',
+  hs4t: '예약 양식 작성', hs4p: '날짜, 인원수, 그리고 여행자별 이름과 여권 정보를 입력하세요. 픽업과 테이크아웃 점심도 추가할 수 있어요.',
+  hs5t: '확인 후 보내기', hs5p: '정보를 확인하고 보내기 버튼을 누르세요. 예약 내용이 입력된 WhatsApp이 열립니다.',
+  hs6t: '예약 확인', hs6p: 'WhatsApp으로 답장해 투어를 확정하고 세부 사항을 조율해 드립니다.',
+  hs7t: '도착 후 결제', hs7p: 'Nong Khiaw 사무실에서 양식에서 선택한 방법(현금, 카드 또는 BCEL QR)으로 결제하세요.',
+  how_help: '도움이 필요하세요? WhatsApp으로 메시지를 보내 주세요.',
   lbl_lunch: '배에서 먹을 테이크아웃 점심 (선택, 투어 가격에 포함되지 않음)', lunch_none: '필요 없어요', lbl_lunch_choice: '선택', hint_lunch: '여행자 {n}: 점심 옵션을 선택해 주세요.', unit_kip: '킵'
 },
 
@@ -540,6 +585,15 @@ ja: {
   inc_camp2: '英語を話す地元ガイド · 入場料 · テント、マット、毛布 · 大きな水を1日1本',
   br_102: '小さなリュック、歩きやすい登山靴、上着または暖かい服（夜と早朝は冷えます）、ヘッドランプ、虫よけ、カメラ、水着、着替え',
   lbl_train: '帰りはルアンパバーン駅で降ろしてください（1人 +{kipTrain}キープ）', lbl_pickup_who: 'この旅行者のお迎え', pk_same: 'グループと同じ', pk_other: '別の場所', pk_none: '送迎は不要', lbl_pk_place: 'この旅行者の宿泊先', lbl_pk_map: 'この宿泊先の Google マップのリンク', hint_pk: '旅行者 {n}：宿泊先の名前と Google マップのリンクを入力してください。',
+  how_tag: '予約方法', how_h: '7つの簡単ステップで予約', how_sub: '簡単です。このウェブサイトで次の手順に進んでください。',
+  hs1t: 'ウェブサイトにアクセス', hs1p: 'スマートフォンまたはパソコンで nongkhiawlaos.com を開きます。',
+  hs2t: 'ツアーを見る', hs2p: '上のツアーを見て、気に入ったものを選びます。',
+  hs3t: '「このツアーを予約」をクリック', hs3p: '選んだツアーのボタンを押すと、予約フォームに移動します。',
+  hs4t: '予約フォームに入力', hs4p: '日付、人数、各旅行者の名前とパスポート情報を入力します。送迎やテイクアウトランチも追加できます。',
+  hs5t: '確認して送信', hs5p: '内容を確認して送信ボタンを押すと、予約内容が入力された WhatsApp が開きます。',
+  hs6t: '予約を確認します', hs6p: 'WhatsApp で返信し、ツアーを確定して詳細を調整します。',
+  hs7t: '到着時にお支払い', hs7p: 'Nong Khiaw のオフィスで、フォームで選んだ方法（現金、カード、BCEL QR）でお支払いください。',
+  how_help: 'お困りですか？WhatsApp でメッセージをお送りください。',
   lbl_lunch: '船で食べるテイクアウトランチ（任意・ツアー料金に含まれません）', lunch_none: '不要です', lbl_lunch_choice: '選択', hint_lunch: '旅行者 {n}：ランチのオプションを選んでください。', unit_kip: 'キープ'
 },
 
@@ -630,6 +684,15 @@ fr: {
   inc_camp2: 'Guide local anglophone · droits d’entrée · tente, matelas et couvertures · une grande bouteille d’eau par jour',
   br_102: 'Petit sac à dos, chaussures de marche confortables, veste ou vêtements chauds (il fait froid la nuit et tôt le matin), lampe frontale, anti-moustiques, appareil photo, maillot de bain et vêtements de rechange',
   lbl_train: 'Me déposer à la gare de Luang Prabang au retour (+{kipTrain} kips par personne)', lbl_pickup_who: 'Prise en charge de ce voyageur', pk_same: 'Comme le groupe', pk_other: 'Un autre endroit', pk_none: 'Pas de transfert nécessaire', lbl_pk_place: 'Hébergement de ce voyageur', lbl_pk_map: 'Lien Google Maps de cet hébergement', hint_pk: 'Voyageur {n} : merci d’indiquer le nom de l’hébergement et son lien Google Maps.',
+  how_tag: 'Comment réserver', how_h: 'Réservez en 7 étapes simples', how_sub: 'C’est facile. Suivez ces étapes sur ce site.',
+  hs1t: 'Visitez notre site', hs1p: 'Rendez-vous sur nongkhiawlaos.com depuis votre téléphone ou votre ordinateur.',
+  hs2t: 'Parcourez nos excursions', hs2p: 'Regardez les excursions ci-dessus et choisissez celle qui vous plaît.',
+  hs3t: 'Cliquez sur « Réserver cette excursion »', hs3p: 'Appuyez sur le bouton de l’excursion choisie : il vous mène au formulaire de réservation.',
+  hs4t: 'Remplissez le formulaire', hs4p: 'Indiquez la date, le nombre de personnes, ainsi que le nom et les informations de passeport de chaque voyageur. Vous pouvez aussi ajouter une prise en charge et un déjeuner à emporter.',
+  hs5t: 'Vérifiez et envoyez', hs5p: 'Vérifiez vos informations puis appuyez sur le bouton d’envoi. WhatsApp s’ouvre avec votre réservation prête à envoyer.',
+  hs6t: 'Nous confirmons votre réservation', hs6p: 'Nous répondons sur WhatsApp pour confirmer votre excursion et organiser les détails.',
+  hs7t: 'Payez à votre arrivée', hs7p: 'Payez à notre bureau de Nong Khiaw, selon le moyen choisi dans le formulaire (espèces, carte ou BCEL QR).',
+  how_help: 'Besoin d’aide ? Écrivez-nous sur WhatsApp.',
   lbl_lunch: 'Déjeuner à emporter pour le bateau (facultatif, non inclus dans le prix)', lunch_none: 'Non merci', lbl_lunch_choice: 'Choix', hint_lunch: 'Voyageur {n} : merci de choisir une option pour le déjeuner.', unit_kip: 'kips'
 },
 
@@ -720,6 +783,15 @@ de: {
   inc_camp2: 'Englischsprachiger lokaler Guide · Eintrittsgebühren · Zelt, Isomatte und Decken · eine große Flasche Wasser pro Tag',
   br_102: 'Kleiner Rucksack, bequeme Wanderschuhe, Jacke oder warme Kleidung (nachts und früh morgens kalt), Stirnlampe, Mückenschutz, Kamera, Badebekleidung und Wechselkleidung',
   lbl_train: 'Rückfahrt: bitte am Bahnhof Luang Prabang absetzen (+{kipTrain} Kip pro Person)', lbl_pickup_who: 'Abholung für diese Person', pk_same: 'Wie die Gruppe', pk_other: 'Anderer Ort', pk_none: 'Kein Transfer nötig', lbl_pk_place: 'Unterkunft dieser Person', lbl_pk_map: 'Google-Maps-Link dieser Unterkunft', hint_pk: 'Reisende/r {n}: Bitte Namen der Unterkunft und Google-Maps-Link angeben.',
+  how_tag: 'So buchen Sie', how_h: 'In 7 einfachen Schritten buchen', how_sub: 'Das ist ganz einfach. Folgen Sie diesen Schritten auf dieser Website.',
+  hs1t: 'Unsere Website besuchen', hs1p: 'Öffnen Sie nongkhiawlaos.com auf Ihrem Handy oder Computer.',
+  hs2t: 'Touren ansehen', hs2p: 'Sehen Sie sich die Touren oben an und wählen Sie die passende.',
+  hs3t: 'Auf „Diese Tour buchen“ klicken', hs3p: 'Drücken Sie den Button bei Ihrer gewählten Tour. Er führt Sie zum Buchungsformular.',
+  hs4t: 'Buchungsformular ausfüllen', hs4p: 'Geben Sie das Datum, die Personenzahl sowie Name und Reisepassdaten jedes Reisenden an. Abholung und Lunchpaket können Sie ebenfalls hinzufügen.',
+  hs5t: 'Prüfen und senden', hs5p: 'Prüfen Sie Ihre Angaben und drücken Sie den Senden-Button. WhatsApp öffnet sich mit Ihrer fertigen Buchungsnachricht.',
+  hs6t: 'Wir bestätigen Ihre Buchung', hs6p: 'Wir antworten per WhatsApp, bestätigen Ihre Tour und klären die Details.',
+  hs7t: 'Bezahlen bei Ankunft', hs7p: 'Bezahlen Sie in unserem Büro in Nong Khiaw so, wie Sie es im Formular gewählt haben (bar, Karte oder BCEL QR).',
+  how_help: 'Brauchen Sie Hilfe? Schreiben Sie uns per WhatsApp.',
   lbl_lunch: 'Lunchpaket für das Boot (optional, nicht im Tourpreis enthalten)', lunch_none: 'Nein, danke', lbl_lunch_choice: 'Auswahl', hint_lunch: 'Reisende/r {n}: Bitte eine Option für das Mittagessen wählen.', unit_kip: 'Kip'
 }
 

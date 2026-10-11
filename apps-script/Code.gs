@@ -242,13 +242,14 @@ var RECEIPT_RATE = 22500;
 // Receipt settings live in Settings E8:F12; written once, then staff-owned.
 function setupReceiptSettings_(ss) {
   var sh = ss.getSheetByName(TABS.settings);
+  if (String(sh.getRange('F12').getValue()) === 'https://nongkhiawlaos.com/images/logo.png') sh.getRange('F12').setValue('https://nongkhiawlaos.com/images/receipt-logo.png');
   if (String(sh.getRange('E8').getValue()) !== '') return;
   sh.getRange('E8:F12').setValues([
     ['Receipts: kip per 1 USD', RECEIPT_RATE],
     ['Receipts: business name', 'Eco Lao Adventure Trails'],
     ['Receipts: address', 'Nong Khiaw, Meuang Ngoi District, Luang Prabang, Laos'],
     ['Receipts: contact line', 'WhatsApp +856 20 5897 5057 | +856 20 2299 9917 | nongkhiawlaos@gmail.com | nongkhiawlaos.com'],
-    ['Receipts: logo (link to an image)', 'https://nongkhiawlaos.com/images/logo.png']]);
+    ['Receipts: logo (link to an image)', 'https://nongkhiawlaos.com/images/receipt-logo.png']]);
   sh.getRange('F8').setNumberFormat('#,##0');
 }
 

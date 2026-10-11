@@ -124,7 +124,9 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   Nong Khiaw pickup, plate to Luang Prabang, remark. `onEdit` saves them in Bookings (`WhatsApp no`, `Vehicle to Nong Khiaw`,
   `Pickup in Nong Khiaw`, `Vehicle to Luang Prabang`, `Transport remark`) for the whole booking and redraws the list; anything typed
   elsewhere is put back. A hidden last column says which list a row belongs to.
-- **Message guest** opens WhatsApp (wa.me) with the date, plate, pickup and drop-off for the guest. The booking form asks for the
+- **Message guest** opens WhatsApp (wa.me) with Noy's text: "Hello my friend! Tomorrow you have minivan to Nong Khiaw! The minivan plate no: …
+  The driver will come to you, please wait at the reception." (departures: to Luang Prabang, with the Nong Khiaw pickup and drop-off).
+  Tomorrow / Today / On dd/mm/yyyy is worked out by the sheet (`TODAY()` vs the yellow date) when the link is clicked. The booking form asks for the
   guest's WhatsApp number (optional) and saves it in Bookings > WhatsApp no.
 - Menu **Transport > Refresh** redraws the list after new bookings.
 - **Message for the minivan team** (column M): Noy's Lao text for the team, ready to copy: `ໄປກັບ 2pax / ລູກຄ້າ: <lead name>  WhatsApp: <number> https://wa.me/<digits> / ຂຶ້ນ: 11/10 / ບ່ອນຮັບ: <place + map> /

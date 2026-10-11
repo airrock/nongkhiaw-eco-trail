@@ -1324,9 +1324,14 @@ function teamMessage_(people, up, down, train, guest, phone) {
     .concat(down ? ['ລົງ: ' + dm(down) + ' ' + (train ? 'ສົ່ງສະຖານີລົດໄຟ' : 'ສົ່ງກາງເມືອງ')] : []).join('\n');
 }
 
-function waLink_(phone, text) {
+// "Message guest": WhatsApp with Noy's words. The day is worked out by the sheet when the link is clicked (Tomorrow / Today /
+// On dd/mm/yyyy, from the yellow date), so a list made yesterday still says the right thing today. lines[0] follows "you have".
+function waLink_(phone, lines) {
   var digits = String(phone || '').replace(/\D/g, '').replace(/^00/, '');
-  return digits.length < 7 ? '' : '=HYPERLINK("https://wa.me/' + digits + '?text=' + encodeURIComponent(text).replace(/"/g, '%22') + '","Message guest")';
+  var q = function (t) { return '"' + String(t).replace(/"/g, '""') + '"'; };
+  var day = 'IF(INT($B$2)=TODAY()+1,"Tomorrow",IF(INT($B$2)=TODAY(),"Today","On "&TEXT($B$2,"dd/mm/yyyy")))';
+  return digits.length < 7 ? '' : '=HYPERLINK("https://wa.me/' + digits + '?text="&ENCODEURL("Hello my friend! "&' + day + '&' +
+    q(' you have ' + lines[0]) + '&CHAR(10)&' + q(lines[1]) + '),"Message guest")';
 }
 
 function buildTransport_(ss) {
@@ -1338,14 +1343,14 @@ function buildTransport_(ss) {
     var row = B[r], id = String(V(row, 'Booking ID')), status = String(V(row, 'Status')), transfer = String(V(row, 'Transfer'));
     if (!id || status === 'Cancelled' || !/one way|round/i.test(transfer)) continue;
     var people = d.riders[id] || [{ n: 1, name: String(V(row, 'Lead name')), first: '', place: String(V(row, 'Accommodation')), map: String(V(row, 'Maps link')) }];
-    var phone = V(row, 'WhatsApp no'), first = people[0].first || people[0].name;
+    var phone = V(row, 'WhatsApp no');
     var team = teamMessage_(people, V(row, 'Pickup date'), /round/i.test(transfer) ? V(row, 'Return date') : '', V(row, 'Train station drop-off') === 'Yes',
       V(row, 'Lead name') || people[0].name, phone);
     var base = function (p, i) { return [i ? '' : V(row, 'Submitted at'), id, V(row, 'Receipt No'), i ? '' : text_(String(phone)), p.name, i ? '' : people.length]; };
     if (dayKey_(V(row, 'Pickup date')) === day) {
       var plate = String(V(row, 'Vehicle to Nong Khiaw'));
-      var msg = 'Hello ' + first + '! Your minivan from Luang Prabang to Nong Khiaw on ' + shown + (plate ? ': plate ' + plate : '') +
-        '. Pickup at ' + people[0].place + '. See you soon, Nong Khiaw Eco-Trail';
+      var msg = ['minivan to Nong Khiaw! The minivan plate no: ' + (plate || '(we send it soon)'),
+        'The driver will come to you, please wait at the reception.'];
       arr.push({ key: people[0].place + '|' + id, rows: people.map(function (p, i) {
         return base(p, i).concat([V(row, 'Pickup date'), p.place, p.map ? '=HYPERLINK("' + p.map.replace(/"/g, '%22') + '","Map")' : '',
           i ? '' : plate, i ? '' : V(row, 'Transport remark'), i ? '' : waLink_(phone, msg), i ? '' : team, 'arr']);
@@ -1354,8 +1359,8 @@ function buildTransport_(ss) {
     if (/round/i.test(transfer) && dayKey_(V(row, 'Return date')) === day) {
       var plate2 = String(V(row, 'Vehicle to Luang Prabang')), nk = String(V(row, 'Pickup in Nong Khiaw'));
       var drop = V(row, 'Train station drop-off') === 'Yes' ? 'Luang Prabang train station' : 'City center';
-      var msg2 = 'Hello ' + first + '! Your minivan from Nong Khiaw to Luang Prabang on ' + shown + (plate2 ? ': plate ' + plate2 : '') +
-        (nk ? '. Pickup at ' + nk : '') + '. Drop-off: ' + drop + '. Thank you, Nong Khiaw Eco-Trail';
+      var msg2 = ['minivan to Luang Prabang! The minivan plate no: ' + (plate2 || '(we send it soon)'),
+        'The driver will come to you' + (nk ? ' at ' + nk : '') + ', please be ready. Drop-off: ' + drop + '.'];
       dep.push({ key: nk + '|' + id, rows: people.map(function (p, i) {
         return base(p, i).concat([V(row, 'Return date'), i ? '' : nk, i ? '' : plate2, drop, i ? '' : V(row, 'Transport remark'),
           i ? '' : waLink_(phone, msg2), i ? '' : team, 'dep']);
@@ -1461,7 +1466,7 @@ function transportSelfTest_(ss, id) {
     var f = sh.getRange(a.row, 12).getFormula();
     if (a.v[12].indexOf('ໄປກັບ 1pax') !== 0 || a.v[12].indexOf('ສົ່ງສະຖານີລົດໄຟ') === -1) return 'team message';
     if (a.v[12].indexOf('ລູກຄ້າ: Test Person  WhatsApp: +856 20 1234 5678 https://wa.me/8562012345678') === -1) return 'team whatsapp';
-    if (a.v[9] !== 'ກກ 5696' || f.indexOf('wa.me/8562012345678') === -1 || f.indexOf(encodeURIComponent('ກກ 5696')) === -1) return 'plate saved';
+    if (a.v[9] !== 'ກກ 5696' || f.indexOf('wa.me/8562012345678') === -1 || f.indexOf('plate no: ກກ 5696') === -1 || f.indexOf('please wait at the reception') === -1) return 'plate saved';
     cell.setValue(new Date(2030, 0, 18, 12)); buildTransport_(ss);
     var dRow = find('dep');
     if (!dRow || dRow.v[9] !== 'Luang Prabang train station' || dRow.v[6] instanceof Date === false) return 'departure row';

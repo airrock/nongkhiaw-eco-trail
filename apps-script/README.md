@@ -115,3 +115,16 @@ falls back to the list built into `js/main.js` (`MENU`) if the sheet cannot be r
 ## How to book (website)
 Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text in the drawings, so every language works) and text keys
 `hs1t`..`hs7p` in `js/i18n-tours.js` (editable from the Content tab).
+
+## Transport (daily minivan list for the driver team)
+- Tab **Transport**: change the yellow date. Two lists: **To Nong Khiaw** (pickups in Luang Prabang that day, from Bookings > Pickup date)
+  and **To Luang Prabang** (round trips leaving that day, from Return date; drop-off city center or the train station). One row per
+  traveller taking the minivan (not "No transfer"), cancelled bookings left out, grouped by pickup place.
+- The tab is written by the script (`buildTransport_`), not formulas, so its yellow columns can be typed in: WhatsApp no, plate to Nong Khiaw,
+  Nong Khiaw pickup, plate to Luang Prabang, remark. `onEdit` saves them in Bookings (`WhatsApp no`, `Vehicle to Nong Khiaw`,
+  `Pickup in Nong Khiaw`, `Vehicle to Luang Prabang`, `Transport remark`) for the whole booking and redraws the list; anything typed
+  elsewhere is put back. A hidden last column says which list a row belongs to.
+- **Message guest** opens WhatsApp (wa.me) with the date, plate, pickup and drop-off for the guest. The booking form asks for the
+  guest's WhatsApp number (optional) and saves it in Bookings > WhatsApp no.
+- Menu **Transport > Refresh** redraws the list after new bookings.
+

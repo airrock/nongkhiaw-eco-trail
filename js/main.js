@@ -509,7 +509,7 @@
     saveToSheet({
       type: 'booking', id: ref, website: $('#bookForm [name=website]').value, tour: tour, date: date,
       transfer: transfer, pickupDate: transfer !== 'No' ? pickup : '', returnDate: transfer === 'Round trip' ? ret : '',
-      hotel: hotel, map: mapLink, train: train, payment: pay, source: source, note: note,
+      hotel: hotel, map: mapLink, train: train, payment: pay, phone: $('#fPhone').value.trim(), source: source, note: note,
       travellers: blocks.map(function (f, i) {
         var v = function (k) { return $('[data-k="' + k + '"]', f).value.trim(); };
         return { name: v('first') + ' ' + v('last'), first: v('first'), last: v('last'), gender: v('gender'), nat: v('nat'),

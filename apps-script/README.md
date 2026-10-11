@@ -137,3 +137,11 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   deletes rows saved twice (same Booking ID + lead name in Bookings; same Booking ID + name + passport in Travellers), keeping the first.
 - A traveller with no pickup place (walk-ins, bookings without transfer) shows as "Staying in Nong Khiaw" in the Trip sheet and All
   guests (`stayingPlace_`); the stored data is unchanged.
+
+## Guide report (for the guide team)
+- Tab **Guide report**: everyone on the tour on the yellow date (`=TODAY()+1`, tomorrow; staff may type another date, empty = tomorrow),
+  cancelled bookings left out, each booking's travellers together, numbered. Noy's layout: No, Date of issue (Receipt log), Receipt No,
+  Contact name, Pax, Tour, Viewpoint, Additional package, Food, Pickup date from LPB (or "Staying in Nong Khiaw"), Tour start date,
+  Pick-up location, Departure date (return date / one way / n/a), Notes (Note + Staff notes).
+- One `LET(SORT(FILTER(...)))` formula in A6, so it updates by itself. Viewpoint and Additional package are Bookings columns staff type.
+

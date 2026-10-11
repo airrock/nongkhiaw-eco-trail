@@ -297,7 +297,7 @@ function setupReceipt_(ss) {
   sh.getRange('E2').setValue('Return time').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('D2').setValue(keepTimes[0] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
   sh.getRange('F2').setValue(keepTimes[1] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
-  sh.getRange('C1:F1').merge().setValue('1) Pick the Booking ID and the language (yellow cells). 2) Menu "Receipts" > "Issue receipt" gives it the next number. ' +
+  sh.getRange('C1:F1').merge().setValue('1) Pick the Booking ID: it gets the next receipt number (000001, 000002, ...) at once. 2) Pick the language, type a deposit if any. ' +
     '3) Click Download PDF below and send it to the guest.').setWrap(true).setFontColor('#5a665f');
   var pdf = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=pdf&gid=' + sh.getSheetId() +
     '&range=A5:F41&portrait=true&size=A4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false&top_margin=0.4&bottom_margin=0.4&left_margin=0.5&right_margin=0.5';
@@ -381,6 +381,10 @@ function setupReceipt_(ss) {
 
 function newKey_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 16); }   // private code in the agreement link
 
+// "Issued by" of a log row that records a receipt number the booking already had (Noy's imported paper receipts, or one
+// typed into Bookings by hand). Such numbers are kept as they are and do not count towards the 000001, 000002, ... sequence.
+var OLD_RECEIPT = 'Earlier receipt (kept)';
+
 // Gives the booking in the Receipt tab the next receipt number (once); returns the number.
 function issueReceipt_(ss, id) {
   var sh = ss.getSheetByName(TABS.receipt), log = ss.getSheetByName(TABS.receiptLog), bk = ss.getSheetByName(TABS.bookings);
@@ -388,24 +392,61 @@ function issueReceipt_(ss, id) {
   var at = ids.indexOf(id);
   if (at < 1) throw new Error('Pick a Booking ID in the yellow cell first.');
   var rows = log.getLastRow() > 1 ? log.getRange(2, 1, log.getLastRow() - 1, RECEIPT_LOG_COLS.length).getDisplayValues() : [];
-  var next = 1, keyCol = RECEIPT_LOG_COLS.indexOf('Form key');
+  var next = 1, keyCol = RECEIPT_LOG_COLS.indexOf('Form key'), byCol = RECEIPT_LOG_COLS.indexOf('Issued by');
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][2] === id) {
       if (!rows[i][keyCol]) { rows[i][keyCol] = newKey_(); log.getRange(i + 2, keyCol + 1).setValue(rows[i][keyCol]); }
       return { no: rows[i][0], isNew: false, key: rows[i][keyCol] };
     }
-    next = Math.max(next, Number(rows[i][0]) + 1);
+    if (rows[i][byCol] !== OLD_RECEIPT) next = Math.max(next, (Number(rows[i][0]) || 0) + 1);
   }
-  var no = ('000000' + next).slice(-6), key = newKey_();
+  var noCell = bk.getRange(at + 1, BOOKING_COLS.indexOf('Receipt No') + 1);
+  var had = noCell.getDisplayValue().trim();   // never renumber a booking that already has a receipt
+  var no = had || ('000000' + next).slice(-6), key = newKey_();
   SpreadsheetApp.flush();
   var v = sh.getRange('D33:E35').getValues();   // total, deposit, balance (USD, kip)
-  var who = '';
-  try { who = Session.getActiveUser().getEmail(); } catch (e) { who = ''; }
+  var who = OLD_RECEIPT;
+  if (!had) { try { who = Session.getActiveUser().getEmail(); } catch (e) { who = ''; } }
   log.getRange(log.getLastRow() + 1, 1, 1, RECEIPT_LOG_COLS.length).setValues([[text_(no), new Date(), id, sh.getRange('B2').getValue(),
     v[0][0], v[0][1], v[1][0], v[2][0], who, key]]);
   log.getRange(log.getLastRow(), 2).setNumberFormat('dd/mm/yyyy');
-  bk.getRange(at + 1, BOOKING_COLS.indexOf('Receipt No') + 1).setValue(text_(no));
-  return { no: no, isNew: true, key: key };
+  if (!had) noCell.setValue(text_(no));
+  return { no: no, isNew: !had, key: key };
+}
+
+// Picking a Booking ID in the Receipt tab gives it its number at once, so the receipt never shows DRAFT for a picked booking.
+function onEdit(e) {
+  var r = e && e.range;
+  if (!r || r.getSheet().getName() !== TABS.receipt) return;
+  if (r.getA1Notation() === 'B1') numberPickedReceipt_(e.source);
+  else if (r.getA1Notation() === 'B3') refreshReceiptAmounts_(e.source);
+}
+
+// The number is issued when the booking is picked, usually before the deposit is typed: keep the log's amounts current.
+function refreshReceiptAmounts_(ss) {
+  var sh = ss.getSheetByName(TABS.receipt), log = ss.getSheetByName(TABS.receiptLog);
+  var id = String(sh.getRange('B1').getValue()).trim();
+  if (!id || log.getLastRow() < 2) return;
+  var ids = log.getRange(2, 3, log.getLastRow() - 1, 1).getDisplayValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (ids[i][0] !== id) continue;
+    SpreadsheetApp.flush();
+    var v = sh.getRange('D33:E35').getValues();   // total, deposit, balance (USD, kip)
+    log.getRange(i + 2, 5, 1, 4).setValues([[v[0][0], v[0][1], v[1][0], v[2][0]]]);
+    return;
+  }
+}
+
+function numberPickedReceipt_(ss) {
+  var id = String(ss.getSheetByName(TABS.receipt).getRange('B1').getValue()).trim();
+  if (!id) return;
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    var r = issueReceipt_(ss, id);
+    ss.toast(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.', 'Receipts', 6);
+  } catch (err) {
+    ss.toast(String(err.message || err), 'Receipt not numbered', 10);
+  } finally { lock.releaseLock(); }
 }
 
 function issueReceipt() {
@@ -432,6 +473,7 @@ function receiptForSelectedBooking() {
   var r = ss.getSheetByName(TABS.receipt);
   r.getRange('B1').setValue(id); r.getRange('B3').clearContent();
   ss.setActiveSheet(r);
+  numberPickedReceipt_(ss);   // a script write does not fire onEdit
 }
 
 function receiptSelfTest_(ss, id) {
@@ -797,8 +839,8 @@ function setupHelp_(ss) {
     ['Photos are not in the sheet. Send the new photo to Jeevesh, or upload it on GitHub (images folder) with the same file name.'],
     [''],
     ['RECEIPTS  (tabs "Receipt", "Receipt log"; rate, name and logo in Settings E8:F12)'],
-    ['1. Receipt tab: pick the Booking ID and the language (yellow cells), type a Deposit in USD if the guest paid one.'],
-    ['2. Menu "Receipts" > "Issue receipt" gives it the next number (000001, 000002, ...). It is saved in the Receipt log and in Bookings > Receipt No.'],
+    ['1. Receipt tab: pick the Booking ID (yellow cell). It gets the next number at once (000001, 000002, ...), saved in the Receipt log and in Bookings > Receipt No. A booking that already has a Receipt No keeps it.'],
+    ['2. Pick the language and type a Deposit in USD if the guest paid one. (If the number still says DRAFT, use menu "Receipts" > "Issue receipt".)'],
     ['3. Click "Download PDF" in the Receipt tab and send it to the guest. Balance = tour + transport + food - deposit.'],
     ['4. After the receipt, "Open agreement form" (Receipt tab) opens the guests\' tour agreement on the website. Let each guest complete and sign it on a phone or tablet. The answers appear in the "Agreements" tab.'],
     [''],

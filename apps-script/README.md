@@ -83,8 +83,10 @@ falls back to the list built into `js/main.js` (`MENU`) if the sheet cannot be r
 ## E-receipt
 - Tabs **Receipt** (the printable receipt, yellow cells = Booking ID, Language, Deposit USD), **Receipt log** (one row per issued
   receipt: number, date, booking, totals) and a hidden **Receipt text** (the labels in 8 languages, rewritten by `setup`).
-- Menu **Receipts > Issue receipt** gives the booking the next number (`000001`, `000002`, ...; a booking never gets two) and writes it to
-  Bookings > Receipt No. **Receipts > Receipt for the selected booking** opens it from the Bookings tab.
+- Picking a Booking ID in the Receipt tab (`onEdit` on B1, or **Receipts > Receipt for the selected booking** from the Bookings tab) gives
+  the booking the next number (`000001`, `000002`, ...; a booking never gets two) and writes it to Bookings > Receipt No; **Receipts > Issue
+  receipt** does the same by hand. A booking that already has a Receipt No (Noy's imported receipts, or typed by hand) keeps it: it is logged
+  with Issued by "Earlier receipt (kept)" and does not count towards the sequence. Changing the deposit (B3) updates that booking's log amounts.
 - Amounts come from the booking: tour (Est. tour USD), transport (Est. transfer kip) and food (Lunch kip), shown in USD and kip at
   Settings F8 (22,500 kip per USD; staff can change it). Balance = total - deposit. Business name, address, contact and logo link: Settings F9:F12.
 - "Download PDF" is a Google export link (works for anyone with edit access to the sheet); no extra script permission is needed.

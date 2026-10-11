@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tour agreement | Eco Lao Adventure Trails</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b3d2e">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Lao:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/agreement.css">
+</head>
+<body>
+<header class="ag-head">
+  <div class="ag-wrap ag-bar">
+    <img src="../images/receipt-logo.png" alt="" width="56" height="56">
+    <div>
+      <strong>Eco Lao Adventure Trails</strong>
+      <span>Nong Khiaw, Laos</span>
+    </div>
+    <label class="ag-lang"><span data-ag="langlabel">Language</span>
+      <select id="lang" aria-label="Language"></select>
+    </label>
+  </div>
+</header>
+
+<main class="ag-wrap">
+  <h1 data-ag="title">Tour acknowledgment &amp; agreement form</h1>
+  <p class="ag-sub" data-ag="sub">Please read, fill in and sign. Our team can help you.</p>
+  <p id="state" class="ag-state" role="status" data-ag="loading">Loading your booking…</p>
+
+  <form id="form" class="ag-form" hidden novalidate>
+    <section class="ag-card">
+      <h2 data-ag="h_risk">Risk acknowledgment</h2>
+      <p data-ag="risk"></p>
+      <h2 data-ag="h_safety">Safety &amp; responsibility</h2>
+      <p class="ag-intro" data-ag="safety_intro"></p>
+      <ul>
+        <li data-ag="s1"></li><li data-ag="s2"></li><li data-ag="s3"></li><li data-ag="s4"></li>
+        <li data-ag="s5"></li><li data-ag="s6"></li><li data-ag="s7"></li>
+      </ul>
+      <h2 data-ag="h_cond">Important conditions</h2>
+      <ul>
+        <li data-ag="c1"></li><li data-ag="c2"></li><li data-ag="c3"></li><li data-ag="c4"></li>
+      </ul>
+    </section>
+
+    <div id="travellers"></div>
+
+    <p id="err" class="ag-err" role="alert" hidden></p>
+    <button type="submit" class="ag-btn" id="send" data-ag="submit">Sign and send</button>
+    <p class="ag-remark" data-ag="remark"></p>
+  </form>
+
+  <section id="done" class="ag-card ag-done" hidden>
+    <h2 data-ag="all_signed"></h2>
+    <p data-ag="thanks"></p>
+  </section>
+</main>
+
+<script src="../js/agreement-i18n.js"></script>
+<script src="../js/agreement.js"></script>
+</body>
+</html>

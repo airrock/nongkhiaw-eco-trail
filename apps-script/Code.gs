@@ -10,7 +10,7 @@
 
 var TABS = { bookings: 'Bookings', travellers: 'Travellers', inquiries: 'Inquiries', reviews: 'Reviews', settings: 'Settings',
   dashboard: 'Dashboard', content: 'Content', contentBase: 'Content base', help: 'How to edit', trip: 'Trip sheet', lunch: 'Lunch menu',
-  receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text' };
+  receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text', agreements: 'Agreements' };
 
 var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'Tour', 'Tour name', 'People', 'Lead name',
   'Traveller names', 'Countries', 'Food', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
@@ -32,7 +32,8 @@ var FORMATS = {
     'Pickup date': 'dd/mm/yyyy', 'Return date': 'dd/mm/yyyy',
     'Est. tour USD': '#,##0', 'Est. transfer kip': '#,##0', 'Lunch kip': '#,##0', 'Amount paid USD': '#,##0.00' },
   Travellers: { 'Tour date': 'dd/mm/yyyy', 'Tour': '@', 'Lunch kip': '#,##0', 'Passport no': '@', 'Passport issued': 'dd/mm/yyyy', 'Passport expires': 'dd/mm/yyyy' },
-  Inquiries: { 'Submitted at': 'dd/mm/yyyy hh:mm', 'Month': '@', 'Tour': '@' }
+  Inquiries: { 'Submitted at': 'dd/mm/yyyy hh:mm', 'Month': '@', 'Tour': '@' },
+  Agreements: { 'Submitted at': 'dd/mm/yyyy hh:mm', 'Tour date': 'dd/mm/yyyy', 'Tour': '@', 'Receipt No': '@', 'Passport no': '@', 'Emergency phone': '@' }
 };
 
 var STATUSES = ['Requested', 'Confirmed', 'Paid', 'Cancelled', 'No-show'];
@@ -60,6 +61,7 @@ function setup() {
   setupLunch_(ss);
   setupTrip_(ss);
   setupReceipt_(ss);
+  setupAgreements_(ss);
 
   // Travellers.Status follows the booking's status, so cancelled trips drop out of the reports.
   var trav = ss.getSheetByName(TABS.travellers);
@@ -74,7 +76,7 @@ function setup() {
   var blank = ss.getSheetByName('Sheet1');
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   // Tab order: the ones used every day first, set-up tabs last.
-  [TABS.dashboard, TABS.bookings, TABS.travellers, TABS.trip, TABS.receipt, TABS.receiptLog, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
+  [TABS.dashboard, TABS.bookings, TABS.travellers, TABS.trip, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
     .forEach(function (n, i) { var t = ss.getSheetByName(n); if (t) { ss.setActiveSheet(t); ss.moveActiveSheet(i + 1); } });
   ss.setActiveSheet(ss.getSheetByName(TABS.dashboard));
 }
@@ -236,7 +238,7 @@ var RECEIPT_TEXT = [   // key, then the 8 languages in RECEIPT_LANGS order
     '저희와 함께 여행해 주셔서 감사합니다!', 'ご利用ありがとうございました！', 'Merci d’avoir voyagé avec nous !', 'Danke, dass Sie mit uns gereist sind!'],
   ['draft', 'DRAFT', 'ຮ່າງ', 'ฉบับร่าง', '草稿', '초안', '下書き', 'BROUILLON', 'ENTWURF']
 ];
-var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by'];
+var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by', 'Form key'];
 var RECEIPT_RATE = 22500;
 
 // Receipt settings live in Settings E8:F12; written once, then staff-owned.
@@ -290,6 +292,8 @@ function setupReceipt_(ss) {
   var pdf = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=pdf&gid=' + sh.getSheetId() +
     '&range=A5:F41&portrait=true&size=A4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false&top_margin=0.4&bottom_margin=0.4&left_margin=0.5&right_margin=0.5';
   sh.getRange('C3').setFormula('=HYPERLINK("' + pdf + '","Download PDF")').setFontWeight('bold').setFontColor('#1155cc');
+  sh.getRange('E3').setFormula('=IF($K$3>0,HYPERLINK("https://nongkhiawlaos.com/agreement/?k="&INDEX(\'' + TABS.receiptLog + '\'!$J$1:$J,$K$3),"Open agreement form"),"Agreement form: issue the receipt first")')
+    .setFontWeight('bold').setFontColor('#1155cc');
   sh.getRange('K1').setFormula('=IFERROR(MATCH($B$1,Bookings!$A$1:$A,0),0)');
   sh.getRange('K2').setFormula('=IFERROR(MATCH($B$2,\'' + TABS.receiptText + '\'!$B$1:$I$1,0),1)');
   sh.getRange('K3').setFormula('=IFERROR(MATCH($B$1,\'' + TABS.receiptLog + '\'!$C$1:$C,0),0)');
@@ -362,28 +366,33 @@ function setupReceipt_(ss) {
   sh.getRange('A5:F41').setVerticalAlignment('middle');
 }
 
+function newKey_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 16); }   // private code in the agreement link
+
 // Gives the booking in the Receipt tab the next receipt number (once); returns the number.
 function issueReceipt_(ss, id) {
   var sh = ss.getSheetByName(TABS.receipt), log = ss.getSheetByName(TABS.receiptLog), bk = ss.getSheetByName(TABS.bookings);
   var ids = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return r[0]; });
   var at = ids.indexOf(id);
   if (at < 1) throw new Error('Pick a Booking ID in the yellow cell first.');
-  var rows = log.getLastRow() > 1 ? log.getRange(2, 1, log.getLastRow() - 1, 3).getDisplayValues() : [];
-  var next = 1;
+  var rows = log.getLastRow() > 1 ? log.getRange(2, 1, log.getLastRow() - 1, RECEIPT_LOG_COLS.length).getDisplayValues() : [];
+  var next = 1, keyCol = RECEIPT_LOG_COLS.indexOf('Form key');
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i][2] === id) return { no: rows[i][0], isNew: false };
+    if (rows[i][2] === id) {
+      if (!rows[i][keyCol]) { rows[i][keyCol] = newKey_(); log.getRange(i + 2, keyCol + 1).setValue(rows[i][keyCol]); }
+      return { no: rows[i][0], isNew: false, key: rows[i][keyCol] };
+    }
     next = Math.max(next, Number(rows[i][0]) + 1);
   }
-  var no = ('000000' + next).slice(-6);
+  var no = ('000000' + next).slice(-6), key = newKey_();
   SpreadsheetApp.flush();
   var v = sh.getRange('D33:E35').getValues();   // total, deposit, balance (USD, kip)
   var who = '';
   try { who = Session.getActiveUser().getEmail(); } catch (e) { who = ''; }
   log.getRange(log.getLastRow() + 1, 1, 1, RECEIPT_LOG_COLS.length).setValues([[text_(no), new Date(), id, sh.getRange('B2').getValue(),
-    v[0][0], v[0][1], v[1][0], v[2][0], who]]);
+    v[0][0], v[0][1], v[1][0], v[2][0], who, key]]);
   log.getRange(log.getLastRow(), 2).setNumberFormat('dd/mm/yyyy');
   bk.getRange(at + 1, BOOKING_COLS.indexOf('Receipt No') + 1).setValue(text_(no));
-  return { no: no, isNew: true };
+  return { no: no, isNew: true, key: key };
 }
 
 function issueReceipt() {
@@ -426,6 +435,7 @@ function receiptSelfTest_(ss, id) {
     var lookup = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[0] || [];
     var c = { draft: draft === 'ENTWURF', title: title === 'QUITTUNG', no6: /^\d{6}$/.test(r1.no), first: r1.isNew, second: !r2.isNew && r2.no === r1.no,
       shown: sh.getRange('F9').getDisplayValue() === r1.no, kip: kip === wantKip, bal: Math.abs(bal - (60 + (570000 + 65000) / rate - 10)) < 0.01,
+      agree: agreementSelfTest_(ss, id, r1.key) === true,
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' bal=' + bal + ' trav=' + trav : true;
@@ -434,7 +444,100 @@ function receiptSelfTest_(ss, id) {
   } finally {
     sh.getRange('B1:B3').setValues(keep);
     for (var i = log.getLastRow(); i >= 2; i--) if (String(log.getRange(i, 3).getValue()).indexOf('SELFTEST-') === 0) log.deleteRow(i);
+    var ag = ss.getSheetByName(TABS.agreements);
+    for (var j = ag.getLastRow(); j >= 2; j--) if (String(ag.getRange(j, 2).getValue()).indexOf('SELFTEST-') === 0) ag.deleteRow(j);
   }
+}
+
+/* ---------- Tour acknowledgment & agreement form (website page /agreement/, opened with a private link per booking) ---------- */
+
+var AGREEMENT_COLS = ['Submitted at', 'Booking ID', 'Receipt No', 'Tour date', 'Tour', 'Traveller #', 'Full name', 'Gender', 'Nationality',
+  'Passport no', 'Photo permission', 'Medical / allergies', 'Emergency contact', 'Emergency phone', 'Insurance no', 'Signed name',
+  'Language', 'Form version', 'Staff checked'];
+var AGREEMENT_VERSION = 'v1 2026-10-11';
+
+function setupAgreements_(ss) {
+  setupTable_(ss, TABS.agreements, AGREEMENT_COLS, {}, FORMATS.Agreements);
+  var sh = ss.getSheetByName(TABS.agreements);
+  sh.setColumnWidth(7, 180); sh.setColumnWidth(12, 220); sh.setColumnWidth(16, 180);
+}
+
+// The link's secret code -> booking (only receipts that were issued have one).
+function agreementHit_(ss, key) {
+  if (!/^[a-f0-9]{16}$/.test(String(key || ''))) return null;
+  var log = ss.getSheetByName(TABS.receiptLog);
+  if (log.getLastRow() < 2) return null;
+  var rows = log.getRange(2, 1, log.getLastRow() - 1, RECEIPT_LOG_COLS.length).getDisplayValues();
+  for (var i = 0; i < rows.length; i++) if (rows[i][RECEIPT_LOG_COLS.indexOf('Form key')] === key) return { receipt: rows[i][0], id: rows[i][2] };
+  return null;
+}
+
+function dayText_(v) { return v instanceof Date ? Utilities.formatDate(v, TIME_ZONE, 'dd/MM/yyyy') : String(v == null ? '' : v); }
+
+function agreementTravellers_(ss, id) {
+  var sh = ss.getSheetByName(TABS.travellers);
+  if (sh.getLastRow() < 2) return [];
+  var ix = function (c) { return TRAVELLER_COLS.indexOf(c); };
+  return sh.getRange(2, 1, sh.getLastRow() - 1, ix('Food') + 1).getValues().filter(function (r) { return r[0] === id; }).map(function (r) {
+    return { n: Number(r[ix('Traveller #')]), first: String(r[ix('First name')]), last: String(r[ix('Last name')]), full: String(r[ix('Full name')]),
+      gender: String(r[ix('Gender')]), nat: String(r[ix('Country')]), pass: String(r[ix('Passport no')]),
+      issued: dayText_(r[ix('Passport issued')]), expires: dayText_(r[ix('Passport expires')]) };
+  });
+}
+
+function agreementSigned_(ss, id) {
+  var sh = ss.getSheetByName(TABS.agreements);
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, AGREEMENT_COLS.indexOf('Traveller #') + 1).getValues()
+    .filter(function (r) { return r[1] === id; }).map(function (r) { return Number(r[AGREEMENT_COLS.indexOf('Traveller #')]); });
+}
+
+function agreementJson_(ss, key) {
+  var hit = agreementHit_(ss, key);
+  if (!hit) return JSON.stringify({ error: 'invalid' });
+  var bk = ss.getSheetByName(TABS.bookings), v = bk.getDataRange().getValues(), at = -1;
+  for (var i = 1; i < v.length; i++) if (v[i][0] === hit.id) { at = i; break; }
+  if (at < 0) return JSON.stringify({ error: 'invalid' });
+  var b = function (c) { return v[at][BOOKING_COLS.indexOf(c)]; };
+  return JSON.stringify({ receipt: hit.receipt, date: dayText_(b('Tour date')), tour: String(b('Tour')), tourName: String(b('Tour name')),
+    travellers: agreementTravellers_(ss, hit.id), signed: agreementSigned_(ss, hit.id) });
+}
+
+// d: { key, lang, people: [{ n, photo, medical, ecName, ecPhone, insurance, signedName, accept }] }; returns how many were saved
+function saveAgreement_(ss, d) {
+  var hit = agreementHit_(ss, d.key);
+  if (!hit) throw new Error('agreement: bad key');
+  var bk = ss.getSheetByName(TABS.bookings).getDataRange().getValues().filter(function (r) { return r[0] === hit.id; })[0];
+  var trav = agreementTravellers_(ss, hit.id), done = agreementSigned_(ss, hit.id), saved = 0;
+  (Array.isArray(d.people) ? d.people : []).forEach(function (p) {
+    var t = trav.filter(function (x) { return x.n === Number(p.n); })[0];
+    if (!t || done.indexOf(t.n) !== -1) return;
+    var signedName = clean_(p.signedName, 80), ecName = clean_(p.ecName, 80), ecPhone = clean_(p.ecPhone, 40);
+    if (p.accept !== true || (p.photo !== 'yes' && p.photo !== 'no') || signedName.length < 2 || !ecName || !ecPhone) return;
+    addRow_(ss, TABS.agreements, AGREEMENT_COLS, {
+      'Submitted at': new Date(), 'Booking ID': hit.id, 'Receipt No': text_(hit.receipt), 'Tour date': bk[BOOKING_COLS.indexOf('Tour date')],
+      'Tour': text_(String(bk[BOOKING_COLS.indexOf('Tour')])), 'Traveller #': t.n, 'Full name': t.full, 'Gender': t.gender, 'Nationality': t.nat,
+      'Passport no': t.pass ? text_(t.pass) : '', 'Photo permission': p.photo === 'yes' ? 'Yes' : 'No', 'Medical / allergies': clean_(p.medical, 500),
+      'Emergency contact': ecName, 'Emergency phone': text_(ecPhone), 'Insurance no': clean_(p.insurance, 60), 'Signed name': signedName,
+      'Language': clean_(d.lang, 5), 'Form version': AGREEMENT_VERSION
+    });
+    saved++;
+  });
+  return saved;
+}
+
+// Opens the link's data, signs traveller 1 only (traveller 2 has no emergency contact), tries to sign again, and checks the rules.
+function agreementSelfTest_(ss, id, key) {
+  var j = JSON.parse(agreementJson_(ss, key));
+  var badKey = JSON.parse(agreementJson_(ss, '0123456789abcdef')).error === 'invalid';
+  var people = [{ n: 1, photo: 'yes', medical: 'none', ecName: 'Contact', ecPhone: '+856 1', insurance: '', signedName: 'Test Person', accept: true },
+    { n: 2, photo: 'no', ecName: '', ecPhone: '', signedName: 'Second Person', accept: true }];
+  var first = saveAgreement_(ss, { key: key, lang: 'en', people: people }), again = saveAgreement_(ss, { key: key, lang: 'en', people: people });
+  var after = JSON.parse(agreementJson_(ss, key));
+  var wrongKey = false;
+  try { saveAgreement_(ss, { key: '0123456789abcdef', people: people }); } catch (e) { wrongKey = true; }
+  return j.travellers.length === 2 && j.travellers[0].first === 'Test' && j.signed.length === 0 && badKey && first === 1 && again === 0 &&
+    after.signed.length === 1 && after.signed[0] === 1 && wrongKey;
 }
 
 /* ---------- Trip sheet: pick a date, see everyone on tours that day ---------- */
@@ -644,6 +747,7 @@ function setupHelp_(ss) {
     ['1. Receipt tab: pick the Booking ID and the language (yellow cells), type a Deposit in USD if the guest paid one.'],
     ['2. Menu "Receipts" > "Issue receipt" gives it the next number (000001, 000002, ...). It is saved in the Receipt log and in Bookings > Receipt No.'],
     ['3. Click "Download PDF" in the Receipt tab and send it to the guest. Balance = tour + transport + food - deposit.'],
+    ['4. After the receipt, "Open agreement form" (Receipt tab) opens the guests\' tour agreement on the website. Let each guest complete and sign it on a phone or tablet. The answers appear in the "Agreements" tab.'],
     [''],
     ['BOOKINGS  (tabs "Bookings", "Travellers", "Inquiries", "Dashboard")'],
     ['Set Status, Receipt No and Amount paid in "Bookings". The Dashboard updates by itself.']
@@ -651,7 +755,7 @@ function setupHelp_(ss) {
   sh.getRange(1, 1, lines.length, 1).setValues(lines).setWrap(true).setVerticalAlignment('top');
   sh.setColumnWidth(1, 760);
   sh.getRange('A1').setFontSize(16).setFontWeight('bold');
-  ['A3', 'A12', 'A15', 'A18', 'A21', 'A24', 'A29'].forEach(function (a) { sh.getRange(a).setFontWeight('bold').setFontColor('#2f6b4f'); });
+  ['A3', 'A12', 'A15', 'A18', 'A21', 'A24', 'A30'].forEach(function (a) { sh.getRange(a).setFontWeight('bold').setFontColor('#2f6b4f'); });
 }
 
 // Seeded once with the reviews the site showed before; after that the tab is staff-owned and never overwritten.
@@ -802,6 +906,7 @@ function doPost(e) {
     if (ss.getSpreadsheetTimeZone() !== TIME_ZONE) ss.setSpreadsheetTimeZone(TIME_ZONE);
     if (d.type === 'booking') saveBooking_(ss, d);
     else if (d.type === 'inquiry') saveInquiry_(ss, d);
+    else if (d.type === 'agreement') return reply_(JSON.stringify({ saved: saveAgreement_(ss, d) }));
     else if (d.type === 'selftest') return reply_(selfTest_(ss));
     else if (d.type === 'rebuild') { setup(); return reply_('rebuilt'); }  // idempotent; never touches data rows
     else return reply_('unknown type');
@@ -823,6 +928,9 @@ function doGet(e) {
   }
   if (e && e.parameter.config === '1') {
     return ContentService.createTextOutput(configJson_()).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (e && e.parameter.agreement) {
+    return ContentService.createTextOutput(agreementJson_(SpreadsheetApp.getActive(), e.parameter.agreement)).setMimeType(ContentService.MimeType.JSON);
   }
   if (e && e.parameter.reviews === '1') {
     return ContentService.createTextOutput(reviewsJson_()).setMimeType(ContentService.MimeType.JSON);

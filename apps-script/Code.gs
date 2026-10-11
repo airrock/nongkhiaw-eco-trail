@@ -71,6 +71,9 @@ function setup() {
   setupDashboard_(ss);
   var blank = ss.getSheetByName('Sheet1');
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
+  // Tab order: the ones used every day first, set-up tabs last.
+  [TABS.dashboard, TABS.bookings, TABS.travellers, TABS.trip, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
+    .forEach(function (n, i) { var t = ss.getSheetByName(n); if (t) { ss.setActiveSheet(t); ss.moveActiveSheet(i + 1); } });
   ss.setActiveSheet(ss.getSheetByName(TABS.dashboard));
 }
 

@@ -89,7 +89,13 @@ falls back to the list built into `js/main.js` (`MENU`) if the sheet cannot be r
   with Issued by "Earlier receipt (kept)" and does not count towards the sequence. Changing the deposit (B3) updates that booking's log amounts.
 - Amounts come from the booking: tour (Est. tour USD), transport (Est. transfer kip) and food (Lunch kip), shown in USD and kip at
   Settings F8 (22,500 kip per USD; staff can change it). Balance = total - deposit. Business name, address, contact and logo link: Settings F9:F12.
-- "Download PDF" is a Google export link (works for anyone with edit access to the sheet); no extra script permission is needed.
+- **Paid** comes from Bookings, nothing is typed on the receipt: Status "Paid" = paid in full, otherwise "Amount paid USD" is the
+  deposit. When nothing is left to pay the receipt says "Paid" instead of "Deposit" and shows "✓ PAID" in its language. The yellow
+  "Paid (USD)" cell (B3) only overrides that.
+- **Receipts > Download PDF** downloads the receipt named `No 000002 <lead name>.pdf` (numbering it first if needed). It fetches Google's
+  PDF export with the user's token, so the script needs `drive.readonly`, `script.external_request` and `script.container.ui`; each
+  person who uses it approves that once. After a scope change, the owner approves it (run any menu item) **before**
+  `clasp update-deployment`, or the web app's saves fail until they do.
 
 ## Tour agreement form (/agreement/)
 - Static page `agreement/index.html` (+ `js/agreement.js`, `js/agreement-i18n.js`, `css/agreement.css`), 8 languages, not indexed.

@@ -242,7 +242,8 @@ var RECEIPT_TEXT = [   // key, then the 8 languages in RECEIPT_LANGS order
   ['citycenter', 'city center', 'ກາງເມືອງ', 'ใจกลางเมือง', '市中心', '시내 중심', '市の中心部', 'centre-ville', 'Stadtzentrum'],
   ['train', 'Luang Prabang train station', 'ສະຖານີລົດໄຟຫຼວງພະບາງ', 'สถานีรถไฟหลวงพระบาง', '琅勃拉邦火车站', '루앙프라방 기차역', 'ルアンパバーン駅', 'gare de Luang Prabang', 'Bahnhof Luang Prabang'],
   ['time', 'Time', 'ເວລາ', 'เวลา', '时间', '시간', '時間', 'Heure', 'Uhrzeit'],
-  ['draft', 'DRAFT', 'ຮ່າງ', 'ฉบับร่าง', '草稿', '초안', '下書き', 'BROUILLON', 'ENTWURF']
+  ['draft', 'DRAFT', 'ຮ່າງ', 'ฉบับร่าง', '草稿', '초안', '下書き', 'BROUILLON', 'ENTWURF'],
+  ['paid', 'Paid', 'ຈ່າຍແລ້ວ', 'ชำระแล้ว', '已付款', '결제 완료', '支払済み', 'Payé', 'Bezahlt']
 ];
 var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by', 'Form key'];
 var RECEIPT_RATE = 22500;
@@ -288,20 +289,19 @@ function setupReceipt_(ss) {
   var S = function (a) { return 'Settings!' + a; };
 
   // controls (not printed)
-  sh.getRange('A1:A3').setValues([['Booking ID'], ['Language'], ['Deposit (USD)']]).setFontWeight('bold');
+  sh.getRange('A1:A3').setValues([['Booking ID'], ['Language'], ['Paid (USD)']]).setFontWeight('bold');
   sh.getRange('B1:B3').setValues([[keep[0][0] || ''], [lang], [keep[2][0] || '']]).setBackground('#fff2a8').setFontWeight('bold');
   sh.getRange('B1').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(ss.getSheetByName(TABS.bookings).getRange('A2:A'), true).setAllowInvalid(true).build());
   sh.getRange('B2').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(RECEIPT_LANGS, true).setAllowInvalid(false).build());
-  sh.getRange('B3').setNumberFormat('#,##0.00');
+  sh.getRange('B3').setNumberFormat('#,##0.00')
+    .setNote('Leave empty: the receipt takes the payment from Bookings (Status "Paid" = fully paid, otherwise "Amount paid USD"). Type here only to override it.');
   sh.getRange('C2').setValue('Pickup time').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('E2').setValue('Return time').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('D2').setValue(keepTimes[0] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
   sh.getRange('F2').setValue(keepTimes[1] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
-  sh.getRange('C1:F1').merge().setValue('1) Pick the Booking ID: it gets the next receipt number (000001, 000002, ...) at once. 2) Pick the language, type a deposit if any. ' +
-    '3) Click Download PDF below and send it to the guest.').setWrap(true).setFontColor('#5a665f');
-  var pdf = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=pdf&gid=' + sh.getSheetId() +
-    '&range=A5:F41&portrait=true&size=A4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false&top_margin=0.4&bottom_margin=0.4&left_margin=0.5&right_margin=0.5';
-  sh.getRange('C3').setFormula('=HYPERLINK("' + pdf + '","Download PDF")').setFontWeight('bold').setFontColor('#1155cc');
+  sh.getRange('C1:F1').merge().setValue('1) Pick the Booking ID: it gets the next receipt number (000001, 000002, ...) at once. 2) Pick the language. Payment comes from Bookings ' +
+    '(Status, Amount paid USD). 3) Menu "Receipts" > "Download PDF" saves it as "No 000001 <name>.pdf" to send to the guest.').setWrap(true).setFontColor('#5a665f');
+  sh.getRange('C3').setValue('Download PDF: menu "Receipts" > "Download PDF"').setFontWeight('bold').setFontColor('#0b3d2e');
   sh.getRange('E3').setFormula('=IF($K$3>0,HYPERLINK("https://nongkhiawlaos.com/agreement/?k="&INDEX(\'' + TABS.receiptLog + '\'!$J$1:$J,$K$3),"Open agreement form"),"Agreement form: issue the receipt first")')
     .setFontWeight('bold').setFontColor('#1155cc');
   sh.getRange('K1').setFormula('=IFERROR(MATCH($B$1,Bookings!$A$1:$A,0),0)');
@@ -365,7 +365,11 @@ function setupReceipt_(ss) {
     sh.getRange('D' + x[0]).setFormula(x[3]); sh.getRange('E' + x[0]).setFormula(x[4]);
   });
   sh.getRange('A33:B33').merge().setFormula('=' + L('total')); sh.getRange('D33').setFormula('=SUM(D30:D32)'); sh.getRange('E33').setFormula('=SUM(E30:E32)');
-  sh.getRange('A34:B34').merge().setFormula('=' + L('deposit')); sh.getRange('D34').setFormula('=N($B$3)'); sh.getRange('E34').setFormula('=ROUND(D34*' + rate + ',0)');
+  // paid: the yellow cell if typed, else from Bookings (Status Paid = everything, otherwise Amount paid USD)
+  sh.getRange('A34:B34').merge().setFormula('=IF(AND(D33>0,D35<=0.005),' + L('paid') + ',' + L('deposit') + ')');
+  sh.getRange('D34').setFormula('=IF($B$3<>"",N($B$3),IF(' + bk('Status') + '="Paid",D33,N(' + bk('Amount paid USD') + ')))');
+  sh.getRange('F34').setFormula('=IF(AND(D33>0,D35<=0.005),"✓ "&UPPER(' + L('paid') + '),"")').setFontWeight('bold').setFontSize(14)
+    .setFontColor('#1e7a3c').setHorizontalAlignment('center'); sh.getRange('E34').setFormula('=ROUND(D34*' + rate + ',0)');
   sh.getRange('A35:B35').merge().setFormula('=' + L('balance')); sh.getRange('D35').setFormula('=D33-D34'); sh.getRange('E35').setFormula('=E33-E34');
   sh.getRange('D30:D35').setNumberFormat('#,##0.00'); sh.getRange('E30:E35').setNumberFormat('#,##0');
   sh.getRange('A33:F33').setFontWeight('bold').setBorder(true, null, null, null, null, null, '#0b3d2e', SpreadsheetApp.BorderStyle.SOLID);
@@ -377,6 +381,35 @@ function setupReceipt_(ss) {
   sh.setColumnWidth(1, 90); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 190); sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 120); sh.setColumnWidth(6, 120);
   sh.setRowHeights(5, 3, 26); sh.setRowHeights(1, 3, 24);
   sh.getRange('A5:F41').setVerticalAlignment('middle');
+}
+
+// The printable part of the Receipt tab as a PDF (Google's export link; the script adds the file name).
+function receiptPdfUrl_(ss, sh) {
+  return 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=pdf&gid=' + sh.getSheetId() +
+    '&range=A5:F41&portrait=true&size=A4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false&top_margin=0.4&bottom_margin=0.4&left_margin=0.5&right_margin=0.5';
+}
+
+// "No 000002 Adam David Anthony Eistob.pdf": without characters a file name cannot hold.
+function receiptFileName_(no, name) {
+  return ('No ' + no + ' ' + String(name || '').trim()).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
+}
+
+// Menu Receipts > Download PDF: numbers the receipt if needed, then downloads it named after the receipt and the guest.
+function downloadReceiptPdf() {
+  var ss = SpreadsheetApp.getActive(), ui = SpreadsheetApp.getUi(), sh = ss.getSheetByName(TABS.receipt);
+  var id = String(sh.getRange('B1').getValue()).trim(), r;
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try { r = issueReceipt_(ss, id); } catch (e) { ui.alert(String(e.message || e)); return; } finally { lock.releaseLock(); }
+  refreshReceiptAmounts_(ss);
+  SpreadsheetApp.flush();
+  var res = UrlFetchApp.fetch(receiptPdfUrl_(ss, sh), { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('The PDF could not be made (Google answered ' + res.getResponseCode() + '). Try again in a minute.');
+  var t = HtmlService.createTemplate(
+    '<p style="font:14px Arial">Your download should start. If not: <a id="a" download="<?= name ?>" href="data:application/pdf;base64,<?= data ?>">' +
+    '<b>Download <?= name ?></b></a></p><script>document.getElementById("a").click();</script>');
+  t.name = receiptFileName_(r.no, sh.getRange('B10').getDisplayValue());
+  t.data = Utilities.base64Encode(res.getContent());
+  ui.showModalDialog(t.evaluate().setWidth(460).setHeight(110), 'Receipt ' + r.no);
 }
 
 function newKey_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 16); }   // private code in the agreement link
@@ -476,6 +509,17 @@ function receiptForSelectedBooking() {
   numberPickedReceipt_(ss);   // a script write does not fire onEdit
 }
 
+// Status "Paid" in Bookings, with nothing typed on the receipt, must show the receipt as paid in full.
+function receiptPaidSelfTest_(ss, sh, id) {
+  var bk = ss.getSheetByName(TABS.bookings), ids = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return r[0]; });
+  var st = bk.getRange(ids.indexOf(id) + 1, BOOKING_COLS.indexOf('Status') + 1), was = st.getValue();
+  try {
+    sh.getRange('B3').clearContent(); st.setValue('Paid'); SpreadsheetApp.flush();
+    return Math.abs(sh.getRange('D35').getValue()) < 0.005 && sh.getRange('A34').getDisplayValue() === 'Bezahlt' &&
+      sh.getRange('F34').getDisplayValue() === '✓ BEZAHLT';
+  } finally { st.setValue(was); }
+}
+
 function receiptSelfTest_(ss, id) {
   var sh = ss.getSheetByName(TABS.receipt), keep = sh.getRange('B1:B3').getValues(), log = ss.getSheetByName(TABS.receiptLog);
   try {
@@ -494,7 +538,8 @@ function receiptSelfTest_(ss, id) {
       ret: sh.getRange('A14').getDisplayValue() === 'Rückfahrt:' && sh.getRange('B14').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1 &&
         sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
       all: allGuestsSelfTest_(ss, id),
-      trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no };
+      trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
+      paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' bal=' + bal + ' trav=' + trav : true;
   } catch (e) {
@@ -799,7 +844,8 @@ function configJson_(holdsLock) {
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('Website').addItem('Update the website now', 'updateWebsiteNow').addToUi();
-  ui.createMenu('Receipts').addItem('Receipt for the selected booking', 'receiptForSelectedBooking').addItem('Issue receipt (give it a number)', 'issueReceipt').addToUi();
+  ui.createMenu('Receipts').addItem('Receipt for the selected booking', 'receiptForSelectedBooking').addItem('Issue receipt (give it a number)', 'issueReceipt')
+    .addItem('Download PDF', 'downloadReceiptPdf').addToUi();
 }
 
 function updateWebsiteNow() {
@@ -840,8 +886,8 @@ function setupHelp_(ss) {
     [''],
     ['RECEIPTS  (tabs "Receipt", "Receipt log"; rate, name and logo in Settings E8:F12)'],
     ['1. Receipt tab: pick the Booking ID (yellow cell). It gets the next number at once (000001, 000002, ...), saved in the Receipt log and in Bookings > Receipt No. A booking that already has a Receipt No keeps it.'],
-    ['2. Pick the language and type a Deposit in USD if the guest paid one. (If the number still says DRAFT, use menu "Receipts" > "Issue receipt".)'],
-    ['3. Click "Download PDF" in the Receipt tab and send it to the guest. Balance = tour + transport + food - deposit.'],
+    ['2. Pick the language. What the guest paid comes from Bookings: Status "Paid" = paid in full (the receipt shows ✓ PAID), otherwise "Amount paid USD" is the deposit. The yellow "Paid (USD)" cell is only for overriding it. (If the number still says DRAFT, use menu "Receipts" > "Issue receipt".)'],
+    ['3. Menu "Receipts" > "Download PDF" saves it as "No 000001 <guest name>.pdf". Send that file to the guest. Balance = tour + transport + food - paid.'],
     ['4. After the receipt, "Open agreement form" (Receipt tab) opens the guests\' tour agreement on the website. Let each guest complete and sign it on a phone or tablet. The answers appear in the "Agreements" tab.'],
     [''],
     ['BOOKINGS  (tabs "Bookings", "Travellers", "Inquiries", "Dashboard")'],

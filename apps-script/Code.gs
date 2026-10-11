@@ -715,6 +715,7 @@ function selfTest_(ss) {
     }
   });
   out.tabsOk = ss.getSheets().length >= 6;
+  out.frozenOk = [TABS.bookings, TABS.travellers, TABS.inquiries].every(function (n) { return ss.getSheetByName(n).getFrozenRows() === 1; });
   return JSON.stringify(out);
 }
 

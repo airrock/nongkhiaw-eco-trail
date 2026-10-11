@@ -222,22 +222,42 @@
   });
 
   /* ---------- in-page jumps ----------
-     A smooth scroll to a section far down the page ends short on iPhones: images above the target are still
-     loading, so the target moves away mid-scroll. Load them first, jump in one step, then re-check the position
-     while the layout settles (and stop at once if the visitor starts scrolling). */
+     A jump to a section far down the page ends short on iPhones: images, reviews and sheet text above the target
+     are still loading, so the target moves away after the jump (iPhone browsers have no scroll anchoring to undo
+     that). Load the images first, jump in one step, then keep the target in place while the layout settles (and
+     stop at once if the visitor starts scrolling). Used for clicks and for links that arrive with a #section. */
+  function pageTop(el) {   // ignores the .reveal slide-in transform, which getBoundingClientRect would include
+    var y = 0;
+    for (var n = el; n; n = n.offsetParent) y += n.offsetTop;
+    return y;
+  }
   function jumpTo(el) {
     var header = $('.site-header');
     var offset = (header ? header.offsetHeight : 70) + 6;
-    var stopped = false;
-    var stop = function () { stopped = true; };
+    var stopped = false, ro = null;
+    var stop = function () { stopped = true; if (ro) ro.disconnect(); };
     ['touchstart', 'wheel', 'keydown'].forEach(function (ev) { window.addEventListener(ev, stop, { once: true, passive: true }); });
-    var go = function () { window.scrollTo({ top: el.getBoundingClientRect().top + window.pageYOffset - offset, behavior: 'auto' }); };
+    var target = function () { return Math.max(0, pageTop(el) - offset); };
+    var go = function () {   // 'auto' would follow the CSS scroll-behavior:smooth; switch it off for one step
+      var root = document.documentElement, was = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
+      window.scrollTo(0, target());
+      root.style.scrollBehavior = was;
+    };
+    var check = function () { if (!stopped && Math.abs(window.pageYOffset - target()) > 6) go(); };
     $$('img[loading="lazy"]').forEach(function (img) { img.loading = 'eager'; });
     go();
-    [120, 350, 800, 1500, 2500].forEach(function (ms) {
-      setTimeout(function () { if (!stopped && Math.abs(el.getBoundingClientRect().top - offset) > 6) go(); }, ms);
-    });
+    if ('ResizeObserver' in window) { ro = new ResizeObserver(check); ro.observe(document.body); }
+    [120, 350, 800, 1500, 2500, 4000, 6000].forEach(function (ms) { setTimeout(check, ms); });
+    setTimeout(stop, 8000);
   }
+  function jumpToHash() {
+    var id = location.hash.slice(1);
+    try { id = decodeURIComponent(id); } catch (err) { /* malformed: use as typed */ }
+    var el = id && document.getElementById(id);
+    if (el) jumpTo(el);
+  }
+  window.addEventListener('hashchange', jumpToHash);
   document.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('a[href^="#"]');
     if (!a) return;
@@ -648,4 +668,5 @@
   applyLang(detectLang());
   loadConfig();
   loadReviews();
+  jumpToHash();   // a shared link such as nongkhiawlaos.com/#booking-form
 })();

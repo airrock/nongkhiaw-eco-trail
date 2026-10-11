@@ -88,3 +88,12 @@ falls back to the list built into `js/main.js` (`MENU`) if the sheet cannot be r
 - Amounts come from the booking: tour (Est. tour USD), transport (Est. transfer kip) and food (Lunch kip), shown in USD and kip at
   Settings F8 (22,500 kip per USD; staff can change it). Balance = total - deposit. Business name, address, contact and logo link: Settings F9:F12.
 - "Download PDF" is a Google export link (works for anyone with edit access to the sheet); no extra script permission is needed.
+
+## Tour agreement form (/agreement/)
+- Static page `agreement/index.html` (+ `js/agreement.js`, `js/agreement-i18n.js`, `css/agreement.css`), 8 languages, not indexed.
+  It opens with a private 16-character code (`?k=...`) that the script creates when a receipt is issued (Receipt log > Form key);
+  the Receipt tab shows it as "Open agreement form". Without a valid code the page shows nothing about any guest.
+- `?agreement=<code>` returns the booking's travellers (name, passport, dates) and who already signed; `{"type":"agreement"}` saves
+  one row per traveller in the **Agreements** tab (photo permission, medical, emergency contact, insurance no, typed name as
+  signature, language, form version). The script checks everything again; a traveller signs once.
+- Wording = Noy's paper form (version stamp in `AGREEMENT_VERSION`); to change it edit `js/agreement-i18n.js` and bump the version.

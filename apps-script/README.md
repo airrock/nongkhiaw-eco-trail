@@ -79,3 +79,12 @@ falls back to the list built into `js/main.js` (`MENU`) if the sheet cannot be r
   Status "Confirmed", her receipt numbers). Her old package numbers other than 1/101/102/103 are kept as typed in Tour; the old tour
   start date is only known for some rows; Staff notes says "CHECK tour date" where the date came from her "Date of issue" column.
   The importer was temporary and is not in this repo (it held passport data and a write endpoint).
+
+## E-receipt
+- Tabs **Receipt** (the printable receipt, yellow cells = Booking ID, Language, Deposit USD), **Receipt log** (one row per issued
+  receipt: number, date, booking, totals) and a hidden **Receipt text** (the labels in 8 languages, rewritten by `setup`).
+- Menu **Receipts > Issue receipt** gives the booking the next number (`000001`, `000002`, ...; a booking never gets two) and writes it to
+  Bookings > Receipt No. **Receipts > Receipt for the selected booking** opens it from the Bookings tab.
+- Amounts come from the booking: tour (Est. tour USD), transport (Est. transfer kip) and food (Lunch kip), shown in USD and kip at
+  Settings F8 (22,500 kip per USD; staff can change it). Balance = total - deposit. Business name, address, contact and logo link: Settings F9:F12.
+- "Download PDF" is a Google export link (works for anyone with edit access to the sheet); no extra script permission is needed.

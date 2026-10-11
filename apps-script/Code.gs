@@ -9,7 +9,8 @@
  */
 
 var TABS = { bookings: 'Bookings', travellers: 'Travellers', inquiries: 'Inquiries', reviews: 'Reviews', settings: 'Settings',
-  dashboard: 'Dashboard', content: 'Content', contentBase: 'Content base', help: 'How to edit', trip: 'Trip sheet', lunch: 'Lunch menu' };
+  dashboard: 'Dashboard', content: 'Content', contentBase: 'Content base', help: 'How to edit', trip: 'Trip sheet', lunch: 'Lunch menu',
+  receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text' };
 
 var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'Tour', 'Tour name', 'People', 'Lead name',
   'Traveller names', 'Countries', 'Food', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
@@ -58,6 +59,7 @@ function setup() {
   setupHelp_(ss);
   setupLunch_(ss);
   setupTrip_(ss);
+  setupReceipt_(ss);
 
   // Travellers.Status follows the booking's status, so cancelled trips drop out of the reports.
   var trav = ss.getSheetByName(TABS.travellers);
@@ -72,7 +74,7 @@ function setup() {
   var blank = ss.getSheetByName('Sheet1');
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   // Tab order: the ones used every day first, set-up tabs last.
-  [TABS.dashboard, TABS.bookings, TABS.travellers, TABS.trip, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
+  [TABS.dashboard, TABS.bookings, TABS.travellers, TABS.trip, TABS.receipt, TABS.receiptLog, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
     .forEach(function (n, i) { var t = ss.getSheetByName(n); if (t) { ss.setActiveSheet(t); ss.moveActiveSheet(i + 1); } });
   ss.setActiveSheet(ss.getSheetByName(TABS.dashboard));
 }
@@ -201,6 +203,237 @@ function lunchMenuJson_(ss) {
     });
   }
   return out;
+}
+
+/* ---------- E-receipt: pick a booking, get a receipt in the guest's language, number it from the log ---------- */
+
+var RECEIPT_LANGS = ['English', 'ລາວ', 'ไทย', '中文', '한국어', '日本語', 'Français', 'Deutsch'];
+var RECEIPT_TEXT = [   // key, then the 8 languages in RECEIPT_LANGS order
+  ['receipt', 'RECEIPT', 'ໃບຮັບເງິນ', 'ใบเสร็จรับเงิน', '收据', '영수증', '領収書', 'REÇU', 'QUITTUNG'],
+  ['no', 'No.', 'ເລກທີ', 'เลขที่', '编号', '번호', '番号', 'N°', 'Nr.'],
+  ['name', 'Name', 'ຊື່', 'ชื่อ', '姓名', '이름', '氏名', 'Nom', 'Name'],
+  ['issued', 'Date of issue', 'ວັນທີອອກ', 'วันที่ออก', '开具日期', '발행일', '発行日', 'Date d’émission', 'Ausstellungsdatum'],
+  ['tourdate', 'Tour date', 'ວັນທີທົວ', 'วันที่ทัวร์', '行程日期', '투어 날짜', 'ツアー日', 'Date de l’excursion', 'Tourdatum'],
+  ['payment', 'Payment method', 'ວິທີຈ່າຍ', 'วิธีชำระเงิน', '付款方式', '결제 방법', 'お支払い方法', 'Moyen de paiement', 'Zahlungsart'],
+  ['tour', 'Tour', 'ທົວ', 'ทัวร์', '行程', '투어', 'ツアー', 'Excursion', 'Tour'],
+  ['pickup', 'Pickup', 'ການຮັບ', 'การรับ', '接送', '픽업', '送迎', 'Prise en charge', 'Abholung'],
+  ['travellers', 'Travellers', 'ຜູ້ເດີນທາງ', 'ผู้เดินทาง', '旅客', '여행자', '旅行者', 'Voyageurs', 'Reisende'],
+  ['passport', 'Passport', 'ໜັງສືຜ່ານແດນ', 'หนังสือเดินทาง', '护照', '여권', 'パスポート', 'Passeport', 'Reisepass'],
+  ['food', 'Food', 'ອາຫານ', 'อาหาร', '餐食', '식사', '食事', 'Repas', 'Verpflegung'],
+  ['item', 'Item', 'ລາຍການ', 'รายการ', '项目', '항목', '項目', 'Article', 'Position'],
+  ['details', 'Details', 'ລາຍລະອຽດ', 'รายละเอียด', '详情', '세부 내용', '詳細', 'Détails', 'Details'],
+  ['transport', 'Transport', 'ການເດີນທາງ', 'การเดินทาง', '交通', '교통', '交通', 'Transport', 'Transport'],
+  ['lunch', 'Takeaway lunch', 'ອາຫານທ່ຽງເອົາໄປກິນ', 'อาหารกลางวันแบบห่อ', '外带午餐', '테이크아웃 점심', 'テイクアウトランチ', 'Déjeuner à emporter', 'Lunchpaket'],
+  ['people', 'people', 'ຄົນ', 'คน', '人', '명', '名', 'personnes', 'Personen'],
+  ['kip', 'Kip', 'ກີບ', 'กีบ', '基普', '킵', 'キープ', 'Kip', 'Kip'],
+  ['total', 'Total', 'ລວມ', 'รวม', '合计', '합계', '合計', 'Total', 'Gesamt'],
+  ['deposit', 'Deposit', 'ເງິນມັດຈຳ', 'เงินมัดจำ', '订金', '보증금', '内金', 'Acompte', 'Anzahlung'],
+  ['balance', 'Balance', 'ຍອດຄ້າງ', 'ยอดคงเหลือ', '余额', '잔액', '残額', 'Solde', 'Restbetrag'],
+  ['rate', 'Exchange rate', 'ອັດຕາແລກປ່ຽນ', 'อัตราแลกเปลี่ยน', '汇率', '환율', '為替レート', 'Taux de change', 'Wechselkurs'],
+  ['custsig', 'Customer signature', 'ລາຍເຊັນລູກຄ້າ', 'ลายเซ็นลูกค้า', '客户签名', '고객 서명', 'お客様署名', 'Signature du client', 'Unterschrift des Kunden'],
+  ['issuedby', 'Issued by', 'ອອກໂດຍ', 'ออกโดย', '开具人', '발행자', '発行者', 'Émis par', 'Ausgestellt von'],
+  ['thanks', 'Thank you for travelling with us!', 'ຂອບໃຈທີ່ເດີນທາງກັບພວກເຮົາ!', 'ขอบคุณที่เดินทางกับเรา!', '感谢您与我们同行！',
+    '저희와 함께 여행해 주셔서 감사합니다!', 'ご利用ありがとうございました！', 'Merci d’avoir voyagé avec nous !', 'Danke, dass Sie mit uns gereist sind!'],
+  ['draft', 'DRAFT', 'ຮ່າງ', 'ฉบับร่าง', '草稿', '초안', '下書き', 'BROUILLON', 'ENTWURF']
+];
+var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by'];
+var RECEIPT_RATE = 22500;
+
+// Receipt settings live in Settings E8:F12; written once, then staff-owned.
+function setupReceiptSettings_(ss) {
+  var sh = ss.getSheetByName(TABS.settings);
+  if (String(sh.getRange('E8').getValue()) !== '') return;
+  sh.getRange('E8:F12').setValues([
+    ['Receipts: kip per 1 USD', RECEIPT_RATE],
+    ['Receipts: business name', 'Eco Lao Adventure Trails'],
+    ['Receipts: address', 'Nong Khiaw, Meuang Ngoi District, Luang Prabang, Laos'],
+    ['Receipts: contact line', 'WhatsApp +856 20 5897 5057 | +856 20 2299 9917 | nongkhiawlaos@gmail.com | nongkhiawlaos.com'],
+    ['Receipts: logo (link to an image)', 'https://nongkhiawlaos.com/images/logo.png']]);
+  sh.getRange('F8').setNumberFormat('#,##0');
+}
+
+function receiptRate_(ss) { return Number(ss.getSheetByName(TABS.settings).getRange('F8').getValue()) || RECEIPT_RATE; }
+
+function setupReceipt_(ss) {
+  setupReceiptSettings_(ss);
+  var log = ss.getSheetByName(TABS.receiptLog) || ss.insertSheet(TABS.receiptLog);
+  log.getRange(1, 1, 1, RECEIPT_LOG_COLS.length).setValues([RECEIPT_LOG_COLS]).setFontWeight('bold').setBackground('#e8f0ea');
+  log.setFrozenRows(1);
+  log.getRange('A2:A').setNumberFormat('@'); log.getRange('B2:B').setNumberFormat('dd/mm/yyyy');
+  log.getRange('E2:H').setNumberFormat('#,##0.00'); log.getRange('F2:F').setNumberFormat('#,##0');
+  log.setColumnWidths(1, RECEIPT_LOG_COLS.length, 110);
+
+  var tx = ss.getSheetByName(TABS.receiptText) || ss.insertSheet(TABS.receiptText);   // rewritten every setup
+  tx.clear();
+  tx.getRange(1, 1, 1, 9).setValues([['Key'].concat(RECEIPT_LANGS)]);
+  tx.getRange(2, 1, RECEIPT_TEXT.length, 9).setValues(RECEIPT_TEXT);
+  tx.hideSheet();
+
+  var sh = ss.getSheetByName(TABS.receipt) || ss.insertSheet(TABS.receipt);
+  var keep = sh.getRange('B1:B3').getValues();   // what staff picked survives a rebuild
+  sh.clear(); sh.clearConditionalFormatRules(); sh.setHiddenGridlines(true);
+  var lang = keep[1][0] || 'English';
+  var L = function (k) { return 'IFERROR(INDEX(\'' + TABS.receiptText + '\'!$B$2:$I$60,MATCH("' + k + '",\'' + TABS.receiptText + '\'!$A$2:$A$60,0),$K$2),"' + k + '")'; };
+  var colOf = function (c) { return colLetter_(BOOKING_COLS.indexOf(c) + 1); };
+  var bk = function (c) { return 'IFERROR(INDEX(Bookings!$' + colOf(c) + '$1:$' + colOf(c) + ',$K$1),"")'; };
+  var S = function (a) { return 'Settings!' + a; };
+
+  // controls (not printed)
+  sh.getRange('A1:A3').setValues([['Booking ID'], ['Language'], ['Deposit (USD)']]).setFontWeight('bold');
+  sh.getRange('B1:B3').setValues([[keep[0][0] || ''], [lang], [keep[2][0] || '']]).setBackground('#fff2a8').setFontWeight('bold');
+  sh.getRange('B1').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(ss.getSheetByName(TABS.bookings).getRange('A2:A'), true).setAllowInvalid(true).build());
+  sh.getRange('B2').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(RECEIPT_LANGS, true).setAllowInvalid(false).build());
+  sh.getRange('B3').setNumberFormat('#,##0.00');
+  sh.getRange('C1:F1').merge().setValue('1) Pick the Booking ID and the language (yellow cells). 2) Menu "Receipts" > "Issue receipt" gives it the next number. ' +
+    '3) Click Download PDF below and send it to the guest.').setWrap(true).setFontColor('#5a665f');
+  var pdf = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=pdf&gid=' + sh.getSheetId() +
+    '&range=A5:F41&portrait=true&size=A4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false&top_margin=0.4&bottom_margin=0.4&left_margin=0.5&right_margin=0.5';
+  sh.getRange('C3').setFormula('=HYPERLINK("' + pdf + '","Download PDF")').setFontWeight('bold').setFontColor('#1155cc');
+  sh.getRange('K1').setFormula('=IFERROR(MATCH($B$1,Bookings!$A$1:$A,0),0)');
+  sh.getRange('K2').setFormula('=IFERROR(MATCH($B$2,\'' + TABS.receiptText + '\'!$B$1:$I$1,0),1)');
+  sh.getRange('K3').setFormula('=IFERROR(MATCH($B$1,\'' + TABS.receiptLog + '\'!$C$1:$C,0),0)');
+  sh.getRange('K4').setFormula('=' + S('$F$8'));
+  sh.getRange('J1:J4').setValues([['row'], ['lang'], ['logged'], ['rate']]);
+  sh.hideColumns(10, 2);
+
+  // header
+  sh.getRange('A5:A7').merge().setFormula('=IFERROR(IMAGE(' + S('$F$12') + '),"")');
+  sh.getRange('B5:F5').merge().setFormula('=' + S('$F$9')).setFontSize(16).setFontWeight('bold').setFontColor('#0b3d2e');
+  sh.getRange('B6:F6').merge().setFormula('=' + S('$F$10')).setFontColor('#5a665f');
+  sh.getRange('B7:F7').merge().setFormula('=' + S('$F$11')).setFontColor('#5a665f').setWrap(true);
+  sh.getRange('A8:F8').setBorder(true, null, null, null, null, null, '#0b3d2e', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  sh.getRange('A9:D9').merge().setFormula('=' + L('receipt')).setFontSize(20).setFontWeight('bold');
+  sh.getRange('E9').setFormula('=' + L('no') + '&" "').setHorizontalAlignment('right').setFontWeight('bold');
+  sh.getRange('F9').setFormula('=IF($K$3>0,INDEX(\'' + TABS.receiptLog + '\'!$A$1:$A,$K$3),' + L('draft') + ')').setFontWeight('bold').setFontColor('#c0392b');
+  sh.getRange('A10').setFormula('=' + L('name') + '&":"').setFontWeight('bold');
+  sh.getRange('B10:D10').merge().setFormula('=' + bk('Lead name'));
+  sh.getRange('E10').setFormula('=' + L('issued') + '&":"').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('F10').setFormula('=IF($K$3>0,INDEX(\'' + TABS.receiptLog + '\'!$B$1:$B,$K$3),TODAY())').setNumberFormat('dd/mm/yyyy').setHorizontalAlignment('left');
+  sh.getRange('A11').setFormula('=' + L('tourdate') + '&":"').setFontWeight('bold');
+  sh.getRange('B11:D11').merge().setFormula('=IFERROR(TEXT(' + bk('Tour date') + ',"dd/mm/yyyy"),"")').setHorizontalAlignment('left');
+  sh.getRange('E11').setFormula('=' + L('payment') + '&":"').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('F11').setFormula('=' + bk('Payment method'));
+  sh.getRange('A12').setFormula('=' + L('tour') + '&":"').setFontWeight('bold');
+  sh.getRange('B12:F12').merge().setFormula('=' + bk('Tour name'));
+  sh.getRange('A13').setFormula('=' + L('pickup') + '&":"').setFontWeight('bold');
+  sh.getRange('B13:F13').merge().setFormula('=IF(OR(' + bk('Transfer') + '="",' + bk('Transfer') + '="No"),"",' + bk('Transfer') + '&IF(' + bk('Pickups') +
+    '="","","  |  "&' + bk('Pickups') + ')&IF(' + bk('Pickup date') + '="","","  |  "&TEXT(' + bk('Pickup date') + ',"dd/mm/yyyy")))').setWrap(true);
+
+  // travellers
+  sh.getRange('A15').setFormula('=' + L('no'));
+  sh.getRange('B15').setFormula('=' + L('name'));
+  sh.getRange('C15').setFormula('=' + L('passport'));
+  sh.getRange('D15').setFormula('=' + L('food'));
+  sh.getRange('A15:F15').setFontWeight('bold').setBackground('#e8f0ea');
+  var T = function (c) { return 'Travellers!$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1) + '$2:$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1); };
+  sh.getRange('A16').setFormula('=IFERROR(FILTER({' + T('Traveller #') + ',' + T('Full name') + ',' + T('Passport no') + ',' + T('Food') +
+    '},(' + T('Booking ID') + '=$B$1)*($B$1<>"")),"")');
+  sh.getRange('A16:F27').setBorder(null, null, true, null, null, true, '#cfd8d3', SpreadsheetApp.BorderStyle.SOLID);
+
+  // amounts
+  sh.getRange('A29:B29').merge().setFormula('=' + L('item'));
+  sh.getRange('C29').setFormula('=' + L('details'));
+  sh.getRange('D29').setValue('USD');
+  sh.getRange('E29').setFormula('=' + L('kip'));
+  sh.getRange('A29:F29').setFontWeight('bold').setBackground('#e8f0ea');
+  var rate = '$K$4';
+  var lines = [
+    [30, 'tour', '=' + bk('People') + '&" "&' + L('people'), '=N(' + bk('Est. tour USD') + ')', '=ROUND(D30*' + rate + ',0)'],
+    [31, 'transport', '=' + bk('Transfer'), '=E31/' + rate, '=N(' + bk('Est. transfer kip') + ')'],
+    [32, 'lunch', '=' + bk('Takeaway lunch'), '=E32/' + rate, '=N(' + bk('Lunch kip') + ')']];
+  lines.forEach(function (x) {
+    sh.getRange('A' + x[0] + ':B' + x[0]).merge().setFormula('=' + L(x[1]));
+    sh.getRange('C' + x[0]).setFormula(x[2]).setWrap(true);
+    sh.getRange('D' + x[0]).setFormula(x[3]); sh.getRange('E' + x[0]).setFormula(x[4]);
+  });
+  sh.getRange('A33:B33').merge().setFormula('=' + L('total')); sh.getRange('D33').setFormula('=SUM(D30:D32)'); sh.getRange('E33').setFormula('=SUM(E30:E32)');
+  sh.getRange('A34:B34').merge().setFormula('=' + L('deposit')); sh.getRange('D34').setFormula('=N($B$3)'); sh.getRange('E34').setFormula('=ROUND(D34*' + rate + ',0)');
+  sh.getRange('A35:B35').merge().setFormula('=' + L('balance')); sh.getRange('D35').setFormula('=D33-D34'); sh.getRange('E35').setFormula('=E33-E34');
+  sh.getRange('D30:D35').setNumberFormat('#,##0.00'); sh.getRange('E30:E35').setNumberFormat('#,##0');
+  sh.getRange('A33:F33').setFontWeight('bold').setBorder(true, null, null, null, null, null, '#0b3d2e', SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange('A35:F35').setFontWeight('bold').setBackground('#fff2a8');
+  sh.getRange('A36:E36').merge().setFormula('=' + L('rate') + '&": 1 USD = "&TEXT(' + rate + ',"#,##0")&" kip"').setFontColor('#5a665f').setFontStyle('italic');
+  sh.getRange('A38:C38').merge().setFormula('=' + L('custsig') + '&": ______________________"');
+  sh.getRange('D38:F38').merge().setFormula('=' + L('issuedby') + '&": ______________"');
+  sh.getRange('A41:F41').merge().setFormula('=' + L('thanks')).setHorizontalAlignment('center').setFontColor('#2f6b4f').setFontWeight('bold');
+  sh.setColumnWidth(1, 90); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 190); sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 120); sh.setColumnWidth(6, 120);
+  sh.setRowHeights(5, 3, 26); sh.setRowHeights(1, 3, 24);
+  sh.getRange('A5:F41').setVerticalAlignment('middle');
+}
+
+// Gives the booking in the Receipt tab the next receipt number (once); returns the number.
+function issueReceipt_(ss, id) {
+  var sh = ss.getSheetByName(TABS.receipt), log = ss.getSheetByName(TABS.receiptLog), bk = ss.getSheetByName(TABS.bookings);
+  var ids = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return r[0]; });
+  var at = ids.indexOf(id);
+  if (at < 1) throw new Error('Pick a Booking ID in the yellow cell first.');
+  var rows = log.getLastRow() > 1 ? log.getRange(2, 1, log.getLastRow() - 1, 3).getDisplayValues() : [];
+  var next = 1;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][2] === id) return { no: rows[i][0], isNew: false };
+    next = Math.max(next, Number(rows[i][0]) + 1);
+  }
+  var no = ('000000' + next).slice(-6);
+  SpreadsheetApp.flush();
+  var v = sh.getRange('D33:E35').getValues();   // total, deposit, balance (USD, kip)
+  var who = '';
+  try { who = Session.getActiveUser().getEmail(); } catch (e) { who = ''; }
+  log.getRange(log.getLastRow() + 1, 1, 1, RECEIPT_LOG_COLS.length).setValues([[text_(no), new Date(), id, sh.getRange('B2').getValue(),
+    v[0][0], v[0][1], v[1][0], v[2][0], who]]);
+  log.getRange(log.getLastRow(), 2).setNumberFormat('dd/mm/yyyy');
+  bk.getRange(at + 1, BOOKING_COLS.indexOf('Receipt No') + 1).setValue(text_(no));
+  return { no: no, isNew: true };
+}
+
+function issueReceipt() {
+  var ss = SpreadsheetApp.getActive(), ui = SpreadsheetApp.getUi();
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    var id = String(ss.getSheetByName(TABS.receipt).getRange('B1').getValue()).trim();
+    var r = issueReceipt_(ss, id);
+    SpreadsheetApp.flush();
+    ui.alert(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" in the Receipt tab.' :
+      'This booking already has receipt ' + r.no + '. Nothing changed; the receipt tab shows it.');
+  } catch (e) {
+    ui.alert(String(e.message || e));
+  } finally { lock.releaseLock(); }
+}
+
+// From the Bookings tab: click any cell in the booking's row, then this item.
+function receiptForSelectedBooking() {
+  var ss = SpreadsheetApp.getActive(), sh = ss.getActiveSheet();
+  if (sh.getName() !== TABS.bookings || sh.getActiveRange().getRow() < 2) {
+    SpreadsheetApp.getUi().alert('Click a cell in a booking row on the Bookings tab first.'); return;
+  }
+  var id = sh.getRange(sh.getActiveRange().getRow(), 1).getValue();
+  var r = ss.getSheetByName(TABS.receipt);
+  r.getRange('B1').setValue(id); r.getRange('B3').clearContent();
+  ss.setActiveSheet(r);
+}
+
+function receiptSelfTest_(ss, id) {
+  var sh = ss.getSheetByName(TABS.receipt), keep = sh.getRange('B1:B3').getValues(), log = ss.getSheetByName(TABS.receiptLog);
+  try {
+    sh.getRange('B1').setValue(id); sh.getRange('B2').setValue('Deutsch'); sh.getRange('B3').setValue(10);
+    SpreadsheetApp.flush();
+    var rate = receiptRate_(ss), draft = sh.getRange('F9').getDisplayValue(), title = sh.getRange('A9').getDisplayValue();
+    var r1 = issueReceipt_(ss, id), r2 = issueReceipt_(ss, id);   // second call must not issue a new number
+    SpreadsheetApp.flush();
+    var wantKip = Math.round(60 * rate) + 570000 + 65000;
+    var kip = sh.getRange('E33').getValue(), bal = sh.getRange('D35').getValue();
+    var trav = sh.getRange('B16').getDisplayValue() + sh.getRange('C16').getDisplayValue();
+    var lookup = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[0] || [];
+    var c = { draft: draft === 'ENTWURF', title: title === 'QUITTUNG', no6: /^\d{6}$/.test(r1.no), first: r1.isNew, second: !r2.isNew && r2.no === r1.no,
+      shown: sh.getRange('F9').getDisplayValue() === r1.no, kip: kip === wantKip, bal: Math.abs(bal - (60 + (570000 + 65000) / rate - 10)) < 0.01,
+      trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no };
+    var failed = Object.keys(c).filter(function (k) { return !c[k]; });
+    return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' bal=' + bal + ' trav=' + trav : true;
+  } catch (e) {
+    return 'error: ' + e;
+  } finally {
+    sh.getRange('B1:B3').setValues(keep);
+    for (var i = log.getLastRow(); i >= 2; i--) if (String(log.getRange(i, 3).getValue()).indexOf('SELFTEST-') === 0) log.deleteRow(i);
+  }
 }
 
 /* ---------- Trip sheet: pick a date, see everyone on tours that day ---------- */
@@ -365,7 +598,9 @@ function configJson_(holdsLock) {
 }
 
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('Website').addItem('Update the website now', 'updateWebsiteNow').addToUi();
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('Website').addItem('Update the website now', 'updateWebsiteNow').addToUi();
+  ui.createMenu('Receipts').addItem('Receipt for the selected booking', 'receiptForSelectedBooking').addItem('Issue receipt (give it a number)', 'issueReceipt').addToUi();
 }
 
 function updateWebsiteNow() {
@@ -404,13 +639,18 @@ function setupHelp_(ss) {
     ['PHOTOS'],
     ['Photos are not in the sheet. Send the new photo to Jeevesh, or upload it on GitHub (images folder) with the same file name.'],
     [''],
+    ['RECEIPTS  (tabs "Receipt", "Receipt log"; rate, name and logo in Settings E8:F12)'],
+    ['1. Receipt tab: pick the Booking ID and the language (yellow cells), type a Deposit in USD if the guest paid one.'],
+    ['2. Menu "Receipts" > "Issue receipt" gives it the next number (000001, 000002, ...). It is saved in the Receipt log and in Bookings > Receipt No.'],
+    ['3. Click "Download PDF" in the Receipt tab and send it to the guest. Balance = tour + transport + food - deposit.'],
+    [''],
     ['BOOKINGS  (tabs "Bookings", "Travellers", "Inquiries", "Dashboard")'],
     ['Set Status, Receipt No and Amount paid in "Bookings". The Dashboard updates by itself.']
   ];
   sh.getRange(1, 1, lines.length, 1).setValues(lines).setWrap(true).setVerticalAlignment('top');
   sh.setColumnWidth(1, 760);
   sh.getRange('A1').setFontSize(16).setFontWeight('bold');
-  ['A3', 'A12', 'A15', 'A18', 'A21', 'A24'].forEach(function (a) { sh.getRange(a).setFontWeight('bold').setFontColor('#2f6b4f'); });
+  ['A3', 'A12', 'A15', 'A18', 'A21', 'A24', 'A29'].forEach(function (a) { sh.getRange(a).setFontWeight('bold').setFontColor('#2f6b4f'); });
 }
 
 // Seeded once with the reviews the site showed before; after that the tab is staff-owned and never overwritten.
@@ -704,6 +944,7 @@ function selfTest_(ss) {
   out.lunchOk = b[BOOKING_COLS.indexOf('Takeaway lunch')] === 'Avocado sandwich 1' && b[BOOKING_COLS.indexOf('Lunch kip')] === '65,000' &&
     t2[TRAVELLER_COLS.indexOf('Takeaway lunch')] === 'Avocado sandwich' && t2[TRAVELLER_COLS.indexOf('Lunch kip')] === '65,000';
   out.tripOk = tripSelfTest_(ss);
+  out.receiptOk = receiptSelfTest_(ss, id);
   out.reviewsOk = JSON.parse(reviewsJson_()).length > 0;
   out.contentOk = contentSelfTest_(ss);
   var testIds = {};  // booking IDs of test bookings (a site test has an NK... ID and SELFTEST- as lead name)

@@ -1313,12 +1313,14 @@ function transportData_(ss) {
   return { B: B, bi: bi, riders: riders };
 }
 
-// What Noy sends the minivan team for a booking, in her words: pax, up date, pickup (place + map), down date and drop-off.
-function teamMessage_(people, up, down, train) {
+// What Noy sends the minivan team for a booking, in her words: pax, the guest and their WhatsApp (a wa.me link the driver can
+// tap), up date, pickup (place + map), down date and drop-off.
+function teamMessage_(people, up, down, train, guest, phone) {
   var dm = function (v) { return v instanceof Date ? Utilities.formatDate(v, TIME_ZONE, 'dd/MM') : String(v || ''); };
   var places = [], seen = {};
   people.forEach(function (p) { var k = p.place + ' ' + p.map; if (!seen[k]) { seen[k] = true; places.push((p.place + ' ' + p.map).trim()); } });
-  return ['ໄປກັບ ' + people.length + 'pax', 'ຂຶ້ນ: ' + dm(up), 'ບ່ອນຮັບ: ' + places.join(' / ')]
+  var digits = String(phone || '').replace(/\D/g, '').replace(/^00/, '');
+  return ['ໄປກັບ ' + people.length + 'pax', 'ລູກຄ້າ: ' + guest + (digits.length >= 7 ? '  WhatsApp: ' + String(phone).trim() + ' https://wa.me/' + digits : ''), 'ຂຶ້ນ: ' + dm(up), 'ບ່ອນຮັບ: ' + places.join(' / ')]
     .concat(down ? ['ລົງ: ' + dm(down) + ' ' + (train ? 'ສົ່ງສະຖານີລົດໄຟ' : 'ສົ່ງກາງເມືອງ')] : []).join('\n');
 }
 
@@ -1337,7 +1339,8 @@ function buildTransport_(ss) {
     if (!id || status === 'Cancelled' || !/one way|round/i.test(transfer)) continue;
     var people = d.riders[id] || [{ n: 1, name: String(V(row, 'Lead name')), first: '', place: String(V(row, 'Accommodation')), map: String(V(row, 'Maps link')) }];
     var phone = V(row, 'WhatsApp no'), first = people[0].first || people[0].name;
-    var team = teamMessage_(people, V(row, 'Pickup date'), /round/i.test(transfer) ? V(row, 'Return date') : '', V(row, 'Train station drop-off') === 'Yes');
+    var team = teamMessage_(people, V(row, 'Pickup date'), /round/i.test(transfer) ? V(row, 'Return date') : '', V(row, 'Train station drop-off') === 'Yes',
+      V(row, 'Lead name') || people[0].name, phone);
     var base = function (p, i) { return [i ? '' : V(row, 'Submitted at'), id, V(row, 'Receipt No'), i ? '' : text_(String(phone)), p.name, i ? '' : people.length]; };
     if (dayKey_(V(row, 'Pickup date')) === day) {
       var plate = String(V(row, 'Vehicle to Nong Khiaw'));
@@ -1457,6 +1460,7 @@ function transportSelfTest_(ss, id) {
     a = find('arr');
     var f = sh.getRange(a.row, 12).getFormula();
     if (a.v[12].indexOf('ໄປກັບ 1pax') !== 0 || a.v[12].indexOf('ສົ່ງສະຖານີລົດໄຟ') === -1) return 'team message';
+    if (a.v[12].indexOf('ລູກຄ້າ: Test Person  WhatsApp: +856 20 1234 5678 https://wa.me/8562012345678') === -1) return 'team whatsapp';
     if (a.v[9] !== 'ກກ 5696' || f.indexOf('wa.me/8562012345678') === -1 || f.indexOf(encodeURIComponent('ກກ 5696')) === -1) return 'plate saved';
     cell.setValue(new Date(2030, 0, 18, 12)); buildTransport_(ss);
     var dRow = find('dep');

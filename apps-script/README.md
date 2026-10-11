@@ -97,3 +97,13 @@ falls back to the list built into `js/main.js` (`MENU`) if the sheet cannot be r
   one row per traveller in the **Agreements** tab (photo permission, medical, emergency contact, insurance no, typed name as
   signature, language, form version). The script checks everything again; a traveller signs once.
 - Wording = Noy's paper form (version stamp in `AGREEMENT_VERSION`); to change it edit `js/agreement-i18n.js` and bump the version.
+
+## All guests tab, return trip on the receipt
+- **All guests**: one row per traveller with the booking beside them (receipt, status, transfer, dates, payment, amounts). It is one
+  formula in A5 (read-only; edit in Bookings/Travellers). Yellow cell B2 = show tours from this date on; soonest first, undated guests last.
+- **Receipt** tab: yellow cells D2 (pickup time) and F2 (return time) are shown on the receipt; the Return line shows Nong Khiaw >
+  Luang Prabang, the return date and the drop-off ("city center", or the Luang Prabang train station when the booking ticked it).
+
+## How to book (website)
+Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text in the drawings, so every language works) and text keys
+`hs1t`..`hs7p` in `js/i18n-tours.js` (editable from the Content tab).

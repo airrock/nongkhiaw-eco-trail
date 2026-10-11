@@ -10,7 +10,7 @@
 
 var TABS = { bookings: 'Bookings', travellers: 'Travellers', inquiries: 'Inquiries', reviews: 'Reviews', settings: 'Settings',
   dashboard: 'Dashboard', content: 'Content', contentBase: 'Content base', help: 'How to edit', trip: 'Trip sheet', lunch: 'Lunch menu',
-  receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text', agreements: 'Agreements' };
+  receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text', agreements: 'Agreements', allGuests: 'All guests' };
 
 var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'Tour', 'Tour name', 'People', 'Lead name',
   'Traveller names', 'Countries', 'Food', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
@@ -62,6 +62,7 @@ function setup() {
   setupTrip_(ss);
   setupReceipt_(ss);
   setupAgreements_(ss);
+  setupAllGuests_(ss);
 
   // Travellers.Status follows the booking's status, so cancelled trips drop out of the reports.
   var trav = ss.getSheetByName(TABS.travellers);
@@ -76,7 +77,7 @@ function setup() {
   var blank = ss.getSheetByName('Sheet1');
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   // Tab order: the ones used every day first, set-up tabs last.
-  [TABS.dashboard, TABS.bookings, TABS.travellers, TABS.trip, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
+  [TABS.dashboard, TABS.allGuests, TABS.bookings, TABS.travellers, TABS.trip, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
     .forEach(function (n, i) { var t = ss.getSheetByName(n); if (t) { ss.setActiveSheet(t); ss.moveActiveSheet(i + 1); } });
   ss.setActiveSheet(ss.getSheetByName(TABS.dashboard));
 }
@@ -236,6 +237,11 @@ var RECEIPT_TEXT = [   // key, then the 8 languages in RECEIPT_LANGS order
   ['issuedby', 'Issued by', 'ອອກໂດຍ', 'ออกโดย', '开具人', '발행자', '発行者', 'Émis par', 'Ausgestellt von'],
   ['thanks', 'Thank you for travelling with us!', 'ຂອບໃຈທີ່ເດີນທາງກັບພວກເຮົາ!', 'ขอบคุณที่เดินทางกับเรา!', '感谢您与我们同行！',
     '저희와 함께 여행해 주셔서 감사합니다!', 'ご利用ありがとうございました！', 'Merci d’avoir voyagé avec nous !', 'Danke, dass Sie mit uns gereist sind!'],
+  ['return', 'Return', 'ການກັບ', 'ขากลับ', '返程', '복귀', '帰り', 'Retour', 'Rückfahrt'],
+  ['dropoff', 'Drop-off', 'ຈຸດສົ່ງ', 'จุดส่ง', '下车地点', '하차 장소', '降車場所', 'Dépose', 'Absetzort'],
+  ['citycenter', 'city center', 'ກາງເມືອງ', 'ใจกลางเมือง', '市中心', '시내 중심', '市の中心部', 'centre-ville', 'Stadtzentrum'],
+  ['train', 'Luang Prabang train station', 'ສະຖານີລົດໄຟຫຼວງພະບາງ', 'สถานีรถไฟหลวงพระบาง', '琅勃拉邦火车站', '루앙프라방 기차역', 'ルアンパバーン駅', 'gare de Luang Prabang', 'Bahnhof Luang Prabang'],
+  ['time', 'Time', 'ເວລາ', 'เวลา', '时间', '시간', '時間', 'Heure', 'Uhrzeit'],
   ['draft', 'DRAFT', 'ຮ່າງ', 'ฉบับร่าง', '草稿', '초안', '下書き', 'BROUILLON', 'ENTWURF']
 ];
 var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by', 'Form key'];
@@ -273,7 +279,7 @@ function setupReceipt_(ss) {
   tx.hideSheet();
 
   var sh = ss.getSheetByName(TABS.receipt) || ss.insertSheet(TABS.receipt);
-  var keep = sh.getRange('B1:B3').getValues();   // what staff picked survives a rebuild
+  var keep = sh.getRange('B1:B3').getValues(), keepTimes = [sh.getRange('D2').getValue(), sh.getRange('F2').getValue()];   // what staff picked survives a rebuild
   sh.clear(); sh.clearConditionalFormatRules(); sh.setHiddenGridlines(true);
   var lang = keep[1][0] || 'English';
   var L = function (k) { return 'IFERROR(INDEX(\'' + TABS.receiptText + '\'!$B$2:$I$60,MATCH("' + k + '",\'' + TABS.receiptText + '\'!$A$2:$A$60,0),$K$2),"' + k + '")'; };
@@ -287,6 +293,10 @@ function setupReceipt_(ss) {
   sh.getRange('B1').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(ss.getSheetByName(TABS.bookings).getRange('A2:A'), true).setAllowInvalid(true).build());
   sh.getRange('B2').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(RECEIPT_LANGS, true).setAllowInvalid(false).build());
   sh.getRange('B3').setNumberFormat('#,##0.00');
+  sh.getRange('C2').setValue('Pickup time').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('E2').setValue('Return time').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('D2').setValue(keepTimes[0] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
+  sh.getRange('F2').setValue(keepTimes[1] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
   sh.getRange('C1:F1').merge().setValue('1) Pick the Booking ID and the language (yellow cells). 2) Menu "Receipts" > "Issue receipt" gives it the next number. ' +
     '3) Click Download PDF below and send it to the guest.').setWrap(true).setFontColor('#5a665f');
   var pdf = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=pdf&gid=' + sh.getSheetId() +
@@ -322,7 +332,10 @@ function setupReceipt_(ss) {
   sh.getRange('B12:F12').merge().setFormula('=' + bk('Tour name'));
   sh.getRange('A13').setFormula('=' + L('pickup') + '&":"').setFontWeight('bold');
   sh.getRange('B13:F13').merge().setFormula('=IF(OR(' + bk('Transfer') + '="",' + bk('Transfer') + '="No"),"",' + bk('Transfer') + '&IF(' + bk('Pickups') +
-    '="","","  |  "&' + bk('Pickups') + ')&IF(' + bk('Pickup date') + '="","","  |  "&TEXT(' + bk('Pickup date') + ',"dd/mm/yyyy")))').setWrap(true);
+    '="","","  |  "&' + bk('Pickups') + ')&IF(' + bk('Pickup date') + '="","","  |  "&TEXT(' + bk('Pickup date') + ',"dd/mm/yyyy")&IF($D$2="",""," "&$D$2)))').setWrap(true);
+  sh.getRange('A14').setFormula('=IF(' + bk('Transfer') + '="Round trip",' + L('return') + '&":","")').setFontWeight('bold');
+  sh.getRange('B14:F14').merge().setFormula('=IF(' + bk('Transfer') + '="Round trip","Nong Khiaw → Luang Prabang  |  "&IF(' + bk('Return date') + '="","",TEXT(' + bk('Return date') +
+    ',"dd/mm/yyyy")&IF($F$2="",""," "&$F$2)&"  |  ")&' + L('dropoff') + '&": "&IF(' + bk('Train station drop-off') + '="Yes",' + L('train') + ',' + L('citycenter') + '),"")').setWrap(true);
 
   // travellers
   sh.getRange('A15').setFormula('=' + L('no'));
@@ -344,7 +357,7 @@ function setupReceipt_(ss) {
   var rate = '$K$4';
   var lines = [
     [30, 'tour', '=' + bk('People') + '&" "&' + L('people'), '=N(' + bk('Est. tour USD') + ')', '=ROUND(D30*' + rate + ',0)'],
-    [31, 'transport', '=' + bk('Transfer'), '=E31/' + rate, '=N(' + bk('Est. transfer kip') + ')'],
+    [31, 'transport', '=' + bk('Transfer') + '&IF(' + bk('Train station drop-off') + '="Yes"," + "&' + L('train') + ',"")', '=E31/' + rate, '=N(' + bk('Est. transfer kip') + ')'],
     [32, 'lunch', '=' + bk('Takeaway lunch'), '=E32/' + rate, '=N(' + bk('Lunch kip') + ')']];
   lines.forEach(function (x) {
     sh.getRange('A' + x[0] + ':B' + x[0]).merge().setFormula('=' + L(x[1]));
@@ -436,6 +449,9 @@ function receiptSelfTest_(ss, id) {
     var c = { draft: draft === 'ENTWURF', title: title === 'QUITTUNG', no6: /^\d{6}$/.test(r1.no), first: r1.isNew, second: !r2.isNew && r2.no === r1.no,
       shown: sh.getRange('F9').getDisplayValue() === r1.no, kip: kip === wantKip, bal: Math.abs(bal - (60 + (570000 + 65000) / rate - 10)) < 0.01,
       agree: agreementSelfTest_(ss, id, r1.key) === true,
+      ret: sh.getRange('A14').getDisplayValue() === 'Rückfahrt:' && sh.getRange('B14').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1 &&
+        sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
+      all: allGuestsSelfTest_(ss, id),
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' bal=' + bal + ' trav=' + trav : true;
@@ -538,6 +554,43 @@ function agreementSelfTest_(ss, id, key) {
   try { saveAgreement_(ss, { key: '0123456789abcdef', people: people }); } catch (e) { wrongKey = true; }
   return j.travellers.length === 2 && j.travellers[0].first === 'Test' && j.signed.length === 0 && badKey && first === 1 && again === 0 &&
     after.signed.length === 1 && after.signed[0] === 1 && wrongKey;
+}
+
+/* ---------- All guests: one row per traveller with the booking beside it (read-only view) ---------- */
+
+function setupAllGuests_(ss) {
+  var sh = ss.getSheetByName(TABS.allGuests) || ss.insertSheet(TABS.allGuests);
+  var from = sh.getRange('B2').getValue();
+  sh.clear(); sh.clearConditionalFormatRules();
+  var T = function (c) { return 'Travellers!$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1) + '$2:$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1); };
+  var lastB = colLetter_(BOOKING_COLS.length);
+  var V = function (c) { return 'ARRAYFORMULA(IFERROR(VLOOKUP(Travellers!$A$2:$A,Bookings!$A$2:$' + lastB + ',' + (BOOKING_COLS.indexOf(c) + 1) + ',FALSE),""))'; };
+  var cols = [   // [header, formula part, number format]
+    ['Tour date', T('Tour date'), 'dd/mm/yyyy'], ['Tour', T('Tour'), '@'], ['Name', T('Full name')], ['Country', T('Country')], ['Gender', T('Gender')],
+    ['Passport no', T('Passport no'), '@'], ['Passport expires', T('Passport expires'), 'dd/mm/yyyy'], ['Food', T('Food')],
+    ['Takeaway lunch', T('Takeaway lunch')], ['Pickup place', T('Pickup place')], ['Booking ID', T('Booking ID')], ['Receipt No', T('Receipt No')],
+    ['Status', T('Status')], ['People in booking', V('People')], ['Transfer', V('Transfer')], ['Pickup date', V('Pickup date'), 'dd/mm/yyyy'],
+    ['Return date', V('Return date'), 'dd/mm/yyyy'], ['Train station drop-off', V('Train station drop-off')], ['Payment method', V('Payment method')],
+    ['Est. tour USD', V('Est. tour USD'), '#,##0'], ['Amount paid USD', V('Amount paid USD'), '#,##0.00'], ['Source', V('Source')]];
+  sh.getRange('A1').setValue('All guests: one row per traveller, with the booking details beside them. Read-only: change things in Bookings or Travellers.')
+    .setFontWeight('bold').setFontSize(13);
+  sh.getRange('A2').setValue('Show tours from (empty = all):').setFontWeight('bold');
+  sh.getRange('B2').setValue(from || '').setNumberFormat('dd/mm/yyyy').setBackground('#fff2a8').setFontWeight('bold').setHorizontalAlignment('left');
+  sh.getRange('C2').setValue('Soonest tour first; guests without a tour date at the end. Use Data > Create a filter to search or filter any column.').setFontColor('#5a665f');
+  sh.getRange(4, 1, 1, cols.length).setValues([cols.map(function (c) { return c[0]; })]).setFontWeight('bold').setBackground('#e8f0ea').setWrap(true);
+  var arr = '{' + cols.map(function (c) { return c[1]; }).join(',') + '}';
+  var cond = '(Travellers!$A$2:$A<>"")*((($B$2="")+(ISNUMBER(' + T('Tour date') + ')*(' + T('Tour date') + '>=$B$2)))>0)';
+  sh.getRange('A5').setFormula('=IFERROR(SORT(FILTER(' + arr + ',' + cond + '),1,TRUE),"No guests yet")');
+  cols.forEach(function (c, i) { if (c[2]) sh.getRange(5, i + 1, Math.max(sh.getMaxRows() - 4, 1), 1).setNumberFormat(c[2]); });
+  sh.setFrozenRows(4); sh.setFrozenColumns(3);
+  sh.setColumnWidths(1, cols.length, 110); sh.setColumnWidth(3, 190); sh.setColumnWidth(10, 180); sh.setColumnWidth(9, 160);
+}
+
+function allGuestsSelfTest_(ss, id) {
+  SpreadsheetApp.flush();
+  var sh = ss.getSheetByName(TABS.allGuests), v = sh.getRange(5, 1, Math.max(sh.getLastRow() - 4, 1), 22).getDisplayValues();
+  var rows = v.filter(function (r) { return r[10] === id; });
+  return rows.length === 2 && rows[0][2] === 'Test Person' && rows[0][3] === 'Germany' && rows[0][13] === '2' && rows[0][14] === 'Round trip';
 }
 
 /* ---------- Trip sheet: pick a date, see everyone on tours that day ---------- */

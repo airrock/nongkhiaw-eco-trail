@@ -127,4 +127,11 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - **Message guest** opens WhatsApp (wa.me) with the date, plate, pickup and drop-off for the guest. The booking form asks for the
   guest's WhatsApp number (optional) and saves it in Bookings > WhatsApp no.
 - Menu **Transport > Refresh** redraws the list after new bookings.
+- **Message for the minivan team** (column M): Noy's Lao text for the team, ready to copy: `ໄປກັບ 2pax / ຂຶ້ນ: 11/10 / ບ່ອນຮັບ: <place + map> /
+  ລົງ: 12/10 ສົ່ງສະຖານີລົດໄຟ` (or ສົ່ງກາງເມືອງ for the city center).
 
+## Duplicates and walk-ins
+- A booking ID is saved once: a repeated request with the same ID is ignored (`saveBooking_`). Menu **Bookings > Remove duplicate rows**
+  deletes rows saved twice (same Booking ID + lead name in Bookings; same Booking ID + name + passport in Travellers), keeping the first.
+- A traveller with no pickup place (walk-ins, bookings without transfer) shows as "Staying in Nong Khiaw" in the Trip sheet and All
+  guests (`stayingPlace_`); the stored data is unchanged.

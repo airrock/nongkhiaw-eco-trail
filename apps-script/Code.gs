@@ -1341,13 +1341,14 @@ function buildTransport_(ss) {
   var last = Math.max(sh.getLastRow(), TRANSPORT_START);
   sh.getRange(TRANSPORT_START - 1, 1, last - TRANSPORT_START + 2, TRANSPORT_WIDTH).clear().clearDataValidations();
   var out = [], formats = [];
+  var line = function (start) { while (start.length < TRANSPORT_WIDTH) start.push(''); return start; };   // a full-width row
   var section = function (title, head, rows, kind, colour) {
-    out.push([title + '   (' + rows.length + ' pax)'].concat(new Array(TRANSPORT_WIDTH - 1).join('.').split('.')));
+    out.push(line([title + '   (' + rows.length + ' pax)']));
     formats.push(['title', colour]);
     out.push(head.concat([''])); formats.push(['head', colour]);
-    if (!rows.length) { out.push(['Nobody on this date'].concat(new Array(TRANSPORT_WIDTH - 1).join('.').split('.'))); formats.push(['none']); }
+    if (!rows.length) { out.push(line(['Nobody on this date'])); formats.push(['none']); }
     rows.forEach(function (x) { out.push(x); formats.push(['row', kind]); });
-    out.push(new Array(TRANSPORT_WIDTH + 1).join('.').split('.')); formats.push(['gap']);
+    out.push(line([])); formats.push(['gap']);
   };
   section('↑ TO NONG KHIAW: pickup in Luang Prabang ' + shown, TRANSPORT_ARR, arr, 'arr', '#f6e7a1');
   section('↓ TO LUANG PRABANG: departure from Nong Khiaw ' + shown, TRANSPORT_DEP, dep, 'dep', '#c9daf8');

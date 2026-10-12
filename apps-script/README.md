@@ -95,7 +95,10 @@ falls back to the list built into `js/main.js` (`MENU`) if the sheet cannot be r
 - **Receipts > Download PDF** downloads the receipt named `No 000002 <lead name>.pdf` (numbering it first if needed). It fetches Google's
   PDF export with the user's token, so the script needs `drive.readonly`, `script.external_request` and `script.container.ui`; each
   person who uses it approves that once. After a scope change, the owner approves it (run any menu item) **before**
-  `clasp update-deployment`, or the web app's saves fail until they do.
+  `clasp update-deployment`, or the web app's saves fail until they do. If that fetch fails the dialog says why and still offers
+  **Open the PDF**: the plain export link opened in a new tab (no extra permission; the file then has Google's name).
+- **Receipts > Print receipt** numbers the receipt and opens that same A4 PDF in a new tab to print (the guest signs the "Customer
+  signature" line). Custom menus exist only in Sheets on a computer, not in the phone app.
 
 ## Tour agreement form (/agreement/)
 - Static page `agreement/index.html` (+ `js/agreement.js`, `js/agreement-i18n.js`, `css/agreement.css`), 8 languages, not indexed.
@@ -128,8 +131,12 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   The driver will come to you, please wait at the reception." (departures: to Luang Prabang, with the Nong Khiaw pickup and drop-off).
   Tomorrow / Today / On dd/mm/yyyy is worked out by the sheet (`TODAY()` vs the yellow date) when the link is clicked. The booking form asks for the
   guest's WhatsApp number (optional) and saves it in Bookings > WhatsApp no.
-- Menu **Transport > Refresh** redraws the list after new bookings.
-- **Message for the minivan team** (column M): Noy's Lao text for the team, ready to copy: `ໄປກັບ 2pax / ລູກຄ້າ: <lead name>  WhatsApp: <number> https://wa.me/<digits> / ຂຶ້ນ: 11/10 / ບ່ອນຮັບ: <place + map> /
+- The list is redrawn when the sheet is opened, after each website booking, and when a Transport-related Bookings column is typed in
+  (`bookingEdited_`, `TRANSPORT_SOURCES`); menu **Transport > Refresh** does it by hand. Headings are Lao for the team (↑ ຂຶ້ນ up to
+  Nong Khiaw, ↓ ລົງ back to Luang Prabang) and each list ends with a Total pax row.
+- A Return date typed on a one-way booking turns its Transfer into "Round trip" and recomputes Est. transfer kip (round price, plus the
+  train drop-off if set, times the travellers taking the minivan); the departure list also uses any Return date, whatever the Transfer says.
+- **Message for the minivan team** (column M): Noy's Lao text for the team, ready to copy: `Booking id: <ID> / Receipt no: 007 / ໄປກັບ 2pax / ລູກຄ້າ: <lead name>  WhatsApp: <number> https://wa.me/<digits> / ຂຶ້ນ: 11/10 / ບ່ອນຮັບ: <place + map> /
   ລົງ: 12/10 ສົ່ງສະຖານີລົດໄຟ` (or ສົ່ງກາງເມືອງ for the city center).
 
 ## Duplicates and walk-ins
@@ -141,7 +148,7 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 ## Guide report (for the guide team)
 - Tab **Guide report**: everyone on the tour on the yellow date (`=TODAY()+1`, tomorrow; staff may type another date, empty = tomorrow),
   cancelled bookings left out, each booking's travellers together, numbered. Noy's layout: No, Date of issue (Receipt log), Receipt No,
-  Contact name, Pax, Tour, Viewpoint, Additional package, Food, Pickup date from LPB (or "Staying in Nong Khiaw"), Tour start date,
-  Pick-up location, Departure date (return date / one way / n/a), Notes (Note + Staff notes).
+  Booking ID, Contact name, Pax (on the booking's first row only: a formula cannot merge cells; a bold Total row ends the list), Tour, Viewpoint, Additional package, Food, Pickup date from LPB (or "Staying in Nong Khiaw"), Tour start date,
+  Pick-up location, Departure date (the Return date if any / one way / n/a), Notes (Note + Staff notes).
 - One `LET(SORT(FILTER(...)))` formula in A6, so it updates by itself. Viewpoint and Additional package are Bookings columns staff type.
 

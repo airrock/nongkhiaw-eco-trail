@@ -10,7 +10,8 @@
 
 var TABS = { bookings: 'Bookings', travellers: 'Travellers', inquiries: 'Inquiries', reviews: 'Reviews', settings: 'Settings',
   dashboard: 'Dashboard', content: 'Content', contentBase: 'Content base', help: 'How to edit', trip: 'Trip sheet', lunch: 'Lunch menu',
-  receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text', agreements: 'Agreements', allGuests: 'All guests', transport: 'Transport', guide: 'Guide report' };
+  receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text', agreements: 'Agreements', allGuests: 'All guests', transport: 'Transport', guide: 'Guide report',
+  agency: 'Agency share' };
 
 var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'Tour', 'Tour name', 'People', 'Lead name',
   'Traveller names', 'Countries', 'Food', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
@@ -60,12 +61,20 @@ function setup() {
   setupContent_(ss);
   setupHelp_(ss);
   setupLunch_(ss);
+  // A filter staff put on a formula tab stops its list formula from being written again: take it off, put it back at the end.
+  var filters = [TABS.trip, TABS.allGuests, TABS.guide, TABS.dashboard, TABS.agency].map(function (n) {
+    var f = ss.getSheetByName(n) && ss.getSheetByName(n).getFilter();
+    if (!f) return null;
+    var at = { sheet: n, a1: f.getRange().getA1Notation() }; f.remove(); return at;
+  }).filter(Boolean);
   setupTrip_(ss);
   setupReceipt_(ss);
   setupAgreements_(ss);
   setupAllGuests_(ss);
   setupTransport_(ss);
   setupGuide_(ss);
+  setupAgency_(ss);
+  sortBookings_(ss);
 
   // Travellers.Status follows the booking's status, so cancelled trips drop out of the reports.
   var trav = ss.getSheetByName(TABS.travellers);
@@ -77,10 +86,11 @@ function setup() {
   });
 
   setupDashboard_(ss);
+  filters.forEach(function (f) { var sh = ss.getSheetByName(f.sheet); if (!sh.getFilter()) sh.getRange(f.a1).createFilter(); });
   var blank = ss.getSheetByName('Sheet1');
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   // Tab order: the ones used every day first, set-up tabs last.
-  [TABS.dashboard, TABS.allGuests, TABS.bookings, TABS.travellers, TABS.trip, TABS.guide, TABS.transport, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
+  [TABS.dashboard, TABS.allGuests, TABS.bookings, TABS.travellers, TABS.trip, TABS.guide, TABS.transport, TABS.agency, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.content, TABS.settings, TABS.help]
     .forEach(function (n, i) { var t = ss.getSheetByName(n); if (t) { ss.setActiveSheet(t); ss.moveActiveSheet(i + 1); } });
   ss.setActiveSheet(ss.getSheetByName(TABS.dashboard));
 }
@@ -303,8 +313,9 @@ function setupReceipt_(ss) {
   sh.getRange('D2').setValue(keepTimes[0] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
   sh.getRange('F2').setValue(keepTimes[1] || '').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
   sh.getRange('C1:F1').merge().setValue('1) Pick the Booking ID: it gets the next receipt number (000001, 000002, ...) at once. 2) Pick the language. Payment comes from Bookings ' +
-    '(Status, Amount paid USD). 3) Menu "Receipts" > "Download PDF" saves it as "No 000001 <name>.pdf" to send to the guest.').setWrap(true).setFontColor('#5a665f');
-  sh.getRange('C3').setValue('Download PDF: menu "Receipts" > "Download PDF"').setFontWeight('bold').setFontColor('#0b3d2e');
+    '(Status, Amount paid USD). 3) Click "⬇ PDF" below to download or print it (or menu "Receipts" > "Download PDF" for a file named "No 000001 <name>.pdf").').setWrap(true).setFontColor('#5a665f');
+  // A plain link to the PDF: no script and no permission needed, so it works for every staff member (the file gets Google's name).
+  sh.getRange('C3').setFormula('=HYPERLINK("' + receiptPdfUrl_(ss, sh) + '","⬇ PDF: download / print")').setFontWeight('bold').setFontColor('#0b3d2e');
   sh.getRange('E3').setFormula('=IF($K$3>0,HYPERLINK("https://nongkhiawlaos.com/agreement/?k="&INDEX(\'' + TABS.receiptLog + '\'!$J$1:$J,$K$3),"Open agreement form"),"Agreement form: issue the receipt first")')
     .setFontWeight('bold').setFontColor('#1155cc');
   sh.getRange('K1').setFormula('=IFERROR(MATCH($B$1,Bookings!$A$1:$A,0),0)');
@@ -892,8 +903,10 @@ function onOpen() {
   ui.createMenu('Receipts').addItem('Receipt for the selected booking', 'receiptForSelectedBooking').addItem('Issue receipt (give it a number)', 'issueReceipt')
     .addItem('Download PDF', 'downloadReceiptPdf').addItem('Print receipt', 'printReceipt').addToUi();
   ui.createMenu('Transport').addItem('Refresh', 'refreshTransport').addToUi();
-  ui.createMenu('Bookings').addItem('Remove duplicate rows (saved twice)', 'removeDuplicateRows').addToUi();
-  buildTransport_(SpreadsheetApp.getActive());   // the list is current whenever the sheet is opened
+  ui.createMenu('Bookings').addItem('Sort by tour date', 'sortBookings').addItem('Remove duplicate rows (saved twice)', 'removeDuplicateRows').addToUi();
+  var ss = SpreadsheetApp.getActive();
+  sortBookings_(ss);      // earliest tour date at the top
+  buildTransport_(ss);    // the list is current whenever the sheet is opened
 }
 
 function updateWebsiteNow() {
@@ -936,7 +949,7 @@ function setupHelp_(ss) {
     ['1. Receipt tab: pick the Booking ID (yellow cell). It gets the next number at once (000001, 000002, ...), saved in the Receipt log and in Bookings > Receipt No. A booking that already has a Receipt No keeps it.'],
     ['2. Pick the language. What the guest paid comes from Bookings: Status "Paid" = paid in full (the receipt shows ✓ PAID), otherwise "Amount paid USD" is the deposit. The yellow "Paid (USD)" cell is only for overriding it. (If the number still says DRAFT, use menu "Receipts" > "Issue receipt".)'],
     ['3. Menu "Receipts" > "Download PDF" saves it as "No 000001 <guest name>.pdf". Send that file to the guest. Balance = tour + transport + food - paid.'],
-    ['   To print it for the guest to sign: menu "Receipts" > "Print receipt" > "Open the receipt to print", then Ctrl+P (Cmd+P on a Mac). The menus work on a computer, not in the Sheets phone app.'],
+    ['   Quickest: click "⬇ PDF: download / print" at the top of the Receipt tab (works for everyone, also on a phone). To print for the guest to sign: open it, then Ctrl+P (Cmd+P on a Mac).'],
     ['4. After the receipt, "Open agreement form" (Receipt tab) opens the guests\' tour agreement on the website. Let each guest complete and sign it on a phone or tablet. The answers appear in the "Agreements" tab.'],
     [''],
     ['GUIDE REPORT  (tab "Guide report")'],
@@ -949,7 +962,10 @@ function setupHelp_(ss) {
     ['4. A guest who booked one way and now wants to go back: type the Return date in Bookings. The booking becomes "Round trip" and appears in Transport that day. The list also updates when you change dates, status or names in Bookings.'],
     [''],
     ['BOOKINGS  (tabs "Bookings", "Travellers", "Inquiries", "Dashboard")'],
-    ['Set Status, Receipt No and Amount paid in "Bookings". The Dashboard updates by itself.'],
+    ['Set Status, Receipt No and Amount paid in "Bookings". The Dashboard updates by itself. Bookings are sorted by tour date (earliest at the top) when the sheet opens and after each website booking; menu "Bookings" > "Sort by tour date" does it any time.'],
+    [''],
+    ['AGENCY SHARE  (tab "Agency share")'],
+    ['One row per group passed to or from another agency: date, package, guests, sending agency, receiving agency, price per person (empty = Settings price), what the sender gets per person, guide name and WhatsApp. Totals and the summary per agency (right side; type a month like 10/2026 in the yellow cell) are worked out by themselves.'],
     ['Guests with no pickup place (walk-ins, no transfer) show as "Staying in Nong Khiaw" in the Trip sheet and All guests.'],
     ['A booking or guest saved twice: menu "Bookings" > "Remove duplicate rows". It removes only exact copies and keeps the first one.']
   ];
@@ -1108,7 +1124,7 @@ function doPost(e) {
     if (d.type === 'booking') {
       saveBooking_(ss, d);
       // The booking is saved; a Transport redraw that fails is logged (Executions) and redone on open or by menu Transport > Refresh.
-      try { buildTransport_(ss); } catch (err) { console.error('Transport list not redrawn after booking: ' + err); }
+      try { sortBookings_(ss); buildTransport_(ss); } catch (err) { console.error('Bookings not sorted / Transport not redrawn after booking: ' + err); }
     }
     else if (d.type === 'inquiry') saveInquiry_(ss, d);
     else if (d.type === 'agreement') return reply_(JSON.stringify({ saved: saveAgreement_(ss, d) }));
@@ -1269,6 +1285,7 @@ function selfTest_(ss) {
   out.tripOk = tripSelfTest_(ss);
   out.transportOk = transportSelfTest_(ss, id);
   out.guideOk = guideSelfTest_(ss, id);
+  out.agencyOk = agencySelfTest_(ss);
   out.receiptOk = receiptSelfTest_(ss, id);
   out.reviewsOk = JSON.parse(reviewsJson_()).length > 0;
   out.contentOk = contentSelfTest_(ss);
@@ -1295,10 +1312,10 @@ function tripSelfTest_(ss) {
     cell.setValue(new Date(2030, 0, 15, 12)); SpreadsheetApp.flush();
     var rows = sh.getRange(16, 1, 4, 10).getDisplayValues();
     var people = Number(sh.getRange('B5').getValue()), riders = Number(sh.getRange('B6').getValue());
-    ok = rows.some(function (r) { return r[1] === 'Test Person' && r[6] === 'Test hostel'; }) &&
-      rows.some(function (r) { return r[1] === 'Second Person' && r[6] === 'No transfer' && r[5] === 'Avocado sandwich'; }) &&
-      people >= 2 && riders >= 1 && Number(sh.getRange('B13').getValue()) >= 65000;
-  } catch (err) { console.error('trip selftest: ' + err); }
+    ok = !rows.some(function (r) { return r[1] === 'Test Person' && r[6] === 'Test hostel'; }) ? (sh.getRange('A16').getFormula() ? 'first traveller' : 'list formula missing') :
+      !rows.some(function (r) { return r[1] === 'Second Person' && r[6] === 'No transfer' && r[5] === 'Avocado sandwich'; }) ? 'second traveller' :
+      people < 2 || riders < 1 ? 'totals' : Number(sh.getRange('B13').getValue()) < 65000 ? 'lunch kip' : true;   // which part failed, never the data
+  } catch (err) { console.error('trip selftest: ' + err); ok = 'error'; }
   finally { cell.setValue(saved); }
   return ok;
 }
@@ -1576,6 +1593,91 @@ function dropDuplicates_(ss, name, keyOf) {
 }
 
 function refreshTransport() { buildTransport_(SpreadsheetApp.getActive()); }
+
+// Bookings in tour date order, earliest at the top (then by when they came in); rows without a tour date go last.
+// Whole rows move, with any colour staff gave them; everything else finds a booking by its ID, never by its row.
+function sortBookings_(ss) {
+  var sh = ss.getSheetByName(TABS.bookings), n = sh.getLastRow() - 1;
+  if (n < 2) return;
+  var date = BOOKING_COLS.indexOf('Tour date') + 1, came = BOOKING_COLS.indexOf('Submitted at') + 1, filter = sh.getFilter();
+  if (filter) { filter.sort(came, true); filter.sort(date, true); }   // staff use a filter on this tab: sort through it (stable, so two passes)
+  else sh.getRange(2, 1, n, sh.getLastColumn()).sort([{ column: date, ascending: true }, { column: came, ascending: true }]);
+}
+
+function sortBookings() { sortBookings_(SpreadsheetApp.getActive()); }
+
+/* ---------- Agency share: guests passed between tour agencies and how the price is split ----------
+   One row per group, typed by staff. Example: package 001 sells at $30; Noy sends 2 guests to Agency A, Noy (the sender)
+   gets $10 a person, Agency A (the receiver) keeps $20 a person. The totals and the per-agency summary are formulas. */
+var AGENCY_START = 5;   // header row of the list; rows below it are typed
+var AGENCY_COLS = ['Tour date', 'Booking ID', 'Tour package', 'Guests', 'Sending agency', 'Receiving agency', 'Price per person USD',
+  'Sender gets per person USD', 'Guide name', 'Guide WhatsApp', 'Notes', 'Total USD', 'Sender gets USD', 'Receiver keeps USD', 'Chat guide'];
+
+function setupAgency_(ss) {
+  var sh = ss.getSheetByName(TABS.agency) || ss.insertSheet(TABS.agency);
+  var H = AGENCY_START, from = H + 1, col = function (c) { return colLetter_(AGENCY_COLS.indexOf(c) + 1); };
+  var R = function (c) { return '$' + col(c) + '$' + from + ':$' + col(c); };
+  sh.getRange('A1').setValue('Agency share').setFontSize(16).setFontWeight('bold');
+  sh.getRange('A2:K3').merge().setValue('One row per group passed between agencies: type the yellow columns. Price per person: leave it empty to use ' +
+    'the tour price in Settings. "Sender gets" is what the agency that sends the guests receives per person; the receiving agency keeps the rest. ' +
+    'Totals and the summary on the right are worked out by themselves. Summary month: type it in the yellow cell (e.g. 10/2026), empty = all.')
+    .setWrap(true).setFontColor('#5a665f').setVerticalAlignment('top');
+  sh.getRange(H, 1, 1, AGENCY_COLS.length).setValues([AGENCY_COLS]).setFontWeight('bold').setWrap(true).setVerticalAlignment('middle').setBackground('#e8f0ea');
+  sh.getRange(H, 1, 1, 11).setBackground('#fff2a8');
+  var price = 'IF(' + R('Price per person USD') + '<>"",' + R('Price per person USD') + ',IFERROR(VLOOKUP(' + R('Tour package') + '&"",{Settings!$A$2:$A$20&"",Settings!$C$2:$C$20},2,FALSE),0))';
+  var has = '(' + R('Guests') + '<>"")';
+  sh.getRange(H, AGENCY_COLS.indexOf('Total USD') + 1, 1, 4).setFormulas([[
+    '={"Total USD";ARRAYFORMULA(IF(' + has + ',' + R('Guests') + '*' + price + ',""))}',
+    '={"Sender gets USD";ARRAYFORMULA(IF(' + has + ',' + R('Guests') + '*IFERROR(' + R('Sender gets per person USD') + '*1,0),""))}',
+    '={"Receiver keeps USD";ARRAYFORMULA(IF(' + has + ',' + R('Guests') + '*(' + price + '-IFERROR(' + R('Sender gets per person USD') + '*1,0)),""))}',
+    '={"Chat guide";ARRAYFORMULA(IF(LEN(REGEXREPLACE(' + R('Guide WhatsApp') + '&"","\\D",""))>=7,HYPERLINK("https://wa.me/"&REGEXREPLACE(REGEXREPLACE(' +
+      R('Guide WhatsApp') + '&"","\\D",""),"^00",""),"WhatsApp"),""))}']]);
+  var last = sh.getMaxRows() - H;
+  sh.getRange(from, 1, last, 1).setNumberFormat('dd/mm/yyyy');
+  sh.getRange(from, 2, last, 2).setNumberFormat('@'); sh.getRange(from, 10, last, 1).setNumberFormat('@');
+  sh.getRange(from, 7, last, 2).setNumberFormat('#,##0.00'); sh.getRange(from, 12, last, 3).setNumberFormat('#,##0.00');
+  sh.getRange(from, 3, last, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInRange(ss.getSheetByName(TABS.settings).getRange('A2:A20'), true).setAllowInvalid(true).build());
+  sh.getRange(from, 1, last, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build());
+
+  // Summary per agency (right of the list): guests and money as sender and as receiver, for the month in the yellow cell.
+  var S = colLetter_(AGENCY_COLS.length + 2), S2 = colLetter_(AGENCY_COLS.length + 3);
+  sh.getRange(S + '1').setValue('Summary per agency').setFontSize(13).setFontWeight('bold');
+  sh.getRange(S + '2').setValue('Month (mm/yyyy):').setFontWeight('bold');
+  sh.getRange(S2 + '2').setNumberFormat('@').setBackground('#fff2a8').setFontWeight('bold');
+  var inMonth = '(($' + S2 + '$2="")+(TEXT(' + R('Tour date') + ',"mm/yyyy")=TRIM($' + S2 + '$2)))';
+  var sum = function (what, side) { return 'SUMPRODUCT((' + R(side) + '=a)*' + inMonth + '*IFERROR(' + R(what) + '*1,0))'; };
+  var per = function (what, side) { return 'MAP(ag,LAMBDA(a,' + sum(what, side) + '))'; };
+  var head = '{"Agency","Guests sent","Guests received","Gets as sender USD","Keeps as receiver USD","Total for agency USD"}';
+  sh.getRange(S + H).setFormula('=IFERROR(LET(ag,SORT(UNIQUE(FILTER({' + R('Sending agency') + ';' + R('Receiving agency') + '},{' + R('Sending agency') + ';' +
+    R('Receiving agency') + '}<>""))),g,' + per('Sender gets USD', 'Sending agency') + ',k,' + per('Receiver keeps USD', 'Receiving agency') + ',' +
+    'VSTACK(' + head + ',HSTACK(ag,' + per('Guests', 'Sending agency') + ',' + per('Guests', 'Receiving agency') + ',g,k,g+k))),' + head + ')');
+  sh.getRange(S + H + ':' + colLetter_(AGENCY_COLS.length + 7) + H).setFontWeight('bold').setBackground('#e8f0ea').setWrap(true);
+  sh.getRange(colLetter_(AGENCY_COLS.length + 3) + from + ':' + colLetter_(AGENCY_COLS.length + 4)).setNumberFormat('0');
+  sh.getRange(colLetter_(AGENCY_COLS.length + 5) + from + ':' + colLetter_(AGENCY_COLS.length + 7)).setNumberFormat('#,##0.00');
+  sh.setColumnWidths(1, AGENCY_COLS.length, 110); sh.setColumnWidth(5, 150); sh.setColumnWidth(6, 150); sh.setColumnWidth(9, 140); sh.setColumnWidth(11, 180);
+  sh.setColumnWidth(AGENCY_COLS.length + 1, 30); sh.setColumnWidth(AGENCY_COLS.length + 2, 160);
+  sh.setFrozenRows(H);
+}
+
+// Adds a sample group, reads the totals and the summary back, then removes it.
+function agencySelfTest_(ss) {
+  var sh = ss.getSheetByName(TABS.agency), S = AGENCY_COLS.length + 2;
+  var typed = sh.getRange(AGENCY_START + 1, 1, sh.getMaxRows() - AGENCY_START, 11).getValues(), row = AGENCY_START + 1;
+  typed.forEach(function (r, i) { if (r.join('') !== '') row = AGENCY_START + i + 2; });   // first row after the last typed one
+  if (row > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 10);
+  try {
+    sh.getRange(row, 1, 1, 10).setValues([[new Date(2030, 0, 15, 12), '', '001', 2, 'SELFTEST-Sender', 'SELFTEST-Receiver', 30, 10, 'Guide', "'+856 20 1111 2222"]]);
+    SpreadsheetApp.flush();
+    var v = sh.getRange(row, 12, 1, 4).getDisplayValues()[0];
+    if (v[0] !== '60.00' || v[1] !== '20.00' || v[2] !== '40.00' || v[3] !== 'WhatsApp') return 'totals ' + v.join('/');
+    var sum = sh.getRange(AGENCY_START + 1, S, Math.max(sh.getLastRow() - AGENCY_START, 1), 6).getDisplayValues();
+    var a = sum.filter(function (r) { return r[0] === 'SELFTEST-Sender'; })[0], b = sum.filter(function (r) { return r[0] === 'SELFTEST-Receiver'; })[0];
+    if (!a || !b || a[1] !== '2' || a[3] !== '20.00' || b[2] !== '2' || b[4] !== '40.00' || b[5] !== '40.00') return 'summary';
+    return true;
+  } catch (err) { return 'error: ' + err; }
+  finally { sh.getRange(row, 1, 1, 11).clearContent(); }
+}
 
 // Bookings columns the Transport list shows: typing in one of them redraws the list at once.
 var TRANSPORT_SOURCES = ['Booking ID', 'Lead name', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',

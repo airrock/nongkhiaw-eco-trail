@@ -152,3 +152,19 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   Pick-up location, Departure date (the Return date if any / one way / n/a), Notes (Note + Staff notes).
 - One `LET(SORT(FILTER(...)))` formula in A6, so it updates by itself. Viewpoint and Additional package are Bookings columns staff type.
 
+## Agency share (guests passed between agencies)
+- Tab **Agency share**: one typed row per group from row 6 (yellow headers): Tour date, Booking ID (optional), Tour package (dropdown
+  from Settings), Guests, Sending agency, Receiving agency, Price per person USD (empty = the Settings price of that package), Sender
+  gets per person USD, Guide name, Guide WhatsApp, Notes. Formulas in the header row give Total USD, Sender gets USD, Receiver keeps
+  USD (total - sender's share) and a WhatsApp link to the guide.
+- The summary to the right (one `LET`/`MAP` formula) lists every agency with guests sent and received and the money as sender and as
+  receiver, for the month typed in its yellow cell (mm/yyyy; empty = all). `agencySelfTest_` adds a sample row, checks it, clears it.
+
+## Bookings order
+- `sortBookings_` sorts Bookings rows by Tour date, then Submitted at (whole rows, colours included) on open, after each website
+  booking and from menu **Bookings > Sort by tour date**. Nothing refers to a booking by its row number.
+- The Receipt tab's C3 is a plain `HYPERLINK` to the PDF export (no script, no permission prompt), the fallback when the menu download
+  cannot run for a staff member.
+- `setup` takes staff filters off the formula tabs (Trip sheet, All guests, Guide report, Dashboard, Agency share) while it rewrites
+  them and puts a filter back on the same range afterwards (the chosen filter values reset). With a filter on, the list formula is
+  not written and the tab comes out empty.

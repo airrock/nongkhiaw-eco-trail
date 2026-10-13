@@ -402,3 +402,8 @@ em{font-style:italic}
 .how-help a{color:#fff;text-decoration:underline;text-decoration-color:var(--sun);text-underline-offset:5px}
 @media (max-width:960px){.how-steps{grid-template-columns:1fr 1fr}}
 @media (max-width:560px){.how-steps{grid-template-columns:1fr}}
+.trn-cards{grid-template-columns:repeat(3,1fr)}
+.trn-cards .hs-body{display:flex;flex-direction:column;height:100%;padding:24px}
+.trn-cards .hs-body p{flex:1;margin-bottom:18px}
+.trn-cards .btn{align-self:flex-start}
+@media (max-width:960px){.trn-cards{grid-template-columns:1fr}}

@@ -46,6 +46,7 @@
     </a>
     <nav class="nav" id="nav" aria-label="Main">
       <a href="#tour" data-i18n="nav_tour">The Tour</a>
+      <a href="#transport" data-i18n="nav_transport">Transport</a>
       <a href="#story" data-i18n="nav_story">Our Story</a>
       <a href="#gallery" data-i18n="nav_gallery">Gallery</a>
       <a href="#reviews" data-i18n="nav_reviews">Reviews</a>
@@ -199,6 +200,25 @@
         </div>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- TRANSPORT ONLY -->
+<section class="how transport" id="transport">
+  <div class="wrap">
+    <div class="how-head">
+      <p class="tag reveal" data-i18n="trn_tag">Transport only</p>
+      <h2 class="reveal" data-i18n="trn_h">Just need a ride?</h2>
+      <p class="reveal" data-i18n="trn_sub">No tour needed.</p>
+    </div>
+    <ul class="how-steps trn-cards">
+      <li class="reveal"><div class="hs-body"><h3 data-i18n="trn_shuttle_t">Shuttle minivan</h3><p data-i18n="trn_shuttle_p">Luang Prabang ⇄ Nong Khiaw</p>
+        <a class="btn btn-sun" href="#booking-form" data-tour="T00" data-i18n="trn_shuttle_b">Book the shuttle</a></div></li>
+      <li class="reveal"><div class="hs-body"><h3 data-i18n="trn_private_t">Private minivan</h3><p data-i18n="trn_private_p">A minivan just for your group.</p>
+        <a class="btn btn-line" href="https://wa.me/8562058975057?text=Hello!%20I%20would%20like%20a%20private%20minivan." target="_blank" rel="noopener" data-i18n="trn_ask">Ask on WhatsApp</a></div></li>
+      <li class="reveal"><div class="hs-body"><h3 data-i18n="trn_train_t">Train</h3><p data-i18n="trn_train_p">Travelling on by train?</p>
+        <a class="btn btn-line" href="https://wa.me/8562058975057?text=Hello!%20I%20would%20like%20help%20with%20the%20train." target="_blank" rel="noopener" data-i18n="trn_ask">Ask on WhatsApp</a></div></li>
+    </ul>
   </div>
 </section>
 
@@ -360,10 +380,11 @@
           <option value="102" data-i18n="tour_102">102 · 2 days 1 night (USD 60)</option>
           <option value="103" data-i18n="tour_103">103 · 3 days 2 nights (USD 90)</option>
           <option value="001" data-i18n="tour_001">001 · 1-day boat trip (USD 30)</option>
+          <option value="T00" data-i18n="tour_t00">Transport only (no tour)</option>
         </select>
       </label>
       <div class="row2">
-        <label><span data-i18n="lbl_date">Date</span>
+        <label id="dateRow"><span data-i18n="lbl_date">Date</span>
           <input type="date" id="fDate" name="date" required>
         </label>
         <label><span data-i18n="lbl_guests">Guests</span>
@@ -373,20 +394,23 @@
       <div class="travellers" id="travellers">
         <p class="trav-p" data-i18n="trav_p">Please fill this in for everyone in your group, exactly as written in the passport.</p>
       </div>
-      <label><span data-i18n="lbl_transfer">Transfer from Luang Prabang</span>
-        <select id="fTransfer" name="transfer"><option value="No" data-i18n="tr_none">No, thanks</option><option value="One way to Nong Khiaw" data-i18n="tr_one">One way to Nong Khiaw (250,000 kip)</option><option value="Round trip" data-i18n="tr_round">Round trip (500,000 kip)</option></select>
+      <label><span data-i18n="lbl_transfer">Minivan transfer (Luang Prabang ⇄ Nong Khiaw)</span>
+        <select id="fTransfer" name="transfer"><option value="No" data-i18n="tr_none">No, thanks</option><option value="One way to Nong Khiaw" data-i18n="tr_one">One way to Nong Khiaw (250,000 kip)</option><option value="Round trip" data-i18n="tr_round">Round trip (500,000 kip)</option><option value="One way to Luang Prabang" data-i18n="tr_down">One way to Luang Prabang (250,000 kip)</option></select>
       </label>
       <div class="row2 tdates" id="transferDates" hidden>
-        <label><span data-i18n="lbl_pickup_date">Pickup date (Luang Prabang → Nong Khiaw)</span>
+        <label id="pickupRow"><span data-i18n="lbl_pickup_date">Pickup date (Luang Prabang → Nong Khiaw)</span>
           <input type="date" id="fPickup" name="pickup_date">
         </label>
         <label id="returnRow" hidden><span data-i18n="lbl_return_date">Return date (Nong Khiaw → Luang Prabang)</span>
           <input type="date" id="fReturn" name="return_date">
         </label>
       </div>
+      <label id="ret103Row" hidden><span data-i18n="lbl_ret103">Back to Luang Prabang</span>
+        <select id="fRet103"><option value="end" data-i18n="ret_end">On the last day of the tour</option><option value="later" data-i18n="ret_later">Another day</option></select>
+      </label>
       <label class="check" id="trainRow" hidden><input type="checkbox" id="fTrain"><span data-i18n="lbl_train">Drop me at Luang Prabang train station on the way back (+{kipTrain} kip per person)</span></label>
       <div class="pickup" id="hotelRow" hidden>
-        <label><span data-i18n="lbl_hotel">Accommodation in Luang Prabang</span>
+        <label><span id="hotelLbl" data-i18n="lbl_hotel">Accommodation in Luang Prabang</span>
           <input type="text" id="fHotel" name="hotel" data-i18n-ph="ph_hotel" placeholder="Name of your hotel or hostel">
         </label>
         <div class="map-field">
@@ -433,6 +457,7 @@
           <option value="102" data-i18n="tour_102">102 · 2 days 1 night (USD 60)</option>
           <option value="103" data-i18n="tour_103">103 · 3 days 2 nights (USD 90)</option>
           <option value="001" data-i18n="tour_001">001 · 1-day boat trip (USD 30)</option>
+          <option value="T00" data-i18n="tour_t00">Transport only (no tour)</option>
         </select>
       </label>
       <label><span data-i18n="lbl_question">Your question</span>
@@ -459,6 +484,7 @@
     </a>
     <nav aria-label="Footer">
       <a href="#tour" data-i18n="nav_tour">The Tour</a>
+      <a href="#transport" data-i18n="nav_transport">Transport</a>
       <a href="#story" data-i18n="nav_story">Our Story</a>
       <a href="#gallery" data-i18n="nav_gallery">Gallery</a>
       <a href="#reviews" data-i18n="nav_reviews">Reviews</a>

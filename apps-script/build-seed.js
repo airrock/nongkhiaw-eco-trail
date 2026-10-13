@@ -21,6 +21,7 @@ for (const [id, name] of [['t101', 'Tour 101 card'], ['t102', 'Tour 102 card'], 
   markers.push([html.indexOf('</article>', at), '3. Tours (headings)']);
 }
 add(/class="info" id="info"/g, '4. Good to know');
+add(/<section class="how transport" id="transport"/g, '4b. Transport only (no tour)');
 add(/<section class="story"/g, '5. Our story');
 add(/<section class="gallery"/g, '6. Gallery');
 add(/<section class="reviews"/g, '7. Reviews');

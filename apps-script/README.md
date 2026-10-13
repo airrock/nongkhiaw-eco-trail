@@ -168,3 +168,24 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - `setup` takes staff filters off the formula tabs (Trip sheet, All guests, Guide report, Dashboard, Agency share) while it rewrites
   them and puts a filter back on the same range afterwards (the chosen filter values reset). With a filter on, the list formula is
   not written and the tab comes out empty.
+
+## Transfers, transport only and bookings typed by staff
+- Transfer choices (`TRANSFERS`): No, One way to Nong Khiaw (up), One way to Luang Prabang (down only, for guests already in Nong
+  Khiaw), Round trip. `goesUp_` / `goesDown_` decide the legs everywhere (booking save, Transport lists, team message, receipt
+  return line); Bookings > Transfer has the same dropdown. Down-only bookings have no Pickup date; their Nong Khiaw place is saved in
+  `Pickup in Nong Khiaw`, which the team message shows as `ບ່ອນຮັບໜອງຂຽວ`.
+- Tour `T00` = transport only (website "Transport" section and tour dropdown, New booking tab): no tour date, tour price 0, so it never
+  appears in the Trip sheet or Guide report.
+- Package 103 + round trip: the website asks "back on the last day of the tour" (return date = tour date + 2, minivan ~3:30-4:30 pm)
+  or "another day" (minivan ~10:30 am); the choice is written to `Transport remark`.
+- Tab **New booking**: yellow form + "Save booking" checkbox (`saveManualBooking_`, run by the simple `onEdit`, so no authorisation)
+  builds the same payload as the website and calls `saveBooking_` (Source "WhatsApp", Site language "Staff"), sets the chosen
+  Status, sorts Bookings and redraws Transport. `newBookingSelfTest_` saves a SELFTEST booking through it and restores the form.
+- The minivan team message lists the lead guest with WhatsApp and the other travellers on a `ຜູ້ຕິດຕາມ` (followers) line.
+- Receipt: Booking ID in E12/F12. Picking a booking (or Download/Print) first fills its empty amounts (`fillAmounts_`): tour price x
+  people, transfer by type x travellers taking it, takeaway lunch from the Lunch menu. Changing Transfer, Train station drop-off or
+  People in Bookings recomputes the transfer estimate.
+- Status "Cancelled": `bookingEdited_` adds "Cancelled dd/mm/yyyy" to Staff notes; a conditional format greys the row
+  (`greyCancelled_`, keeps staff's own rules).
+- `setup` splits merges staff made across a frozen-row line (`freezeRows_`) and in the Agency share heading rows, which otherwise stop
+  the rebuild. Agency share has typed Accommodation and Remark columns (L, M) because staff were already using them.

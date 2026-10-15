@@ -19,7 +19,9 @@ Sheet back office its forms write to. Owner-facing operating detail lives in `RE
   fallback lunch `MENU`, `SHEET_URL`, WhatsApp number `WA`.
 - `agreement/` + `js/agreement*.js` + `css/agreement.css` — per-booking tour agreement e-form, opened with a private
   `?k=<16-char key>`; `noindex`. Wording version is `AGREEMENT_VERSION` in `Code.gs` — bump it when the text changes.
-- `trekking/`, `contact/`, `bar_cafe/`, … — 5-line redirect stubs for old WordPress URLs. Keep them.
+- `contact/`, `nong-khiaw/`, `privacy-policy/`, `green/` — 5-line redirect stubs for old WordPress URLs. Keep them. The old
+  `trekking/`, `bar_cafe/`, `eco_bungalows/`, `massage/`, `running-club/` pages were removed (2026-10-15) so Google drops their
+  sitelinks; `404.html` sends anyone following an old link to the home page.
 - `archive/old-site/` — backup of the old WordPress site. Not linked, disallowed in `robots.txt`. Don't edit.
 
 ## Back office (`apps-script/`)

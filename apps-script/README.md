@@ -146,11 +146,42 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   guests (`stayingPlace_`); the stored data is unchanged.
 
 ## Guide report (for the guide team)
-- Tab **Guide report**: everyone on the tour on the yellow date (`=TODAY()+1`, tomorrow; staff may type another date, empty = tomorrow),
-  cancelled bookings left out, each booking's travellers together, numbered. Noy's layout: No, Date of issue (Receipt log), Receipt No,
-  Booking ID, Contact name, Pax (on the booking's first row only: a formula cannot merge cells; a bold Total row ends the list), Tour, Viewpoint, Additional package, Food, Pickup date from LPB (or "Staying in Nong Khiaw"), Tour start date,
-  Pick-up location, Departure date (the Return date if any / one way / n/a), Notes (Note + Staff notes).
-- One `LET(SORT(FILTER(...)))` formula in A6, so it updates by itself. Viewpoint and Additional package are Bookings columns staff type.
+- Tab **Guide report**: everyone on tour on the yellow date (`=TODAY()+1`, tomorrow; staff may type another date, empty = tomorrow),
+  cancelled bookings left out, numbered. A guest is listed on **every day of their tour**: day n = date - tour date + 1, kept while
+  `Tour plans` has a row for that tour and day (101: 2 days, 102: 2, 103: 3, 001: 1). Rows are grouped by the plan for the day, so
+  on any date the 001 group (001 guests + 102 guests on day 2) is together.
+- Columns: No, Date of issue (Receipt log), Receipt No, Booking ID, Contact name, Pax (on the booking's first row only; a bold Total
+  row ends the list), Package (tour code, "Private" added for private tours), Day ("Day 2 of 3"), Plan for the day, Viewpoint,
+  Additional package, Food, Pickup date from LPB (or "Staying in Nong Khiaw"), Tour start date, Pick-up location, Departure date,
+  Notes ("PRIVATE TOUR" + Note + Staff notes).
+- Additional package: what staff typed on the booking in Bookings, otherwise the tour's package from `Tour plans` (102: "001 1-Day
+  Tour (Day 2)", 103: "2D Sopjam + Homestay"). New bookings also get it written into Bookings when saved.
+- One `LET(SORT(FILTER(...)))` formula in A6. `setup` unhides all its columns (columns hidden for an older layout would hide other data).
+
+## Tour plans, Arrange tour, Tour accounts
+- Tab **Tour plans** (seeded once, then staff-owned, never rewritten): A:C each tour's days and the plan for each day (Guide report),
+  E:F the additional package added to every booking of a tour, H:L the usual costs of a tour (Arrange tour): item, unit kip, counted
+  per `group` / `person` / `N people` (one per N guests, rounded up, e.g. kayaks per 2), and the quantity of a group item. Only 001 was
+  seeded with costs (Noy's 25/09 sheet: 7 pax = 2,500,000 kip); 101/102/103 costs are for staff to add.
+- Tab **Arrange tour**: yellow tour date and tour. Guests booked, Receipt No and Booking IDs come from Bookings / Travellers (that tour
+  starting that day, not cancelled); "Guests, if different" overrides the count. Income kip = Est. tour USD x the receipt rate (Settings
+  F8), or the typed "Income, if different". Picking a date or tour (simple `onEdit`) writes the cost lines from Tour plans: quantity is a
+  formula on the guest count, so typing over it or the price is kept until the date or tour changes. Expense, Income, Profit at E4:E6.
+- Ticking **Save** writes one row per tour date + tour into **Tour accounts** (saving again replaces it): date, tour, guests, receipts,
+  bookings, expense, income, profit, the cost lines as text, saved at. That tab is a log: setup never clears it.
+
+## Lunch report (takeaway food for The Trio Bar kitchen)
+- Tab **Lunch report**: travellers with a Takeaway lunch whose tour date (or minivan date for transport only) is the yellow date
+  (tomorrow by default): Booking ID, Tour date, Tour, Customer name, Pax (once per booking), Food item, Qty, Ready by ("When the minivan
+  from Luang Prabang arrives" when the guest rides up that day, else "Before the tour starts", plus the Transport remark), Special
+  requests (food type other than Regular + Note), Price kip; a Total row.
+- N:O count each dish for the kitchen; Q5 is the message for The Trio Bar group in Noy's format (`15/10` then `1.) Pad Thai Chicken x1 : Name`).
+- Bookings typed by staff get a lunch per traveller from the New booking tab's "Takeaway lunch" column (dropdown of the shown dishes).
+
+## Private tour
+- Website: a "Private tour" tick under the date (hidden for transport only); sent as `private: true`, and the WhatsApp message says
+  PRIVATE TOUR. No price is added: staff confirm it with the guest. Bookings column **Private tour** = Yes; the New booking tab has the
+  same tick. The Guide report shows it in Package and Notes.
 
 ## Agency share (guests passed between agencies)
 - Tab **Agency share**: one typed row per group from row 6 (yellow headers): Tour date, Booking ID (optional), Tour package (dropdown
@@ -165,7 +196,7 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   booking and from menu **Bookings > Sort by tour date**. Nothing refers to a booking by its row number.
 - The Receipt tab's C3 is a plain `HYPERLINK` to the PDF export (no script, no permission prompt), the fallback when the menu download
   cannot run for a staff member.
-- `setup` takes staff filters off the formula tabs (Trip sheet, All guests, Guide report, Dashboard, Agency share) while it rewrites
+- `setup` takes staff filters off the formula tabs (Trip sheet, All guests, Guide report, Dashboard, Agency share, Lunch report) while it rewrites
   them and puts a filter back on the same range afterwards (the chosen filter values reset). With a filter on, the list formula is
   not written and the tab comes out empty.
 

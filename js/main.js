@@ -472,6 +472,8 @@
     lbl.setAttribute('data-i18n', key); lbl.textContent = t(key);
     $('#findMap').href = 'https://www.google.com/maps/search/?api=1&query=' + (g.onlyDown ? 'Nong+Khiaw' : 'Luang+Prabang');
     $('#dateRow').hidden = only;
+    $('#privateRow').hidden = only;
+    if (only) $('#fPrivate').checked = false;
     dateInput.required = !only;
     syncPickups();
     if (g.up && !pickupInput.value) pickupInput.value = dateInput.value;  // usually the same day as the tour
@@ -531,13 +533,14 @@
       }
     }
     var train = g.down && $('#fTrain').checked;
+    var priv = !only && $('#fPrivate').checked;
     hint.textContent = '';
     if (!lockSubmit(this)) return;
     var ref = bookingRef();
     var source = $('#fSource').value;
     saveToSheet({
       type: 'booking', id: ref, website: $('#bookForm [name=website]').value, tour: tour, date: date,
-      transfer: transfer, pickupDate: pickup, returnDate: ret, returnPlan: plan,
+      transfer: transfer, pickupDate: pickup, returnDate: ret, returnPlan: plan, private: priv,
       hotel: hotel, map: mapLink, train: train, payment: pay, phone: $('#fPhone').value.trim(), source: source, note: note,
       travellers: blocks.map(function (f, i) {
         var v = function (k) { return $('[data-k="' + k + '"]', f).value.trim(); };
@@ -576,7 +579,7 @@
         '\n- Food: ' + v('food') + lunchLine;
     });
     var msg = 'Hello! I would like to book:\n' + tourLabel(tour) + '\nBooking ref: ' + ref + '\n' +
-      (only ? '' : 'Date: ' + dmy(date) + '\n') + 'People: ' + people.length +
+      (only ? '' : 'Date: ' + dmy(date) + '\n') + (priv ? 'PRIVATE TOUR (only our group, please confirm the price)\n' : '') + 'People: ' + people.length +
       '\nPayment method: ' + pay +
       '\nMinivan transfer: ' + transfer +
       (g.up ? '\nPickup date (Luang Prabang to Nong Khiaw): ' + dmy(pickup) : '') +

@@ -14,8 +14,8 @@ window.LANGS = [
 
 window.I18N = {
 en: {
-  meta_title: 'Nong Khiaw Eco-Trail | 1-Day Tours from Nong Khiaw, Laos',
-  meta_desc: 'Locally run 1-day tours from Nong Khiaw, Laos. Slow boat on the Nam Ou, Muang Ngoi village, cave, viewpoint, Tad Mok waterfall and kayaking. Book on WhatsApp.',
+  meta_title: 'Nong Khiaw Laos Tours: Camping, Trekking & Boat Trips | Nong Khiaw Eco-Trail',
+  meta_desc: 'Tours in Nong Khiaw, Laos: overnight camping above the clouds, 2- and 3-day treks with homestay, kayaking, the 1-day boat trip to Muang Ngoi and minivans from Luang Prabang. Locally run since 2024. Pay on arrival.',
   nav_tour: 'The Tour', nav_story: 'Our Story', nav_gallery: 'Gallery', nav_faq: 'FAQ', nav_contact: 'Contact',
   kicker: 'Nong Khiaw · Northern Laos',
   h1: 'Slow river days.<br><em>Big mountains.</em><br>Real village life.',

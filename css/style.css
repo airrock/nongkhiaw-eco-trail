@@ -407,3 +407,4 @@ em{font-style:italic}
 .trn-cards .hs-body p{flex:1;margin-bottom:18px}
 .trn-cards .btn{align-self:flex-start}
 @media (max-width:960px){.trn-cards{grid-template-columns:1fr}}
+.trn-note{margin-top:22px;padding:14px 18px;border-left:4px solid var(--sun);background:rgba(232,131,58,.1);border-radius:8px;font-weight:600}

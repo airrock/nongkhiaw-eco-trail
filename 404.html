@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Page not found | Nong Khiaw Eco-Trail</title><meta name="robots" content="noindex">
+<script>
+// Old WordPress pages (trekking, bar_cafe, eco_bungalows, massage, running-club) were removed so Google drops them from its
+// results: the server answers 404, and people following an old link land on the matching part of the home page.
+(function () {
+  var p = location.pathname.toLowerCase(), to = '/';
+  if (/^\/trekking/.test(p)) to = '/#tour';
+  else if (/^\/bar_cafe/.test(p)) to = '/#info';
+  location.replace(to);
+})();
+</script></head>
+<body><p><a href="/">Nong Khiaw Eco-Trail: tours from Nong Khiaw, Laos</a></p></body></html>

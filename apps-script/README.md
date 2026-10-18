@@ -178,6 +178,25 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - N:O count each dish for the kitchen; Q5 is the message for The Trio Bar group in Noy's format (`15/10` then `1.) Pad Thai Chicken x1 : Name`).
 - Bookings typed by staff get a lunch per traveller from the New booking tab's "Takeaway lunch" column (dropdown of the shown dishes).
 
+## Round of 2026-10-18 (Noy's requests 43-58)
+- **Prices:** transfer one way 220,000 kip, round trip 440,000 (`TRANSFER_KIP`, Settings F2:F3; train +70,000). `setupSettings_` moves the old
+  250,000 / 500,000 defaults once (a value staff typed otherwise is left alone). The website shows the transfer price only in the booking
+  form's Transfer choices (and the WhatsApp message): the Transport card, Good to know and the FAQ no longer name it, so competitors cannot read it.
+  Old bookings keep the price they were booked at; menu **Bookings > Recalculate amounts** brings the selected rows to today's prices.
+- **Transport:** the "To Luang Prabang" list is ordered City center first, Luang Prabang train station second (`dep` sort key). The team message
+  takes the receipt number from the Receipt log when Bookings has none, and the list is redrawn when a receipt number is issued.
+  Travellers marked cancelled are not listed.
+- **Receipt tab:** pickup time and return time come from the booking (return: "3:30 - 4:30 PM" for the 103 return after the tour, "10:30 AM" for
+  a later day, else "10:00 - 10:30 AM"; pickup "7:30 - 8:00 AM"); typing in D2 / F2 overrides. Columns H:I (I2:I7) are typed changes that replace
+  the pickup line, return line, tour USD, transport kip, lunch text and lunch kip. The transport amount is the typed one, else the booking's,
+  else worked out from Settings (legs x travellers taking it, train extra). Everything typed is cleared when another booking is picked.
+- **Travellers:** `Takeaway lunch` has a dropdown of the Lunch menu; editing it prices the traveller and `syncLunch_` adds the booking's Takeaway
+  lunch and Lunch kip up again (a lunch ordered after booking). New column `Traveller status` (Cancelled / No-show for one person): the `Status`
+  formula shows it, else the booking's status; Guide report and Lunch report Pax count travellers who are not cancelled.
+- **Trip sheet** is sorted by Receipt No ascending (no receipt yet = last), then name.
+- **Agreements:** all columns are unhidden on setup; Photo permission is red for No, green for Yes.
+- Website: Private tour section (`#private`, button ticks the Private tour box in the form), luggage note and the 1-3 days notice in Transport.
+
 ## Private tour
 - Website: a "Private tour" tick under the date (hidden for transport only); sent as `private: true`, and the WhatsApp message says
   PRIVATE TOUR. No price is added: staff confirm it with the guest. Bookings column **Private tour** = Yes; the New booking tab has the

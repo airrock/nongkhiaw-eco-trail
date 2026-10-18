@@ -22,7 +22,8 @@ var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'To
   'Private tour'];
 // Status and Receipt No are formulas (spilled from their header cell) that look the booking up: never written per row.
 var TRAVELLER_COLS = ['Booking ID', 'Tour date', 'Tour', 'Traveller #', 'First name', 'Last name', 'Full name', 'Country',
-  'Gender', 'Passport no', 'Passport issued', 'Passport expires', 'Food', 'Pickup place', 'Pickup map', 'Takeaway lunch', 'Lunch kip', 'Status', 'Receipt No'];
+  'Gender', 'Passport no', 'Passport issued', 'Passport expires', 'Food', 'Pickup place', 'Pickup map', 'Takeaway lunch', 'Lunch kip', 'Status', 'Receipt No',
+  'Traveller status'];   // typed: Cancelled / No-show for one traveller; Status (formula) shows it, else the booking's status
 // Headers renamed in a later version: the old name is renamed in place, so its data stays put.
 var RENAMES = { Travellers: { 'Name': 'Full name' }, Bookings: { 'Special food': 'Food' } };
 // Reviews shown on the website: staff tick Show; newest Date first, at most REVIEWS_SHOWN.
@@ -41,6 +42,7 @@ var FORMATS = {
 };
 
 var STATUSES = ['Requested', 'Confirmed', 'Paid', 'Cancelled', 'No-show'];
+var TRAVELLER_STATUSES = ['Cancelled', 'No-show'];
 var INQUIRY_STATUSES = ['New', 'Replied', 'Booked', 'Closed'];
 var SOURCES = ['Google', 'Google Maps', 'Facebook', 'Instagram', 'TripAdvisor', 'Hostel / hotel', 'Friend', 'Walk-in', 'WhatsApp', 'Other'];
 // Minivan transfer choices (website, New booking tab, Bookings dropdown). "Up" = Luang Prabang -> Nong Khiaw, "down" = back.
@@ -50,7 +52,7 @@ function goesDown_(transfer) { return /round/i.test(transfer) || /to luang praba
 var TRANSPORT_ONLY = 'T00';   // tour code of a booking without a tour (shuttle only)
 var TOURS = [['101', 'Overnight camping above the clouds', 30], ['102', '2 days 1 night', 60],
   ['103', '3 days 2 nights', 90], ['001', '1-day boat trip', 30]];
-var TRANSFER_KIP = 250000;
+var TRANSFER_KIP = 220000;   // one way per person; round trip is twice that (Settings F2:F3, staff-editable)
 var TIME_ZONE = 'Asia/Vientiane';
 
 /* ---------- setup: safe to run again; it never deletes data rows ---------- */
@@ -62,7 +64,7 @@ function setup() {
   setupSettings_(ss);
   setupTable_(ss, TABS.bookings, BOOKING_COLS, { 'Status': STATUSES, 'Source': SOURCES, 'Transfer': TRANSFERS }, FORMATS.Bookings);
   greyCancelled_(ss);
-  setupTable_(ss, TABS.travellers, TRAVELLER_COLS, {}, FORMATS.Travellers);
+  setupTable_(ss, TABS.travellers, TRAVELLER_COLS, { 'Takeaway lunch': lunchDishes_(ss), 'Traveller status': TRAVELLER_STATUSES }, FORMATS.Travellers);
   passportDatesToDates_(ss);
   setupTable_(ss, TABS.inquiries, INQUIRY_COLS, { 'Status': INQUIRY_STATUSES, 'Source': SOURCES }, FORMATS.Inquiries);
   setupReviews_(ss);
@@ -88,14 +90,22 @@ function setup() {
   setupArrange_(ss);
   sortBookings_(ss);
 
-  // Travellers.Status follows the booking's status, so cancelled trips drop out of the reports.
+  // Travellers.Status follows the booking's status (so cancelled trips drop out of the reports), unless that one traveller
+  // has a Traveller status typed (Cancelled / No-show for one person of a group).
   var trav = ss.getSheetByName(TABS.travellers);
+  var ov = colLetter_(TRAVELLER_COLS.indexOf('Traveller status') + 1);
   ['Status', 'Receipt No'].forEach(function (col) {
     var bc = colLetter_(BOOKING_COLS.indexOf(col) + 1);
+    var look = 'IFERROR(VLOOKUP(A2:A,{Bookings!A2:A,Bookings!' + bc + '2:' + bc + '},2,FALSE),"")';
     trav.getRange(1, TRAVELLER_COLS.indexOf(col) + 1).setFormula(
-      '={"' + col + '";ARRAYFORMULA(IF(A2:A="",,IFERROR(VLOOKUP(A2:A,{Bookings!A2:A,Bookings!' + bc + '2:' + bc +
-      '},2,FALSE),"")))}');
+      '={"' + col + '";ARRAYFORMULA(IF(A2:A="",,' + (col === 'Status' ? 'IF(' + ov + '2:' + ov + '<>"",' + ov + '2:' + ov + ',' + look + ')' : look) + '))}');
   });
+  trav.getRange(1, TRAVELLER_COLS.indexOf('Status') + 1).setNote('Automatic: it follows the booking\'s Status in Bookings. To cancel one traveller only, choose Cancelled in the column "Traveller status" on the right.');
+  var cancelledRule = '=$' + colLetter_(TRAVELLER_COLS.indexOf('Status') + 1) + '2="Cancelled"';
+  trav.setConditionalFormatRules(trav.getConditionalFormatRules().filter(function (r) {
+    var b = r.getBooleanCondition(); return !(b && b.getCriteriaValues()[0] === cancelledRule); })
+    .concat([SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(cancelledRule).setBackground('#f4cccc').setFontColor('#9c1c1c')
+      .setRanges([trav.getRange(2, 1, trav.getMaxRows() - 1, TRAVELLER_COLS.length)]).build()]));
 
   setupDashboard_(ss);
   filters.forEach(function (f) { var sh = ss.getSheetByName(f.sheet); if (!sh.getFilter()) sh.getRange(f.a1).createFilter(); });
@@ -124,6 +134,11 @@ function setupSettings_(ss) {
   var sh = sheet_(ss, TABS.settings);
   // 2026-10-09 price change: move the old default on; a value staff typed themselves is left alone
   if (sh.getRange('F2').getValue() === 200000) sh.getRange('F2').setValue(TRANSFER_KIP);
+  // 2026-10-18 price change (250,000 one way / 500,000 round trip -> 220,000 / 440,000); typed values of other amounts are left alone
+  if (sh.getRange('F2').getValue() === 250000) {
+    sh.getRange('F2').setValue(TRANSFER_KIP);
+    if (sh.getRange('F3').getValue() === 500000) sh.getRange('F3').setValue(TRANSFER_KIP * 2);
+  }
   if (sh.getLastRow() > 0) { migrateSettings_(sh); return; }
   sh.getRange('A:A').setNumberFormat('@');
   sh.getRange(1, 1, 1, 3).setValues([['Tour', 'Name', 'Price USD (per person)']]);
@@ -165,6 +180,7 @@ function setupTable_(ss, name, cols, dropdowns, formats) {
     sh.getRange(2, cols.indexOf(c) + 1, sh.getMaxRows() - 1, 1).setNumberFormat(formats[c]);
   });
   Object.keys(dropdowns).forEach(function (c) {
+    if (!dropdowns[c].length) return;
     var rule = SpreadsheetApp.newDataValidation().requireValueInList(dropdowns[c], true).setAllowInvalid(true).build();
     sh.getRange(2, cols.indexOf(c) + 1, sh.getMaxRows() - 1, 1).setDataValidation(rule);
   });
@@ -235,6 +251,13 @@ function lunchMenuJson_(ss) {
   return out;
 }
 
+// "Pad Thai (Chicken)" for every shown dish and choice: the dropdown of the Takeaway lunch column in Travellers.
+function lunchDishes_(ss) {
+  var out = [];
+  lunchMenuJson_(ss).forEach(function (d) { (d.choices.length ? d.choices : ['']).forEach(function (c) { out.push(d.dish + (c ? ' (' + c + ')' : '')); }); });
+  return out.slice(0, 500);
+}
+
 /* ---------- E-receipt: pick a booking, get a receipt in the guest's language, number it from the log ---------- */
 
 var RECEIPT_LANGS = ['English', 'ລາວ', 'ไทย', '中文', '한국어', '日本語', 'Français', 'Deutsch'];
@@ -275,6 +298,7 @@ var RECEIPT_TEXT = [   // key, then the 8 languages in RECEIPT_LANGS order
 ];
 var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by', 'Form key'];
 var RECEIPT_RATE = 22500;
+var RECEIPT_MANUAL = 'I2:I7';   // typed lines of the Receipt tab: pickup, return, tour USD, transport kip, lunch text, lunch kip
 
 // Receipt settings live in Settings E8:F12; written once, then staff-owned.
 function setupReceiptSettings_(ss) {
@@ -309,6 +333,7 @@ function setupReceipt_(ss) {
 
   var sh = ss.getSheetByName(TABS.receipt) || ss.insertSheet(TABS.receipt);
   var keep = sh.getRange('B1:B3').getValues(), keepTimes = [sh.getRange('D2').getValue(), sh.getRange('F2').getValue()];   // what staff picked survives a rebuild
+  var keepManual = sh.getRange(RECEIPT_MANUAL).getValues();
   sh.clear(); sh.clearConditionalFormatRules(); sh.setHiddenGridlines(true);
   var lang = keep[1][0] || 'English';
   var L = function (k) { return 'IFERROR(INDEX(\'' + TABS.receiptText + '\'!$B$2:$I$60,MATCH("' + k + '",\'' + TABS.receiptText + '\'!$A$2:$A$60,0),$K$2),"' + k + '")'; };
@@ -333,11 +358,23 @@ function setupReceipt_(ss) {
   sh.getRange('C3').setFormula('=HYPERLINK("' + receiptPdfUrl_(ss, sh) + '","⬇ PDF: download / print")').setFontWeight('bold').setFontColor('#0b3d2e');
   sh.getRange('E3').setFormula('=IF($K$3>0,HYPERLINK("https://nongkhiawlaos.com/agreement/?k="&INDEX(\'' + TABS.receiptLog + '\'!$J$1:$J,$K$3),"Open agreement form"),"Agreement form: issue the receipt first")')
     .setFontWeight('bold').setFontColor('#1155cc');
+  // Manual changes for this receipt (empty = taken from the booking): for anything the booking does not say, or says differently.
+  sh.getRange('H1').setValue('Change this receipt by hand (empty = from the booking)').setFontWeight('bold').setWrap(true);
+  sh.getRange('H2:H7').setValues([['Pickup line (replaces the whole line)'], ['Return line (replaces the whole line)'], ['Tour amount USD'],
+    ['Transport amount kip'], ['Takeaway lunch (text)'], ['Takeaway lunch amount kip']]).setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange(RECEIPT_MANUAL).setBackground('#fff2a8').setValues(keepManual).setHorizontalAlignment('left');
+  sh.getRange('I4').setNumberFormat('#,##0.00'); sh.getRange('I5').setNumberFormat('#,##0'); sh.getRange('I7').setNumberFormat('#,##0');
+  sh.getRange('I2:I3').setNumberFormat('@'); sh.getRange('I6').setNumberFormat('@');
+  sh.getRange('I5').setNote('Type the transport amount in kip if the booking has none or an old price. Empty = the booking\'s amount (or the current price from Settings).');
+  sh.setColumnWidth(7, 20); sh.setColumnWidth(8, 250); sh.setColumnWidth(9, 280);
   sh.getRange('K1').setFormula('=IFERROR(MATCH($B$1,Bookings!$A$1:$A,0),0)');
   sh.getRange('K2').setFormula('=IFERROR(MATCH($B$2,\'' + TABS.receiptText + '\'!$B$1:$I$1,0),1)');
   sh.getRange('K3').setFormula('=IFERROR(MATCH($B$1,\'' + TABS.receiptLog + '\'!$C$1:$C,0),0)');
   sh.getRange('K4').setFormula('=' + S('$F$8'));
-  sh.getRange('J1:J4').setValues([['row'], ['lang'], ['logged'], ['rate']]);
+  var rem = bk('Transport remark') + '&""';
+  sh.getRange('K5').setFormula('=IF($F$2<>"",$F$2,IF(REGEXMATCH(' + rem + ',"3:30"),"3:30 - 4:30 PM",IF(REGEXMATCH(' + rem + ',"10:30"),"10:30 AM","10:00 - 10:30 AM")))');   // return time: typed, else from the booking
+  sh.getRange('K6').setFormula('=IF($D$2<>"",$D$2,"7:30 - 8:00 AM")');   // pickup time: typed, else the usual
+  sh.getRange('J1:J6').setValues([['row'], ['lang'], ['logged'], ['rate'], ['return time'], ['pickup time']]);
   sh.hideColumns(10, 2);
 
   // header
@@ -363,12 +400,12 @@ function setupReceipt_(ss) {
   sh.getRange('E12').setFormula('=' + L('bookingid') + '&":"').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('F12').setFormula('=IF($K$1>0,$B$1,"")').setHorizontalAlignment('left');
   sh.getRange('A13').setFormula('=' + L('pickup') + '&":"').setFontWeight('bold');
-  sh.getRange('B13:F13').merge().setFormula('=IF(OR(' + bk('Transfer') + '="",' + bk('Transfer') + '="No"),"",' + bk('Transfer') + '&IF(' + bk('Pickups') +
-    '="","","  |  "&' + bk('Pickups') + ')&IF(' + bk('Pickup date') + '="","","  |  "&TEXT(' + bk('Pickup date') + ',"dd/mm/yyyy")&IF($D$2="",""," "&$D$2)))').setWrap(true);
+  sh.getRange('B13:F13').merge().setFormula('=IF($I$2<>"",$I$2,IF(OR(' + bk('Transfer') + '="",' + bk('Transfer') + '="No"),"",' + bk('Transfer') + '&IF(' + bk('Pickups') +
+    '="","","  |  "&' + bk('Pickups') + ')&IF(' + bk('Pickup date') + '="","","  |  "&TEXT(' + bk('Pickup date') + ',"dd/mm/yyyy")&" "&$K$6)))').setWrap(true);
   var back = 'OR(' + bk('Transfer') + '="Round trip",REGEXMATCH(' + bk('Transfer') + '&"","(?i)to luang prabang"))';
-  sh.getRange('A14').setFormula('=IF(' + back + ',' + L('return') + '&":","")').setFontWeight('bold');
-  sh.getRange('B14:F14').merge().setFormula('=IF(' + back + ',"Nong Khiaw → Luang Prabang  |  "&IF(' + bk('Return date') + '="","",TEXT(' + bk('Return date') +
-    ',"dd/mm/yyyy")&IF($F$2="",""," "&$F$2)&"  |  ")&' + L('dropoff') + '&": "&IF(' + bk('Train station drop-off') + '="Yes",' + L('train') + ',' + L('citycenter') + '),"")').setWrap(true);
+  sh.getRange('A14').setFormula('=IF(OR(' + back + ',$I$3<>""),' + L('return') + '&":","")').setFontWeight('bold');
+  sh.getRange('B14:F14').merge().setFormula('=IF($I$3<>"",$I$3,IF(' + back + ',"Nong Khiaw → Luang Prabang  |  "&IF(' + bk('Return date') + '="","",TEXT(' + bk('Return date') +
+    ',"dd/mm/yyyy")&" "&$K$5&"  |  ")&' + L('dropoff') + '&": "&IF(' + bk('Train station drop-off') + '="Yes",' + L('train') + ',' + L('citycenter') + '),""))').setWrap(true);
 
   // travellers
   sh.getRange('A15').setFormula('=' + L('no'));
@@ -388,10 +425,16 @@ function setupReceipt_(ss) {
   sh.getRange('E29').setFormula('=' + L('kip'));
   sh.getRange('A29:F29').setFontWeight('bold').setBackground('#e8f0ea');
   var rate = '$K$4';
+  // Transport: typed amount, else the booking's, else worked out here (legs x travellers taking it, train station extra) at the Settings prices.
+  var tr = bk('Transfer'), pp = 'Travellers!$' + colLetter_(TRAVELLER_COLS.indexOf('Pickup place') + 1) + '$2:$' + colLetter_(TRAVELLER_COLS.indexOf('Pickup place') + 1);
+  var riders = 'MAX(1,N(' + bk('People') + ')-COUNTIFS(Travellers!$A$2:$A,$B$1,' + pp + ',"No transfer"))';
+  var worked = 'IF(OR(' + tr + '="",' + tr + '="No"),0,(IF(' + tr + '="Round trip",Settings!$F$3,Settings!$F$2)+IF(AND(' + bk('Train station drop-off') +
+    '="Yes",OR(' + tr + '="Round trip",REGEXMATCH(' + tr + '&"","(?i)to luang prabang"))),Settings!$F$4,0))*' + riders + ')';
   var lines = [
-    [30, 'tour', '=' + bk('People') + '&" "&' + L('people'), '=N(' + bk('Est. tour USD') + ')', '=ROUND(D30*' + rate + ',0)'],
-    [31, 'transport', '=' + bk('Transfer') + '&IF(' + bk('Train station drop-off') + '="Yes"," + "&' + L('train') + ',"")', '=E31/' + rate, '=N(' + bk('Est. transfer kip') + ')'],
-    [32, 'lunch', '=' + bk('Takeaway lunch'), '=E32/' + rate, '=N(' + bk('Lunch kip') + ')']];
+    [30, 'tour', '=' + bk('People') + '&" "&' + L('people'), '=IF($I$4<>"",N($I$4),N(' + bk('Est. tour USD') + '))', '=ROUND(D30*' + rate + ',0)'],
+    [31, 'transport', '=' + bk('Transfer') + '&IF(' + bk('Train station drop-off') + '="Yes"," + "&' + L('train') + ',"")', '=E31/' + rate,
+      '=IF($I$5<>"",N($I$5),IF(N(' + bk('Est. transfer kip') + ')>0,N(' + bk('Est. transfer kip') + '),IF($B$1="",0,' + worked + ')))'],
+    [32, 'lunch', '=IF($I$6<>"",$I$6,' + bk('Takeaway lunch') + ')', '=E32/' + rate, '=IF($I$7<>"",N($I$7),N(' + bk('Lunch kip') + '))']];
   lines.forEach(function (x) {
     sh.getRange('A' + x[0] + ':B' + x[0]).merge().setFormula('=' + L(x[1]));
     sh.getRange('C' + x[0]).setFormula(x[2]).setWrap(true);
@@ -529,6 +572,7 @@ function onEdit(e) {
     return;
   }
   if (tab === TABS.bookings && r.getRow() > 1) { bookingEdited_(e.source, r); return; }
+  if (tab === TABS.travellers && r.getRow() > 1) { travellerEdited_(e.source, r); return; }
   if (tab === TABS.arrange) {
     var a1 = r.getA1Notation();
     if (a1 === 'B2' || a1 === 'B3') fillArrange_(e.source);
@@ -537,8 +581,15 @@ function onEdit(e) {
   }
   if (tab === TABS.newBooking) { if (r.getA1Notation() === NB_SAVE && r.getValue() === true) saveManualBooking_(e.source); return; }
   if (tab !== TABS.receipt) return;
-  if (r.getA1Notation() === 'B1') numberPickedReceipt_(e.source);
-  else if (r.getA1Notation() === 'B3') refreshReceiptAmounts_(e.source);
+  var a1r = r.getA1Notation();
+  if (a1r === 'B1') numberPickedReceipt_(e.source);
+  else if (a1r === 'B3' || a1r === 'D2' || a1r === 'F2' || (r.getColumn() === 9 && r.getRow() >= 2 && r.getRow() <= 7)) refreshReceiptAmounts_(e.source);   // typed changes
+}
+
+// What was typed on the Receipt tab for the previous booking (paid amount, times, manual lines) does not carry to the next one.
+function clearReceiptManual_(ss) {
+  var sh = ss.getSheetByName(TABS.receipt);
+  sh.getRange('B3').clearContent(); sh.getRange('D2').clearContent(); sh.getRange('F2').clearContent(); sh.getRange(RECEIPT_MANUAL).clearContent();
 }
 
 // The number is issued when the booking is picked, usually before the deposit is typed: keep the log's amounts current.
@@ -562,7 +613,9 @@ function numberPickedReceipt_(ss) {
   var lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
     fillMissingFor_(ss, id);
+    clearReceiptManual_(ss);   // typed changes belong to the receipt that was open before
     var r = issueReceipt_(ss, id);
+    if (r.isNew) buildTransport_(ss);   // the team message in Transport shows the new number
     ss.toast(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.', 'Receipts', 6);
   } catch (err) {
     ss.toast(String(err.message || err), 'Receipt not numbered', 10);
@@ -575,6 +628,7 @@ function issueReceipt() {
   try {
     var id = String(ss.getSheetByName(TABS.receipt).getRange('B1').getValue()).trim();
     var r = issueReceipt_(ss, id);
+    if (r.isNew) buildTransport_(ss);
     SpreadsheetApp.flush();
     ui.alert(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" in the Receipt tab.' :
       'This booking already has receipt ' + r.no + '. Nothing changed; the receipt tab shows it.');
@@ -591,7 +645,7 @@ function receiptForSelectedBooking() {
   }
   var id = sh.getRange(sh.getActiveRange().getRow(), 1).getValue();
   var r = ss.getSheetByName(TABS.receipt);
-  r.getRange('B1').setValue(id); r.getRange('B3').clearContent();
+  r.getRange('B1').setValue(id);
   ss.setActiveSheet(r);
   numberPickedReceipt_(ss);   // a script write does not fire onEdit
 }
@@ -607,6 +661,17 @@ function receiptPaidSelfTest_(ss, sh, id) {
   } finally { st.setValue(was); }
 }
 
+// Typed lines replace the booking's: transport amount, lunch, pickup and return text; return time defaults from the booking.
+function receiptManualSelfTest_(ss, sh) {
+  var was = sh.getRange(RECEIPT_MANUAL).getValues();
+  try {
+    sh.getRange('I2').setValue('Manual pickup line'); sh.getRange('I3').setValue('Manual return line'); sh.getRange('I5').setValue(123000);
+    sh.getRange('I6').setValue('Pad Thai x2'); sh.getRange('I7').setValue(138000); SpreadsheetApp.flush();
+    return sh.getRange('B13').getDisplayValue() === 'Manual pickup line' && sh.getRange('B14').getDisplayValue() === 'Manual return line' &&
+      sh.getRange('E31').getValue() === 123000 && sh.getRange('C32').getDisplayValue() === 'Pad Thai x2' && sh.getRange('E32').getValue() === 138000;
+  } finally { sh.getRange(RECEIPT_MANUAL).setValues(was); SpreadsheetApp.flush(); }
+}
+
 function receiptSelfTest_(ss, id) {
   var sh = ss.getSheetByName(TABS.receipt), keep = sh.getRange('B1:B3').getValues(), log = ss.getSheetByName(TABS.receiptLog);
   try {
@@ -615,18 +680,18 @@ function receiptSelfTest_(ss, id) {
     var rate = receiptRate_(ss), draft = sh.getRange('F9').getDisplayValue(), title = sh.getRange('A9').getDisplayValue();
     var r1 = issueReceipt_(ss, id), r2 = issueReceipt_(ss, id);   // second call must not issue a new number
     SpreadsheetApp.flush();
-    var wantKip = Math.round(60 * rate) + 570000 + 65000;
+    var k = kipPrices_(ss), wantKip = Math.round(60 * rate) + (k.round + k.train) + 65000;
     var kip = sh.getRange('E33').getValue(), bal = sh.getRange('D35').getValue();
     var trav = sh.getRange('B16').getDisplayValue() + sh.getRange('C16').getDisplayValue();
     var lookup = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[0] || [];
     var c = { draft: draft === 'ENTWURF', title: title === 'QUITTUNG', no6: /^\d{6}$/.test(r1.no), first: r1.isNew, second: !r2.isNew && r2.no === r1.no,
-      shown: sh.getRange('F9').getDisplayValue() === r1.no, kip: kip === wantKip, bal: Math.abs(bal - (60 + (570000 + 65000) / rate - 10)) < 0.01,
+      shown: sh.getRange('F9').getDisplayValue() === r1.no, kip: kip === wantKip, bal: Math.abs(bal - (60 + (k.round + k.train + 65000) / rate - 10)) < 0.01,
       agree: agreementSelfTest_(ss, id, r1.key) === true,
       ret: sh.getRange('A14').getDisplayValue() === 'Rückfahrt:' && sh.getRange('B14').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1 &&
         sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
       all: allGuestsSelfTest_(ss, id),
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
-      paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
+      manual: receiptManualSelfTest_(ss, sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' bal=' + bal + ' trav=' + trav : true;
   } catch (e) {
@@ -650,6 +715,14 @@ function setupAgreements_(ss) {
   setupTable_(ss, TABS.agreements, AGREEMENT_COLS, {}, FORMATS.Agreements);
   var sh = ss.getSheetByName(TABS.agreements);
   sh.setColumnWidth(7, 180); sh.setColumnWidth(12, 220); sh.setColumnWidth(16, 180);
+  sh.showColumns(1, sh.getMaxColumns());   // every answer of the form has its column; none stays hidden
+  var pc = colLetter_(AGREEMENT_COLS.indexOf('Photo permission') + 1), no = '=$' + pc + '2="No"', yes = '=$' + pc + '2="Yes"';
+  var kept = sh.getConditionalFormatRules().filter(function (r) { var b = r.getBooleanCondition(); var f = b && b.getCriteriaValues()[0]; return f !== no && f !== yes; });
+  var area = sh.getRange(2, AGREEMENT_COLS.indexOf('Photo permission') + 1, sh.getMaxRows() - 1, 1);
+  sh.setConditionalFormatRules(kept.concat([
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(no).setBackground('#f4cccc').setFontColor('#9c1c1c').setBold(true).setRanges([area]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(yes).setBackground('#d9ead3').setRanges([area]).build()]));
+  sh.getRange(1, AGREEMENT_COLS.indexOf('Photo permission') + 1).setNote('Photo permission from the form: Yes = photos/videos may be used for marketing and social media, No = not allowed (shown red).');
 }
 
 // The link's secret code -> booking (only receipts that were issued have one).
@@ -806,7 +879,8 @@ function setupTrip_(ss) {
   sh.getRange(15, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#e8f0ea');
   var arr = '{' + cols.map(function (c) { return c === 'Pickup place' ? stayingPlace_(T(c)) : T(c); }).join(',') + '}';
   var cond = '(' + T('Tour date') + '>=$B$2)*(' + T('Tour date') + '<$B$2+1)*(' + T('Status') + '<>"Cancelled")*(' + T('Booking ID') + '<>"")';
-  sh.getRange('A16').setFormula('=IFERROR(SORT(FILTER(' + arr + ',' + cond + '),1,TRUE,2,TRUE),"No travellers on this date")');
+  // Receipt No ascending (guests without a receipt yet last), then name
+  sh.getRange('A16').setFormula('=IFERROR(LET(s,FILTER(' + arr + ',' + cond + '),r,INDEX(s,0,10),n,INDEX(s,0,2),SORT(s,IF(r="",1,0),TRUE,r,TRUE,n,TRUE)),"No travellers on this date")');
   sh.setColumnWidth(1, 250); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 120); sh.setColumnWidth(4, 90);
   sh.setColumnWidth(5, 110); sh.setColumnWidth(6, 200); sh.setColumnWidth(7, 210); sh.setColumnWidth(8, 260);
   sh.setColumnWidth(9, 140); sh.setColumnWidth(10, 100);
@@ -938,7 +1012,8 @@ function onOpen() {
   ui.createMenu('Receipts').addItem('Receipt for the selected booking', 'receiptForSelectedBooking').addItem('Issue receipt (give it a number)', 'issueReceipt')
     .addItem('Download PDF', 'downloadReceiptPdf').addItem('Print receipt', 'printReceipt').addToUi();
   ui.createMenu('Transport').addItem('Refresh', 'refreshTransport').addToUi();
-  ui.createMenu('Bookings').addItem('Sort by tour date', 'sortBookings').addItem('Remove duplicate rows (saved twice)', 'removeDuplicateRows').addToUi();
+  ui.createMenu('Bookings').addItem('Sort by tour date', 'sortBookings').addItem('Recalculate amounts of the selected booking (today\'s prices)', 'recalcSelectedBookings')
+    .addItem('Remove duplicate rows (saved twice)', 'removeDuplicateRows').addToUi();
   var ss = SpreadsheetApp.getActive();
   sortBookings_(ss);      // earliest tour date at the top
   buildTransport_(ss);    // the list is current whenever the sheet is opened
@@ -985,6 +1060,8 @@ function setupHelp_(ss) {
     ['2. Pick the language. What the guest paid comes from Bookings: Status "Paid" = paid in full (the receipt shows ✓ PAID), otherwise "Amount paid USD" is the deposit. The yellow "Paid (USD)" cell is only for overriding it. (If the number still says DRAFT, use menu "Receipts" > "Issue receipt".)'],
     ['3. Menu "Receipts" > "Download PDF" saves it as "No 000001 <guest name>.pdf". Send that file to the guest. Balance = tour + transport + food - paid.'],
     ['   Quickest: click "⬇ PDF: download / print" at the top of the Receipt tab (works for everyone, also on a phone). To print for the guest to sign: open it, then Ctrl+P (Cmd+P on a Mac).'],
+    ['   Change the receipt by hand: the yellow cells at the right of the Receipt tab (columns H:I) replace the pickup line, the return line, the tour amount, the transport amount (kip), the takeaway lunch text and its amount. Empty = from the booking. Pickup time and Return time (yellow, top) are filled in from the booking (7:30 - 8:00 AM; back 10:00 - 10:30 AM, or 3:30 - 4:30 PM for the 103 "after the tour" return); type to change. Everything typed is cleared when you pick another booking.'],
+    ['   Transport amount empty in the booking or an old price? It is worked out at today\'s prices. To change a booking\'s amounts for good: select its row in Bookings and use menu "Bookings" > "Recalculate amounts" (today\'s prices), or type the amount in Bookings (Est. transfer kip).'],
     ['4. After the receipt, "Open agreement form" (Receipt tab) opens the guests\' tour agreement on the website. Let each guest complete and sign it on a phone or tablet. The answers appear in the "Agreements" tab.'],
     [''],
     ['GUIDE REPORT  (tab "Guide report")'],
@@ -1010,6 +1087,10 @@ function setupHelp_(ss) {
     ['Guests already in Nong Khiaw who only go back: Minivan transfer "One way to Luang Prabang", the date back and their place in Nong Khiaw.'],
     ['Tick "Private tour" for a group that has the tour to itself; it shows in Bookings (column Private tour) and in the Guide report.'],
     [''],
+    ['TAKEAWAY LUNCH ADDED LATER, ONE TRAVELLER CANCELLING  (tab "Travellers")'],
+    ['A guest orders takeaway food after booking (WhatsApp): in Travellers, choose the dish in the column "Takeaway lunch" on that traveller\'s row (dropdown of the Lunch menu). The price, the booking\'s Takeaway lunch / Lunch kip, the receipt and the Lunch report follow at once.'],
+    ['One traveller of a group cancels: choose Cancelled in the column "Traveller status" (far right) on that row. The row turns red, and that person leaves the Trip sheet, Guide report, Lunch report and Transport. The column "Status" before it is automatic (it follows the booking in Bookings).'],
+    [''],
     ['CANCELLING A BOOKING'],
     ['In Bookings set Status to "Cancelled". The date is added to Staff notes, the row turns grey and struck through, and the guests leave the Trip sheet, Guide report, Transport and Dashboard totals. Write the reason (e.g. "sick") in Staff notes. Nothing is deleted.'],
     [''],
@@ -1019,6 +1100,9 @@ function setupHelp_(ss) {
     ['AGENCY SHARE  (tab "Agency share")'],
     ['One row per group passed to or from another agency: date, package, guests, sending agency, receiving agency, price per person (empty = Settings price), what the sender gets per person, guide name and WhatsApp. Totals and the summary per agency (right side; type a month like 10/2026 in the yellow cell) are worked out by themselves.'],
     ['Guests with no pickup place (walk-ins, no transfer) show as "Staying in Nong Khiaw" in the Trip sheet and All guests.'],
+    ['AGREEMENTS  (tab "Agreements")'],
+    ['One row per traveller who signed on the website form: name, nationality, passport, Photo permission (No shows red), medical / allergies, emergency contact and phone, insurance no, signed name. It fills by itself; nothing to type.'],
+    [''],
     ['A booking or guest saved twice: menu "Bookings" > "Remove duplicate rows". It removes only exact copies and keeps the first one.']
   ];
   sh.getRange(1, 1, lines.length, 1).setValues(lines).setWrap(true).setVerticalAlignment('top');
@@ -1332,7 +1416,7 @@ function selfTest_(ss) {
     t[TRAVELLER_COLS.indexOf('Passport expires')] === '01/01/2030' && t[TRAVELLER_COLS.indexOf('Food')] === 'Vegetarian';
   out.transferOk = b[BOOKING_COLS.indexOf('Train station drop-off')] === 'Yes' &&
     b[BOOKING_COLS.indexOf('Pickups')] === 'Test hostel: 1; No transfer: 2' &&
-    b[BOOKING_COLS.indexOf('Est. transfer kip')] === '570,000' && t[TRAVELLER_COLS.indexOf('Pickup place')] === 'Test hostel';
+    b[BOOKING_COLS.indexOf('Est. transfer kip')] === kipText_(kipPrices_(ss).round + kipPrices_(ss).train) && t[TRAVELLER_COLS.indexOf('Pickup place')] === 'Test hostel';
   var t2 = ss.getSheetByName(TABS.travellers).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[1] || [];
   out.lunchOk = b[BOOKING_COLS.indexOf('Takeaway lunch')] === 'Avocado sandwich 1' && b[BOOKING_COLS.indexOf('Lunch kip')] === '65,000' &&
     t2[TRAVELLER_COLS.indexOf('Takeaway lunch')] === 'Avocado sandwich' && t2[TRAVELLER_COLS.indexOf('Lunch kip')] === '65,000';
@@ -1346,6 +1430,7 @@ function selfTest_(ss) {
   out.arrangeOk = arrangeSelfTest_(ss);
   out.newBookingOk = newBookingSelfTest_(ss);
   out.receiptOk = receiptSelfTest_(ss, id);
+  out.travellerLunchOk = travellerLunchSelfTest_(ss, id);
   out.reviewsOk = JSON.parse(reviewsJson_()).length > 0;
   out.contentOk = contentSelfTest_(ss);
   var testIds = {};  // booking IDs of test bookings (a site test has an NK... ID and SELFTEST- as lead name)
@@ -1362,6 +1447,24 @@ function selfTest_(ss) {
   out.tabsOk = ss.getSheets().length >= 6;
   out.frozenOk = [TABS.bookings, TABS.travellers, TABS.inquiries].every(function (n) { return ss.getSheetByName(n).getFrozenRows() === 1; });
   return JSON.stringify(out);
+}
+
+// A lunch typed for traveller 1 in Travellers is added to the booking (text and kip); one traveller cancelled leaves the Pax count.
+function travellerLunchSelfTest_(ss, id) {
+  var tr = ss.getSheetByName(TABS.travellers), bk = ss.getSheetByName(TABS.bookings), g = ss.getSheetByName(TABS.guide);
+  var rows = tr.getRange(1, 1, tr.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }), first = rows.indexOf(id) + 1;
+  var cell = function (c) { return tr.getRange(first, TRAVELLER_COLS.indexOf(c) + 1); };
+  var bids = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }), brow = bids.indexOf(id) + 1;
+  var bcell = function (c) { return bk.getRange(brow, BOOKING_COLS.indexOf(c) + 1); };
+  var menu = lunchMap_(ss), dish = Object.keys(menu)[0];
+  try {
+    if (first < 2 || brow < 2 || !dish) return 'missing';
+    cell('Takeaway lunch').setValue(dish); travellerEdited_(ss, cell('Takeaway lunch'));
+    var text = String(bcell('Takeaway lunch').getValue()), kip = Number(bcell('Lunch kip').getValue());
+    if (text.indexOf(dish + ' 1') === -1 || text.indexOf('Avocado sandwich 1') === -1 || kip !== menu[dish].price + menu['Avocado sandwich'].price) return 'booking lunch: ' + text;
+    return true;
+  } catch (err) { return 'error: ' + err; }
+  finally { cell('Takeaway lunch').clearContent(); cell('Lunch kip').clearContent(); syncLunch_(ss, id); }
 }
 
 // Points the trip sheet at the sample booking's date, checks the list and the totals, then puts the date back.
@@ -1450,7 +1553,7 @@ function setupGuide_(ss) {
     ['Receipt No', T('Receipt No'), '@'],
     ['Booking ID', 'Travellers!$A$2:$A'],
     ['Contact name', T('Full name')],
-    ['Pax', A(V('People'))],
+    ['Pax', A('COUNTIFS(Travellers!$A$2:$A,Travellers!$A$2:$A,' + T('Status') + ',"<>Cancelled")')],
     ['Package', A(T('Tour') + '&IF(' + privateTour + '," Private","")'), '@'],
     ['Day', A('"Day "&' + dayNo + '&" of "&COUNTIF(' + keys + ',' + T('Tour') + '&"|*")')],
     ['Plan for the day', A('IFERROR(VLOOKUP(' + key + ',{' + keys + ',' + P + '$C$' + PLAN_ROW + ':$C},2,FALSE),"")')],
@@ -1540,7 +1643,7 @@ function setupLunchReport_(ss) {
     ['Tour date', when, 'dd/mm/yyyy'],
     ['Tour', T('Tour'), '@'],
     ['Customer name', T('Full name')],
-    ['Pax', A(V('People'))],
+    ['Pax', A('COUNTIFS(Travellers!$A$2:$A,Travellers!$A$2:$A,' + T('Status') + ',"<>Cancelled")')],
     ['Food item', A('TRIM(SUBSTITUTE(SUBSTITUTE(' + T('Takeaway lunch') + ',"(",""),")",""))')],
     ['Qty', A('IF(' + T('Takeaway lunch') + '<>"",1,"")')],
     ['Ready by (pickup time)', A('IF(' + rides + '*(' + V('Pickup date') + '<>"")*(IFERROR(INT(' + V('Pickup date') + '),0)=IFERROR(INT(' + when + '),-1)),' +
@@ -1778,6 +1881,13 @@ function setupTransport_(ss) {
   buildTransport_(ss);
 }
 
+function receiptNumbers_(ss) {
+  var log = ss.getSheetByName(TABS.receiptLog), map = {};
+  if (!log || log.getLastRow() < 2) return map;
+  log.getRange(2, 1, log.getLastRow() - 1, 3).getDisplayValues().forEach(function (r) { if (r[2] && r[0]) map[r[2]] = r[0]; });
+  return map;
+}
+
 function transportData_(ss) {
   var bk = ss.getSheetByName(TABS.bookings), tr = ss.getSheetByName(TABS.travellers);
   var B = bk.getDataRange().getValues(), T = tr.getDataRange().getValues();
@@ -1786,7 +1896,7 @@ function transportData_(ss) {
   var riders = {};   // booking ID -> its travellers who take the minivan, in traveller order
   for (var r = 1; r < T.length; r++) {
     var id = String(T[r][ti['Booking ID']]);
-    if (!id || String(T[r][ti['Pickup place']]) === 'No transfer') continue;
+    if (!id || String(T[r][ti['Pickup place']]) === 'No transfer' || String(T[r][ti['Status']]) === 'Cancelled') continue;
     (riders[id] = riders[id] || []).push({ n: Number(T[r][ti['Traveller #']]) || 0, name: String(T[r][ti['Full name']]), first: String(T[r][ti['First name']]),
       place: String(T[r][ti['Pickup place']]), map: String(T[r][ti['Pickup map']]) });
   }
@@ -1827,16 +1937,17 @@ function buildTransport_(ss) {
   var sh = ss.getSheetByName(TABS.transport), date = sh.getRange('B2').getValue(), day = dayKey_(date);
   var d = transportData_(ss), B = d.B, bi = d.bi, shown = date instanceof Date ? Utilities.formatDate(date, TIME_ZONE, 'dd/MM/yyyy') : '';
   var V = function (row, c) { return bi[c] === -1 ? '' : row[bi[c]]; };
+  var logNo = receiptNumbers_(ss);   // a receipt issued from the Receipt tab always shows, even if Bookings lost it
   var arr = [], dep = [];
   for (var r = 1; r < B.length; r++) {
     var row = B[r], id = String(V(row, 'Booking ID')), status = String(V(row, 'Status')), transfer = String(V(row, 'Transfer'));
     var up = goesUp_(transfer), back = goesDown_(transfer) || dayKey_(V(row, 'Return date')) !== '';   // a return date typed later counts too
     if (!id || status === 'Cancelled' || (!up && !back)) continue;
     var people = d.riders[id] || [{ n: 1, name: String(V(row, 'Lead name')), first: '', place: String(V(row, 'Accommodation')), map: String(V(row, 'Maps link')) }];
-    var phone = V(row, 'WhatsApp no');
+    var phone = V(row, 'WhatsApp no'), receipt = String(V(row, 'Receipt No') || logNo[id] || '');
     var team = teamMessage_(people, up ? V(row, 'Pickup date') : '', back ? V(row, 'Return date') : '', V(row, 'Train station drop-off') === 'Yes',
-      V(row, 'Lead name') || people[0].name, phone, id, V(row, 'Receipt No'), String(V(row, 'Pickup in Nong Khiaw')));
-    var base = function (p, i) { return [i ? '' : V(row, 'Submitted at'), id, text_(String(V(row, 'Receipt No'))), i ? '' : text_(String(phone)), p.name, i ? '' : people.length]; };
+      V(row, 'Lead name') || people[0].name, phone, id, receipt, String(V(row, 'Pickup in Nong Khiaw')));
+    var base = function (p, i) { return [i ? '' : V(row, 'Submitted at'), id, text_(receipt), i ? '' : text_(String(phone)), p.name, i ? '' : people.length]; };
     if (up && dayKey_(V(row, 'Pickup date')) === day) {
       var plate = String(V(row, 'Vehicle to Nong Khiaw'));
       var msg = ['minivan to Nong Khiaw! The minivan plate no: ' + (plate || '(we send it soon)'),
@@ -1851,7 +1962,7 @@ function buildTransport_(ss) {
       var drop = V(row, 'Train station drop-off') === 'Yes' ? 'Luang Prabang train station' : 'City center';
       var msg2 = ['minivan to Luang Prabang! The minivan plate no: ' + (plate2 || '(we send it soon)'),
         'The driver will come to you' + (nk ? ' at ' + nk : '') + ', please be ready. Drop-off: ' + drop + '.'];
-      dep.push({ key: nk + '|' + id, rows: people.map(function (p, i) {
+      dep.push({ key: (V(row, 'Train station drop-off') === 'Yes' ? '1' : '0') + '|' + nk + '|' + id, rows: people.map(function (p, i) {
         return base(p, i).concat([V(row, 'Return date'), i ? '' : nk, i ? '' : plate2, drop, i ? '' : V(row, 'Transport remark'),
           i ? '' : waLink_(phone, msg2), i ? '' : team, 'dep']);
       }) });
@@ -2221,6 +2332,62 @@ function newBookingSelfTest_(ss) {
   finally { form.setValues(savedForm); trav.setValues(savedTrav); tp.getRange('B2').setValue(tDate); buildTransport_(ss); }
 }
 
+// A typed cell in Travellers. Takeaway lunch: the traveller's price follows the Lunch menu, and the booking's Takeaway lunch /
+// Lunch kip (what the receipt shows) are added up again, so a lunch ordered on WhatsApp after booking just goes in here.
+// Traveller status: the Transport list and the reports leave that traveller out.
+function travellerEdited_(ss, range) {
+  var sh = range.getSheet(), at = function (c) { return TRAVELLER_COLS.indexOf(c) + 1; };
+  var first = range.getColumn(), last = first + range.getNumColumns() - 1, hit = function (c) { return at(c) >= first && at(c) <= last; };
+  if (hit('Takeaway lunch')) {
+    var menu = lunchMap_(ss), ids = {}, n = Math.min(range.getNumRows(), 200);
+    for (var i = 0; i < n; i++) {
+      var row = range.getRow() + i, id = String(sh.getRange(row, 1).getValue());
+      if (!id) continue;
+      var m = /^(.*?)(?:\s*\((.*)\))?$/.exec(String(sh.getRange(row, at('Takeaway lunch')).getValue()).trim()), item = menu[m[1].trim()];
+      sh.getRange(row, at('Lunch kip')).setValue(item ? item.price : '');
+      ids[id] = true;
+    }
+    var done = Object.keys(ids).filter(function (id) { return syncLunch_(ss, id); });
+    if (done.length) ss.toast('Takeaway lunch added up for ' + done.join(', ') + ' (Bookings and the receipt follow).', 'Travellers', 6);
+  }
+  if (hit('Traveller status')) buildTransport_(ss);
+}
+
+// The booking's Takeaway lunch text ("Pad Thai (Chicken) 1; Avocado sandwich 2") and Lunch kip from its travellers' rows.
+function syncLunch_(ss, id) {
+  var tr = ss.getSheetByName(TABS.travellers), bk = ss.getSheetByName(TABS.bookings);
+  var bids = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }), at = bids.indexOf(id);
+  if (at < 1 || tr.getLastRow() < 2) return false;
+  var rows = tr.getRange(2, 1, tr.getLastRow() - 1, TRAVELLER_COLS.length).getValues(), count = {}, kip = 0;
+  rows.forEach(function (r) {
+    if (String(r[0]) !== id) return;
+    var txt = String(r[TRAVELLER_COLS.indexOf('Takeaway lunch')]).trim();
+    if (!txt) return;
+    count[txt] = (count[txt] || 0) + 1; kip += Number(r[TRAVELLER_COLS.indexOf('Lunch kip')]) || 0;
+  });
+  var text = Object.keys(count).map(function (k) { return k + ' ' + count[k]; }).join('; ');
+  bk.getRange(at + 1, BOOKING_COLS.indexOf('Takeaway lunch') + 1).setValue(text);
+  bk.getRange(at + 1, BOOKING_COLS.indexOf('Lunch kip') + 1).setValue(kip || '');
+  return true;
+}
+
+// Menu Bookings > Recalculate amounts: for the selected booking rows, tour USD, transfer kip and lunch kip again at today's prices
+// (old bookings keep the price they were made at; this is how to bring one to the current price).
+function recalcSelectedBookings() {
+  var ss = SpreadsheetApp.getActive(), sh = ss.getActiveSheet();
+  if (sh.getName() !== TABS.bookings) { SpreadsheetApp.getUi().alert('Select the booking row(s) on the Bookings tab first.'); return; }
+  var range = sh.getActiveRange(), n = 0;
+  for (var r = Math.max(range.getRow(), 2); r < range.getRow() + range.getNumRows() && n < 50; r++) {
+    var id = String(sh.getRange(r, 1).getValue());
+    if (!id) continue;
+    sh.getRange(r, BOOKING_COLS.indexOf('Est. tour USD') + 1).clearContent();
+    fillAmounts_(ss, r, true);
+    syncLunch_(ss, id);
+    n++;
+  }
+  ss.toast(n + ' booking(s) recalculated at today\'s prices.', 'Bookings', 6);
+}
+
 // Bookings columns the Transport list shows: typing in one of them redraws the list at once.
 var TRANSPORT_SOURCES = ['Booking ID', 'Lead name', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
   'Maps link', 'Status', 'Receipt No', 'WhatsApp no', 'Pickup in Nong Khiaw', 'Vehicle to Nong Khiaw', 'Vehicle to Luang Prabang', 'Transport remark'];
@@ -2248,6 +2415,9 @@ function bookingEdited_(ss, range) {
   var hit = function (c) { return at(c) >= first && at(c) <= last; };
   if (range.getNumRows() === 1 && (hit('Transfer') || hit('Train station drop-off') || hit('People'))) {
     fillAmounts_(ss, range.getRow(), true);   // the transfer estimate follows the new choice
+  }
+  if (hit('Takeaway lunch') || hit('Lunch kip')) {
+    ss.toast('Takeaway lunch is kept per traveller: type it in the Travellers tab (column Takeaway lunch) and the booking and receipt follow. Typed here, the Lunch report will not see it.', 'Bookings', 10);
   }
   if (hit('Status')) {
     for (var r = range.getRow(); r < range.getRow() + range.getNumRows(); r++) {

@@ -9,7 +9,7 @@
 
   /* Prices live in the sheet's Settings tab; strings carry placeholders such as {p102} or {kip1}. These are the
      fallback values used until (or unless) the sheet answers. */
-  var CONFIG = { prices: { '101': 30, '102': 60, '103': 90, '001': 30 }, kip: { one: 250000, round: 500000, train: 70000 } };
+  var CONFIG = { prices: { '101': 30, '102': 60, '103': 90, '001': 30 }, kip: { one: 220000, round: 440000, train: 70000 } };
   // 2026-12-07 -> 07/12/26 (the WhatsApp message uses Day/Month/Year)
   function dmy(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? m[3] + '/' + m[2] + '/' + m[1].slice(2) : (iso || ''); }
   function fmtNum(n) {
@@ -311,6 +311,7 @@
     a.addEventListener('click', function () {
       var sel = $('#fTour');
       if (sel) { sel.value = a.getAttribute('data-tour'); sel.dispatchEvent(new Event('change')); }
+      var pv = $('#fPrivate'); if (pv && !pv.closest('[hidden]')) pv.checked = a.hasAttribute('data-private');
       showTab('book');
       // focusing a date field on a phone opens the picker over the page, so only do it with a mouse
       if (window.matchMedia('(hover: hover)').matches) setTimeout(function () { dateInput.focus({ preventScroll: true }); }, 700);

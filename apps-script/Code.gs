@@ -52,7 +52,7 @@ function goesDown_(transfer) { return /round/i.test(transfer) || /to luang praba
 var TRANSPORT_ONLY = 'T00';   // tour code of a booking without a tour (shuttle only)
 var TOURS = [['101', 'Overnight camping above the clouds', 30], ['102', '2 days 1 night', 60],
   ['103', '3 days 2 nights', 90], ['001', '1-day boat trip', 30]];
-var TRANSFER_KIP = 220000;   // one way per person; round trip is twice that (Settings F2:F3, staff-editable)
+var TRANSFER_KIP = 250000;   // one way per person (a legal minimum, 2026-10-18); round trip is twice that (Settings F2:F3, staff-editable)
 var TIME_ZONE = 'Asia/Vientiane';
 
 /* ---------- setup: safe to run again; it never deletes data rows ---------- */
@@ -138,6 +138,11 @@ function setupSettings_(ss) {
   if (sh.getRange('F2').getValue() === 250000) {
     sh.getRange('F2').setValue(TRANSFER_KIP);
     if (sh.getRange('F3').getValue() === 500000) sh.getRange('F3').setValue(TRANSFER_KIP * 2);
+  }
+  // later the same day: transport may not be sold below 250,000 kip per person, so 220,000 / 440,000 goes back to 250,000 / 500,000
+  if (sh.getRange('F2').getValue() === 220000) {
+    sh.getRange('F2').setValue(TRANSFER_KIP);
+    if (sh.getRange('F3').getValue() === 440000) sh.getRange('F3').setValue(TRANSFER_KIP * 2);
   }
   if (sh.getLastRow() > 0) { migrateSettings_(sh); return; }
   sh.getRange('A:A').setNumberFormat('@');
@@ -396,7 +401,7 @@ function setupReceipt_(ss) {
   sh.getRange('F11').setFormula('=' + bk('Payment method'));
   sh.getRange('A12').setFormula('=' + L('tour') + '&":"').setFontWeight('bold');
   sh.getRange('B12:F12').breakApart();
-  sh.getRange('B12:D12').merge().setFormula('=' + bk('Tour name'));
+  sh.getRange('B12:D12').merge().setFormula('=IF(' + bk('Tour') + '="","",IF(' + bk('Tour') + '="' + TRANSPORT_ONLY + '",' + bk('Tour name') + ',"Code: "&' + bk('Tour') + '&" – "&' + bk('Tour name') + '))');
   sh.getRange('E12').setFormula('=' + L('bookingid') + '&":"').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('F12').setFormula('=IF($K$1>0,$B$1,"")').setHorizontalAlignment('left');
   sh.getRange('A13').setFormula('=' + L('pickup') + '&":"').setFontWeight('bold');
@@ -674,7 +679,9 @@ function receiptManualSelfTest_(ss, sh) {
 
 function receiptSelfTest_(ss, id) {
   var sh = ss.getSheetByName(TABS.receipt), keep = sh.getRange('B1:B3').getValues(), log = ss.getSheetByName(TABS.receiptLog);
+  var keepTyped = sh.getRange(RECEIPT_MANUAL).getValues(), keepTimes = [sh.getRange('D2').getValue(), sh.getRange('F2').getValue()];   // what staff typed on the receipt is theirs
   try {
+    sh.getRange(RECEIPT_MANUAL).clearContent(); sh.getRange('D2').clearContent(); sh.getRange('F2').clearContent();
     sh.getRange('B1').setValue(id); sh.getRange('B2').setValue('Deutsch'); sh.getRange('B3').setValue(10);
     SpreadsheetApp.flush();
     var rate = receiptRate_(ss), draft = sh.getRange('F9').getDisplayValue(), title = sh.getRange('A9').getDisplayValue();
@@ -693,11 +700,13 @@ function receiptSelfTest_(ss, id) {
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
       manual: receiptManualSelfTest_(ss, sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
-    return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' bal=' + bal + ' trav=' + trav : true;
+    return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' lines=' + [sh.getRange('E30').getValue(), sh.getRange('E31').getValue(), sh.getRange('E32').getValue()].join('/') +
+      ' prices=' + [k.one, k.round, k.train, rate].join('/') + ' stored=' + [lookup[BOOKING_COLS.indexOf('Est. tour USD')], lookup[BOOKING_COLS.indexOf('Est. transfer kip')], lookup[BOOKING_COLS.indexOf('Lunch kip')]].join('/') + ' bal=' + bal + ' trav=' + trav : true;
   } catch (e) {
     return 'error: ' + e;
   } finally {
-    sh.getRange('B1:B3').setValues(keep);
+    sh.getRange('B1:B3').setValues(keep); sh.getRange(RECEIPT_MANUAL).setValues(keepTyped);
+    sh.getRange('D2').setValue(keepTimes[0]); sh.getRange('F2').setValue(keepTimes[1]);
     for (var i = log.getLastRow(); i >= 2; i--) if (String(log.getRange(i, 3).getValue()).indexOf('SELFTEST-') === 0) log.deleteRow(i);
     var ag = ss.getSheetByName(TABS.agreements);
     for (var j = ag.getLastRow(); j >= 2; j--) if (String(ag.getRange(j, 2).getValue()).indexOf('SELFTEST-') === 0) ag.deleteRow(j);
@@ -1906,7 +1915,13 @@ function transportData_(ss) {
 
 // What Noy sends the minivan team for a booking, in her words: pax, the guest and their WhatsApp (a wa.me link the driver can
 // tap), up date, pickup (place + map), down date and drop-off.
-function teamMessage_(people, up, down, train, guest, phone, id, receipt, nk) {
+// "Back after the tour, about 3:30-4:30 PM" -> 3:30-4:30 PM; "...about 10:30 AM" -> 10:30 AM; otherwise the usual 10:00-10:30 AM.
+function returnTime_(remark) {
+  var r = String(remark || '');
+  return /3:30/.test(r) ? '3:30-4:30 PM' : /10:30/.test(r) ? '10:30 AM' : '10:00-10:30 AM';
+}
+
+function teamMessage_(people, up, down, train, guest, phone, id, receipt, nk, remark) {
   var dm = function (v) { return v instanceof Date ? Utilities.formatDate(v, TIME_ZONE, 'dd/MM') : String(v || ''); };
   var places = [], seen = {};
   people.forEach(function (p) { var k = p.place + ' ' + p.map; if (!seen[k]) { seen[k] = true; places.push((p.place + ' ' + p.map).trim()); } });
@@ -1919,7 +1934,7 @@ function teamMessage_(people, up, down, train, guest, phone, id, receipt, nk) {
     'ລູກຄ້າ: ' + guest + (digits.length >= 7 ? '  WhatsApp: ' + String(phone).trim() + ' https://wa.me/' + digits : '')]
     .concat(others.length ? ['ຜູ້ຕິດຕາມ: ' + others.join(', ')] : [])   // the other guests (followers), so the driver can check everyone
     .concat(up ? ['ຂຶ້ນ: ' + dm(up), 'ບ່ອນຮັບ: ' + places.join(' / ')] : [])
-    .concat(down ? ['ລົງ: ' + dm(down) + ' ' + (train ? 'ສົ່ງສະຖານີລົດໄຟ' : 'ສົ່ງກາງເມືອງ')] : [])
+    .concat(down ? ['ລົງ: ' + dm(down) + ' ' + returnTime_(remark) + ' ' + (train ? 'ສົ່ງສະຖານີລົດໄຟ' : 'ສົ່ງກາງເມືອງ')] : [])
     .concat(down && (nk || !up) ? ['ບ່ອນຮັບໜອງຂຽວ: ' + (nk || places.join(' / '))] : []).join('\n');
 }
 
@@ -1946,7 +1961,7 @@ function buildTransport_(ss) {
     var people = d.riders[id] || [{ n: 1, name: String(V(row, 'Lead name')), first: '', place: String(V(row, 'Accommodation')), map: String(V(row, 'Maps link')) }];
     var phone = V(row, 'WhatsApp no'), receipt = String(V(row, 'Receipt No') || logNo[id] || '');
     var team = teamMessage_(people, up ? V(row, 'Pickup date') : '', back ? V(row, 'Return date') : '', V(row, 'Train station drop-off') === 'Yes',
-      V(row, 'Lead name') || people[0].name, phone, id, receipt, String(V(row, 'Pickup in Nong Khiaw')));
+      V(row, 'Lead name') || people[0].name, phone, id, receipt, String(V(row, 'Pickup in Nong Khiaw')), String(V(row, 'Transport remark')));
     var base = function (p, i) { return [i ? '' : V(row, 'Submitted at'), id, text_(receipt), i ? '' : text_(String(phone)), p.name, i ? '' : people.length]; };
     if (up && dayKey_(V(row, 'Pickup date')) === day) {
       var plate = String(V(row, 'Vehicle to Nong Khiaw'));
@@ -2490,6 +2505,7 @@ function transportSelfTest_(ss, id) {
     if (a.v[12].indexOf('Booking id: ' + id + '\nReceipt no: ') !== 0 || a.v[12].indexOf('\nໄປກັບ 1pax\n') === -1 || a.v[12].indexOf('ສົ່ງສະຖານີລົດໄຟ') === -1) return 'team message';
     var totals = sh.getRange(a.row, 5, sh.getLastRow() - a.row + 1, 2).getValues().filter(function (v) { return v[0] === 'Total'; });
     if (String(sh.getRange(TRANSPORT_START - 1, 1).getValue()).indexOf('↑ ຂຶ້ນ') !== 0 || !totals.length || totals[0][1] !== '1 pax') return 'labels/total';
+    if (returnTime_('Back after the tour, about 3:30-4:30 PM') !== '3:30-4:30 PM' || a.v[12].indexOf('ລົງ: 18/01 10:00-10:30 AM ສົ່ງສະຖານີລົດໄຟ') === -1) return 'return time in message';
     if (a.v[12].indexOf('ລູກຄ້າ: Test Person  WhatsApp: +856 20 1234 5678 https://wa.me/8562012345678') === -1) return 'team whatsapp';
     if (a.v[9] !== 'ກກ 5696' || f.indexOf('wa.me/8562012345678') === -1 || f.indexOf('plate no: ກກ 5696') === -1 || f.indexOf('please wait at the reception') === -1) return 'plate saved';
     cell.setValue(new Date(2030, 0, 18, 12)); buildTransport_(ss);

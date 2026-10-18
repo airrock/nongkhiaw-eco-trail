@@ -179,8 +179,8 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - Bookings typed by staff get a lunch per traveller from the New booking tab's "Takeaway lunch" column (dropdown of the shown dishes).
 
 ## Round of 2026-10-18 (Noy's requests 43-58)
-- **Prices:** transfer one way 220,000 kip, round trip 440,000 (`TRANSFER_KIP`, Settings F2:F3; train +70,000). `setupSettings_` moves the old
-  250,000 / 500,000 defaults once (a value staff typed otherwise is left alone). The website shows the transfer price only in the booking
+- **Prices:** transfer one way 250,000 kip, round trip 500,000 (`TRANSFER_KIP`, Settings F2:F3; train +70,000). Briefly 220,000 / 440,000 on
+  2026-10-18, then back to 250,000 (a legal minimum per person); `setupSettings_` moves 220,000 / 440,000 to 250,000 / 500,000 (other typed values are left alone). The website shows the transfer price only in the booking
   form's Transfer choices (and the WhatsApp message): the Transport card, Good to know and the FAQ no longer name it, so competitors cannot read it.
   Old bookings keep the price they were booked at; menu **Bookings > Recalculate amounts** brings the selected rows to today's prices.
 - **Transport:** the "To Luang Prabang" list is ordered City center first, Luang Prabang train station second (`dep` sort key). The team message
@@ -239,3 +239,5 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   (`greyCancelled_`, keeps staff's own rules).
 - `setup` splits merges staff made across a frozen-row line (`freezeRows_`) and in the Agency share heading rows, which otherwise stop
   the rebuild. Agency share has typed Accommodation and Remark columns (L, M) because staff were already using them.
+
+- **Receipt** Tour line reads `Code: 101 – Overnight camping above the clouds`. The minivan team message's ລົງ line carries the return time: 3:30-4:30 PM (103 back after the tour), 10:30 AM (another day), else 10:00-10:30 AM.

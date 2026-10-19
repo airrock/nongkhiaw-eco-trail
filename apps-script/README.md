@@ -241,3 +241,17 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   the rebuild. Agency share has typed Accommodation and Remark columns (L, M) because staff were already using them.
 
 - **Receipt** Tour line reads `Code: 101 – Overnight camping above the clouds`. The minivan team message's ລົງ line carries the return time: 3:30-4:30 PM (103 back after the tour), 10:30 AM (another day), else 10:00-10:30 AM.
+
+## Collect on arrival (2026-10-19)
+- Tab **Collect on arrival**: arrivals from the yellow date (`=TODAY()` until typed) to an optional end date. Arrival = the booking's Pickup
+  date (guests riding up from Luang Prabang), otherwise the traveller's tour date. One formula in A6 (`setupCollect_`): per booking a
+  **Group** row (pax, tour USD and kip, takeaway lunch kip, transport kip, total, paid USD, to collect) with its **Guest** rows under it
+  (tour = Est. tour USD / People, lunch = the traveller's Lunch kip, transport = Est. transfer kip shared by the travellers taking the
+  minivan), and a TOTAL row of the groups. Paid = Amount paid USD, or everything when Status is Paid. Cancelled bookings and travellers
+  are left out. Note: SUMIF / COUNTIF need a cell range, so the formula sums computed lists with `SUM(FILTER(...))`.
+
+## Self-test and filters
+- A row hidden by a staff filter cannot be deleted (`deleteRow` silently does nothing). The self-test cleanup and "Remove duplicate rows"
+  go through `withoutFilter_` (filter taken off, rows deleted, the same filter and criteria put back), and re-read each row before
+  deleting it so a sort in between can never remove a guest's row. `sortBookings_` waits for the script lock (a booking or the self-test
+  in progress) instead of moving rows under it.

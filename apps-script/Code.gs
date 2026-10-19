@@ -12,7 +12,7 @@ var TABS = { bookings: 'Bookings', travellers: 'Travellers', inquiries: 'Inquiri
   dashboard: 'Dashboard', content: 'Content', contentBase: 'Content base', help: 'How to edit', trip: 'Trip sheet', lunch: 'Lunch menu',
   receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text', agreements: 'Agreements', allGuests: 'All guests', transport: 'Transport', guide: 'Guide report',
   agency: 'Agency share', newBooking: 'New booking', plans: 'Tour plans', lunchReport: 'Lunch report', arrange: 'Arrange tour',
-  accounts: 'Tour accounts' };
+  accounts: 'Tour accounts', collect: 'Collect on arrival' };
 
 var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'Tour', 'Tour name', 'People', 'Lead name',
   'Traveller names', 'Countries', 'Food', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
@@ -73,7 +73,7 @@ function setup() {
   setupLunch_(ss);
   setupPlans_(ss);
   // A filter staff put on a formula tab stops its list formula from being written again: take it off, put it back at the end.
-  var filters = [TABS.trip, TABS.allGuests, TABS.guide, TABS.dashboard, TABS.agency, TABS.lunchReport].map(function (n) {
+  var filters = [TABS.trip, TABS.allGuests, TABS.guide, TABS.dashboard, TABS.agency, TABS.lunchReport, TABS.collect].map(function (n) {
     var f = ss.getSheetByName(n) && ss.getSheetByName(n).getFilter();
     if (!f) return null;
     var at = { sheet: n, a1: f.getRange().getA1Notation() }; f.remove(); return at;
@@ -87,6 +87,7 @@ function setup() {
   setupAgency_(ss);
   setupNewBooking_(ss);
   setupLunchReport_(ss);
+  setupCollect_(ss);
   setupArrange_(ss);
   sortBookings_(ss);
 
@@ -112,7 +113,7 @@ function setup() {
   var blank = ss.getSheetByName('Sheet1');
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   // Tab order: the ones used every day first, set-up tabs last.
-  [TABS.dashboard, TABS.allGuests, TABS.bookings, TABS.newBooking, TABS.travellers, TABS.trip, TABS.guide, TABS.lunchReport, TABS.transport,
+  [TABS.dashboard, TABS.allGuests, TABS.bookings, TABS.newBooking, TABS.travellers, TABS.trip, TABS.guide, TABS.lunchReport, TABS.collect, TABS.transport,
     TABS.arrange, TABS.accounts, TABS.agency, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.plans,
     TABS.content, TABS.settings, TABS.help]
     .forEach(function (n, i) { var t = ss.getSheetByName(n); if (t) { ss.setActiveSheet(t); ss.moveActiveSheet(i + 1); } });
@@ -707,9 +708,9 @@ function receiptSelfTest_(ss, id) {
   } finally {
     sh.getRange('B1:B3').setValues(keep); sh.getRange(RECEIPT_MANUAL).setValues(keepTyped);
     sh.getRange('D2').setValue(keepTimes[0]); sh.getRange('F2').setValue(keepTimes[1]);
-    for (var i = log.getLastRow(); i >= 2; i--) if (String(log.getRange(i, 3).getValue()).indexOf('SELFTEST-') === 0) log.deleteRow(i);
+    withoutFilter_(log, function () { for (var i = log.getLastRow(); i >= 2; i--) if (String(log.getRange(i, 3).getValue()).indexOf('SELFTEST-') === 0) log.deleteRow(i); });
     var ag = ss.getSheetByName(TABS.agreements);
-    for (var j = ag.getLastRow(); j >= 2; j--) if (String(ag.getRange(j, 2).getValue()).indexOf('SELFTEST-') === 0) ag.deleteRow(j);
+    withoutFilter_(ag, function () { for (var j = ag.getLastRow(); j >= 2; j--) if (String(ag.getRange(j, 2).getValue()).indexOf('SELFTEST-') === 0) ag.deleteRow(j); });
   }
 }
 
@@ -1081,6 +1082,9 @@ function setupHelp_(ss) {
     ['The takeaway food guests ordered for tomorrow (change the yellow date for another day): booking, name, pax, dish, how many, when it must be ready, special requests (food type, note). Right side: how many of each dish, and the message to copy to The Trio Bar team.'],
     ['A booking taken on WhatsApp: choose the dish per traveller in the New booking tab (column "Takeaway lunch").'],
     [''],
+    ['COLLECT ON ARRIVAL  (tab "Collect on arrival")'],
+    ['What each guest and each group pays when they arrive in Nong Khiaw: pick the arrival date (and an end date for a range). Each booking is a Group row (what the group pays now, minus what it already paid) with its guests below: tour, takeaway lunch, transport, total in USD and kip. Arrival = the pickup date in Luang Prabang, or the tour date if no minivan. Change amounts in Bookings; lunch per guest in Travellers.'],
+    [''],
     ['ARRANGE TOUR  (tabs "Arrange tour", "Tour accounts", "Tour plans")'],
     ['Pick the date and the tour (yellow). Guests, receipt numbers and income come from Bookings; the cost lines (guide, boat, food, kayaks, ...) from "Tour plans", counted for the guests. Type over a quantity or price, or add a line. Tick "Save" to keep date, guests, expense, income and profit in "Tour accounts" (saving the same day and tour again replaces it).'],
     ['Change the usual costs, the day plans or the additional packages in the tab "Tour plans" (only 001 has costs so far: add the lines for 101, 102 and 103).'],
@@ -1437,22 +1441,32 @@ function selfTest_(ss) {
   out.agencyOk = agencySelfTest_(ss);
   out.lunchReportOk = lunchReportSelfTest_(ss, id);
   out.arrangeOk = arrangeSelfTest_(ss);
+  out.collectOk = collectSelfTest_(ss, id);
   out.newBookingOk = newBookingSelfTest_(ss);
   out.receiptOk = receiptSelfTest_(ss, id);
   out.travellerLunchOk = travellerLunchSelfTest_(ss, id);
   out.reviewsOk = JSON.parse(reviewsJson_()).length > 0;
   out.contentOk = contentSelfTest_(ss);
+  var cleaned = [];
   var testIds = {};  // booking IDs of test bookings (a site test has an NK... ID and SELFTEST- as lead name)
-  [TABS.bookings, TABS.travellers, TABS.inquiries].forEach(function (name) {
-    var sh = ss.getSheetByName(name), values = sh.getDataRange().getDisplayValues();
+  [TABS.bookings, TABS.travellers, TABS.inquiries].forEach(function (name) { withoutFilter_(ss.getSheetByName(name), function (sh) {
+    var values = sh.getDataRange().getDisplayValues();
     for (var r = values.length - 1; r >= 1; r--) {
       var row = values[r].join('|');
       if (row.indexOf(id) !== -1) out[name] = true;
       var isTest = row.indexOf('SELFTEST-') !== -1 || (name === TABS.travellers && testIds[values[r][0]]);
       if (name === TABS.bookings && isTest) testIds[values[r][0]] = true;
-      if (isTest) sh.deleteRow(r + 1);  // also clears leftovers of earlier runs
+      if (!isTest) continue;
+      // Re-read the row first: the sheet may have been sorted since the snapshot (opening the sheet sorts Bookings), and a stale row
+      // number must never delete a guest's row. Only a row that is still a test row goes.
+      var now = sh.getRange(r + 1, 1, 1, values[r].length).getDisplayValues()[0];
+      if (now[0] !== values[r][0] || !(now.join('|').indexOf('SELFTEST-') !== -1 || (name === TABS.travellers && testIds[now[0]]))) {
+        console.warn('selftest cleanup: row ' + (r + 1) + ' of ' + name + ' changed since it was read; not deleted'); continue;
+      }
+      sh.deleteRow(r + 1);  // also clears leftovers of earlier runs
+      if (name === TABS.bookings) cleaned.push(r + 1 + ':' + now[0]);
     }
-  });
+  }); });
   out.tabsOk = ss.getSheets().length >= 6;
   out.frozenOk = [TABS.bookings, TABS.travellers, TABS.inquiries].every(function (n) { return ss.getSheetByName(n).getFrozenRows() === 1; });
   return JSON.stringify(out);
@@ -1707,6 +1721,104 @@ function lunchReportSelfTest_(ss, id) {
     return true;
   } catch (err) { return 'error: ' + err; }
   finally { cell.setFormula('=TODAY()+1'); }
+}
+
+/* ---------- Collect on arrival: what each guest and each group pays when they arrive in Nong Khiaw ----------
+   Formulas only. Arrival = the pickup date in Luang Prabang (guests riding up) or else the tour date. Pick a From date (and a To date
+   for a range; empty = the same day). Per booking a Group row (what the group pays, minus what it already paid) with its guests
+   under it: tour, takeaway lunch, transport and the total, in USD and kip. Cancelled bookings and travellers are left out. */
+function setupCollect_(ss) {
+  var sh = ss.getSheetByName(TABS.collect) || ss.insertSheet(TABS.collect);
+  var from = sh.getRange('B2').getValue(), fromF = sh.getRange('B2').getFormula(), to = sh.getRange('D2').getValue();
+  sh.clear(); sh.clearConditionalFormatRules();
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).getMergedRanges().forEach(function (m) { m.breakApart(); });
+  var col = function (c) { return colLetter_(TRAVELLER_COLS.indexOf(c) + 1); };
+  var T = function (c) { return 'Travellers!$' + col(c) + '$2:$' + col(c); };
+  var lastB = colLetter_(BOOKING_COLS.length), BR = 'Bookings!$A$2:$' + lastB;
+  var bi = function (c) { return BOOKING_COLS.indexOf(c) + 1; };
+  var V = function (c) { return 'IFERROR(VLOOKUP(Travellers!$A$2:$A,' + BR + ',' + bi(c) + ',FALSE),"")'; };
+  var A = function (x) { return 'ARRAYFORMULA(' + x + ')'; };
+  var K = function (n) { return 'INDEX(' + n + ',0,'; };
+  var f =
+    '=IFERROR(LET(' +
+    'rate,IF(Settings!$F$8>0,Settings!$F$8,' + RECEIPT_RATE + '),' +
+    'dFrom,IF($B$2="",TODAY(),$B$2),dTo,IF($D$2="",dFrom,$D$2),id,Travellers!$A$2:$A,' +
+    'arrive,' + A('IF(' + V('Pickup date') + '<>"",' + V('Pickup date') + ',' + T('Tour date') + ')') + ',' +
+    'tourUsd,' + A('IFERROR(1*' + V('Est. tour USD') + '/' + V('People') + ',0)') + ',' +
+    'lunch,' + A('IFERROR(1*' + T('Lunch kip') + ',0)') + ',' +
+    'trans,' + A('IF(' + T('Pickup place') + '="No transfer",0,ROUND(IFERROR(1*' + V('Est. transfer kip') + '/COUNTIFS(id,id,' + T('Pickup place') + ',"<>No transfer",' + T('Status') + ',"<>Cancelled"),0),0))') + ',' +
+    'ok,' + A('(id<>"")*ISNUMBER(arrive)*(' + T('Status') + '<>"Cancelled")*(IFERROR(arrive,0)>=INT(dFrom))*(IFERROR(arrive,0)<INT(dTo)+1)') + ',' +
+    's,FILTER(HSTACK(arrive,id,' + T('Traveller #') + ',' + T('Full name') + ',' + T('Receipt No') + ',tourUsd,lunch,trans),ok=1),' +
+    'sId,INDEX(s,0,2),u,UNIQUE(sId),' +
+    'gArrive,MAP(u,LAMBDA(x,XLOOKUP(x,sId,INDEX(s,0,1)))),' +
+    'gName,MAP(u,LAMBDA(x,IFERROR(VLOOKUP(x,' + BR + ',' + bi('Lead name') + ',FALSE),"")&" (group)")),' +
+    'gReceipt,MAP(u,LAMBDA(x,XLOOKUP(x,sId,INDEX(s,0,5)))),' +
+    'gPax,MAP(u,LAMBDA(x,ROWS(FILTER(sId,sId=x)))),' +
+    'gTour,MAP(u,LAMBDA(x,SUM(FILTER(INDEX(s,0,6),sId=x)))),' +
+    'gLunch,MAP(u,LAMBDA(x,SUM(FILTER(INDEX(s,0,7),sId=x)))),' +
+    'gTrans,MAP(u,LAMBDA(x,SUM(FILTER(INDEX(s,0,8),sId=x)))),' +
+    'gPaid,MAP(u,LAMBDA(x,IF(IFERROR(VLOOKUP(x,' + BR + ',' + bi('Status') + ',FALSE),"")="Paid",-1,IFERROR(1*VLOOKUP(x,' + BR + ',' + bi('Amount paid USD') + ',FALSE),0)))),' +
+    'base,VSTACK(HSTACK(gArrive,u,gReceipt,MAP(u,LAMBDA(x,"Group")),gName,gPax,gTour,gLunch,gTrans,gPaid,MAP(u,LAMBDA(x,""))),' +
+    'HSTACK(INDEX(s,0,1),sId,INDEX(s,0,5),MAP(sId,LAMBDA(x,"Guest")),INDEX(s,0,4),MAP(sId,LAMBDA(x,1)),INDEX(s,0,6),INDEX(s,0,7),INDEX(s,0,8),MAP(sId,LAMBDA(x,"")),INDEX(s,0,3))),' +
+    'q,SORT(base,1,TRUE,2,TRUE,4,TRUE,11,TRUE),' +
+    'ty,INDEX(q,0,4),tUsd,INDEX(q,0,7),tKip,ARRAYFORMULA(ROUND(tUsd*rate,0)),lu,INDEX(q,0,8),tr,INDEX(q,0,9),pd,INDEX(q,0,10),' +
+    'total,ARRAYFORMULA(tKip+lu+tr),isG,ARRAYFORMULA(ty="Group"),' +
+    'paidUsd,ARRAYFORMULA(IF(isG,IF(pd<0,total/rate,pd),"")),' +
+    'dueKip,ARRAYFORMULA(IF(isG,MAX(0,total-IF(pd<0,total,pd*rate)),"")),' +
+    'out,HSTACK(INDEX(q,0,1),INDEX(q,0,2),INDEX(q,0,3),ty,INDEX(q,0,5),INDEX(q,0,6),tUsd,tKip,lu,tr,total,ARRAYFORMULA(total/rate),paidUsd,dueKip,ARRAYFORMULA(IF(isG,dueKip/rate,"")),INDEX(q,0,11)),' +
+    'VSTACK(out,HSTACK("","","","TOTAL","",SUM(FILTER(INDEX(out,0,6),ty="Group")),SUM(FILTER(INDEX(out,0,7),ty="Group")),SUM(FILTER(INDEX(out,0,8),ty="Group")),' +
+    'SUM(FILTER(INDEX(out,0,9),ty="Group")),SUM(FILTER(INDEX(out,0,10),ty="Group")),SUM(FILTER(INDEX(out,0,11),ty="Group")),SUM(FILTER(INDEX(out,0,12),ty="Group")),' +
+    'SUM(FILTER(INDEX(out,0,13),ty="Group")),SUM(FILTER(INDEX(out,0,14),ty="Group")),SUM(FILTER(INDEX(out,0,15),ty="Group")),""))' +
+    '),"Nobody arrives in this period")';
+  var head = ['Arrival date', 'Booking ID', 'Receipt No', 'Type', 'Name', 'Pax', 'Tour USD', 'Tour kip', 'Takeaway lunch kip', 'Transport kip',
+    'Total kip', 'Total USD', 'Paid USD', 'To collect kip', 'To collect USD', 'Guest #'];
+  sh.getRange('A1').setValue('Collect on arrival').setFontSize(16).setFontWeight('bold');
+  sh.getRange('A2').setValue('Arrivals from (change the yellow date):').setFontWeight('bold');
+  if (from instanceof Date && !fromF) sh.getRange('B2').setValue(from); else sh.getRange('B2').setFormula('=TODAY()');
+  sh.getRange('B2').setNumberFormat('ddd dd/mm/yyyy').setBackground('#fff2a8').setFontWeight('bold').setHorizontalAlignment('left')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false).build());
+  sh.getRange('C2').setValue('to (empty = that day only):').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('D2').setNumberFormat('ddd dd/mm/yyyy').setBackground('#fff2a8').setFontWeight('bold').setHorizontalAlignment('left')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build());
+  if (to instanceof Date) sh.getRange('D2').setValue(to);
+  sh.getRange('E2:P2').merge().setValue('Arrival = the pickup date in Luang Prabang (guests taking the minivan up), otherwise the tour date. Each booking is a Group row ' +
+    '(what the group pays, minus what it already paid or the deposit) with its guests below. Tour, lunch and transport come from the booking: change them in Bookings (or Travellers for lunch). ' +
+    'Cancelled bookings and travellers are left out. USD at the receipt rate (Settings F8).').setWrap(true).setFontColor('#5a665f');
+  sh.setRowHeight(2, 60);
+  sh.getRange(5, 1, 1, head.length).setValues([head]).setFontWeight('bold').setWrap(true).setBackground('#e6cf5c').setVerticalAlignment('middle');
+  sh.getRange('A6').setFormula(f);
+  var rows = Math.max(sh.getMaxRows() - 5, 1);
+  sh.getRange(6, 1, rows, 1).setNumberFormat('dd/mm/yyyy'); sh.getRange(6, 3, rows, 1).setNumberFormat('@');
+  sh.getRange(6, 7, rows, 1).setNumberFormat('#,##0.00'); sh.getRange(6, 8, rows, 4).setNumberFormat('#,##0');
+  sh.getRange(6, 12, rows, 2).setNumberFormat('#,##0.00'); sh.getRange(6, 14, rows, 1).setNumberFormat('#,##0'); sh.getRange(6, 15, rows, 1).setNumberFormat('#,##0.00');
+  sh.getRange(6, 11, rows, 1).setNumberFormat('#,##0');
+  var last = colLetter_(head.length), area = sh.getRange('A6:' + last + sh.getMaxRows());
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$D6="Group"').setBold(true).setBackground('#e8f0ea').setRanges([area]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$D6="TOTAL"').setBold(true).setBackground('#e6cf5c').setRanges([area]).build()]);
+  area.setBorder(null, null, null, null, true, true, '#cfd8d3', SpreadsheetApp.BorderStyle.SOLID);
+  sh.setColumnWidths(1, head.length, 105); sh.setColumnWidth(2, 140); sh.setColumnWidth(3, 80); sh.setColumnWidth(4, 60); sh.setColumnWidth(5, 220);
+  sh.setColumnWidth(6, 45); sh.setColumnWidth(16, 60);
+  freezeRows_(sh, 5);
+}
+
+// The sample booking (2 guests: tour 101, one lunch, one minivan rider) arriving on 15/01/2030: group and guest rows and the total.
+function collectSelfTest_(ss, id) {
+  var sh = ss.getSheetByName(TABS.collect), b2 = sh.getRange('B2'), d2 = sh.getRange('D2'), keepF = b2.getFormula(), keepB = b2.getValue(), keepD = d2.getValue();
+  try {
+    b2.setValue(new Date(2030, 0, 15, 12)); d2.clearContent(); SpreadsheetApp.flush();
+    var rows = sh.getRange(6, 1, 12, 16).getDisplayValues().filter(function (r) { return r[1] === id; });
+    var g = rows.filter(function (r) { return r[3] === 'Group'; })[0], one = rows.filter(function (r) { return r[4] === 'Test Person'; })[0],
+      two = rows.filter(function (r) { return r[4] === 'Second Person'; })[0];
+    if (!g || !one || !two) return 'rows: ' + rows.length;
+    var k = kipPrices_(ss), rate = receiptRate_(ss), trip = k.round + k.train, tour = tourInfo_(ss, '101').price, lunch = lunchMap_(ss)['Avocado sandwich'].price;
+    var n = kipText_, tourKip = tour * rate;
+    if (g[5] !== '2' || g[9] !== n(trip) || g[8] !== n(lunch) || g[7] !== n(2 * tourKip) || g[10] !== n(2 * tourKip + trip + lunch) || g[13] !== n(2 * tourKip + trip + lunch)) return 'group: ' + g.join('|');
+    if (one[9] !== n(trip) || one[10] !== n(tourKip + trip) || two[9] !== '0' || two[8] !== n(lunch) || two[10] !== n(tourKip + lunch) || one[13] !== '') return 'guests';
+    if (sh.getRange(6, 4, 12, 1).getDisplayValues().map(function (r) { return r[0]; }).indexOf('TOTAL') === -1) return 'total row';
+    return true;
+  } catch (err) { return 'error: ' + err; }
+  finally { if (keepF) b2.setFormula(keepF); else b2.setValue(keepB); if (keepD instanceof Date) d2.setValue(keepD); else d2.clearContent(); }
 }
 
 /* ---------- Arrange tour: the costs of one tour day (guide, boat, food, kayaks, ...), the income and the profit ----------
@@ -2061,7 +2173,7 @@ function dropDuplicates_(ss, name, keyOf) {
     k = k.join('|');
     if (seen[k]) gone.push(r + 1); else seen[k] = true;
   }
-  for (var i = gone.length - 1; i >= 0; i--) sh.deleteRow(gone[i]);
+  withoutFilter_(sh, function () { for (var i = gone.length - 1; i >= 0; i--) sh.deleteRow(gone[i]); });   // rows hidden by a filter would not go
   return gone.length;
 }
 
@@ -2070,12 +2182,33 @@ function refreshTransport() { buildTransport_(SpreadsheetApp.getActive()); }
 // Bookings in tour date order, earliest at the top (then by when they came in); rows without a tour date go last.
 // Whole rows move, with any colour staff gave them; everything else finds a booking by its ID, never by its row.
 function sortBookings_(ss) {
+  var lock = LockService.getScriptLock(), mine = false;
+  if (!lock.hasLock()) { mine = lock.tryLock(15000); if (!mine) { console.warn('Bookings not sorted: another run is busy'); return; } }
+  try { sortBookingsLocked_(ss); } finally { if (mine) lock.releaseLock(); }
+}
+
+function sortBookingsLocked_(ss) {
   var sh = ss.getSheetByName(TABS.bookings), n = sh.getLastRow() - 1;
   if (n < 2) return;
   var date = BOOKING_COLS.indexOf('Tour date') + 1, came = BOOKING_COLS.indexOf('Submitted at') + 1, filter = sh.getFilter();
   if (filter) filter = widenFilter_(sh, filter);   // a filter that leaves columns out would sort them apart from their rows
   if (filter) { filter.sort(came, true); filter.sort(date, true); }   // staff use a filter on this tab: sort through it (stable, so two passes)
   else sh.getRange(2, 1, n, sh.getLastColumn()).sort([{ column: date, ascending: true }, { column: came, ascending: true }]);
+}
+
+// Runs fn(sh) with the tab's filter taken off, then puts the same filter back. A row hidden by a filter cannot be deleted
+// (deleteRow silently does nothing), so deleting rows goes through here.
+function withoutFilter_(sh, fn) {
+  var f = sh.getFilter();
+  if (!f) return fn(sh);
+  var fr = f.getRange(), a1 = fr.getA1Notation(), crit = [];
+  for (var c = fr.getColumn(); c <= fr.getLastColumn(); c++) { var k = f.getColumnFilterCriteria(c); if (k) crit.push([c, k.copy().build()]); }
+  f.remove();
+  try { return fn(sh); }
+  finally {
+    var nf = sh.getRange(a1).createFilter();
+    crit.forEach(function (x) { nf.setColumnFilterCriteria(x[0], x[1]); });
+  }
 }
 
 // A staff filter made before a column was added does not cover it: put the filter back over every column and row, same criteria.
@@ -2331,10 +2464,11 @@ function newBookingSelfTest_(ss) {
     sh.getRange(NB_TRAV, 2, 2, NB_TRAV_COLS).setValues([['SELFTEST-Lead', 'Person', 'France', 'Regular', '', ''], ['Second', 'Guest', 'France', 'Vegan', '', 'Avocado sandwich']]);
     saveManualBooking_(ss);
     var bk = ss.getSheetByName(TABS.bookings), v = bk.getDataRange().getValues(), h = v[0];
-    var b = v.filter(function (r) { return r[h.indexOf('Lead name')] === 'SELFTEST-Lead Person'; })[0];
+    var b = v.filter(function (r) { return r[h.indexOf('Lead name')] === 'SELFTEST-Lead Person'; }).pop();
     if (!b) return 'not saved';
     if (b[h.indexOf('Transfer')] !== 'One way to Luang Prabang' || dayKey_(b[h.indexOf('Return date')]) !== '2030-01-20' || b[h.indexOf('Pickup date')] !== '' ||
-      b[h.indexOf('Est. transfer kip')] !== kipPrices_(ss).one * 2 || b[h.indexOf('Pickup in Nong Khiaw')] !== 'SELFTEST hostel' || b[h.indexOf('Status')] !== 'Confirmed') return 'booking row';
+      b[h.indexOf('Est. transfer kip')] !== kipPrices_(ss).one * 2 || b[h.indexOf('Pickup in Nong Khiaw')] !== 'SELFTEST hostel' || b[h.indexOf('Status')] !== 'Confirmed') return 'booking row: ' + ['Transfer', 'Return date', 'Pickup date', 'Est. transfer kip', 'Pickup in Nong Khiaw', 'Status']
+      .map(function (c) { var x = b[h.indexOf(c)]; return c + '=' + (x instanceof Date ? dayKey_(x) : x); }).join(' / ');
     if (b[h.indexOf('Private tour')] !== 'Yes' || b[h.indexOf('Takeaway lunch')] !== 'Avocado sandwich 1') return 'private tour / lunch: ' + b[h.indexOf('Private tour')] + '/' + b[h.indexOf('Takeaway lunch')];
     tp.getRange('B2').setValue(back); buildTransport_(ss);
     var rows = tp.getRange(TRANSPORT_START, 1, tp.getLastRow() - TRANSPORT_START + 1, TRANSPORT_WIDTH).getValues();

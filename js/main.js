@@ -462,7 +462,8 @@
   function backAfterTour() { var g = legs(); return g.round && $('#fTour').value === '103' && $('#fRet103').value === 'end'; }
   function syncTransfer() {
     var g = legs(), only = $('#fTour').value === 'T00';
-    $('#hotelRow').hidden = g.none;
+    $('#hotelRow').hidden = !g.up;   // the Luang Prabang hotel only matters for the pickup there
+    $('#nkRow').hidden = !g.down;   // way back: our office unless the guest names another place
     $('#transferDates').hidden = g.none || (!g.up && backAfterTour());
     $('#pickupRow').hidden = !g.up;
     $('#ret103Row').hidden = !(g.round && $('#fTour').value === '103');
@@ -518,7 +519,8 @@
     var plan = g.round && tour === '103' ? $('#fRet103').value : '';
     if (g.up && (!pickup || pickup < dateInput.min)) { hint.textContent = t('hint_pickup'); pickupInput.focus(); return; }
     if (g.down && (!ret || ret < (pickup || dateInput.min))) { hint.textContent = t('hint_return'); returnInput.focus(); return; }
-    if (!g.none && !hotel) { hint.textContent = t('hint_hotel'); $('#fHotel').focus(); return; }
+    if (g.up && !hotel) { hint.textContent = t('hint_hotel'); $('#fHotel').focus(); return; }
+    var nkPick = g.down ? $('#fNkPick').value.trim() : '';
     if (g.up && !mapLink) { hint.textContent = t('hint_map'); $('#fMap').focus(); return; }   // a Nong Khiaw pickup may go without
     var blocks = $$('.trav', travBox);
     var modes = blocks.map(function (f, i) { return transfer === 'No' || i === 0 ? 'same' : $('[data-k="pickup"]', f).value; });
@@ -541,8 +543,8 @@
     var source = $('#fSource').value;
     saveToSheet({
       type: 'booking', id: ref, website: $('#bookForm [name=website]').value, tour: tour, date: date,
-      transfer: transfer, pickupDate: pickup, returnDate: ret, returnPlan: plan, private: priv,
-      hotel: hotel, map: mapLink, train: train, payment: pay, phone: $('#fPhone').value.trim(), source: source, note: note,
+      transfer: transfer, pickupDate: pickup, returnDate: ret, returnPlan: plan, private: priv, nkPickup: nkPick,
+      hotel: g.up ? hotel : '', map: g.up ? mapLink : '', train: train, payment: pay, phone: $('#fPhone').value.trim(), source: source, note: note,
       travellers: blocks.map(function (f, i) {
         var v = function (k) { return $('[data-k="' + k + '"]', f).value.trim(); };
         return { name: v('first') + ' ' + v('last'), first: v('first'), last: v('last'), gender: v('gender'), nat: v('nat'),
@@ -588,7 +590,8 @@
         (plan === 'end' ? ' (last day of the tour, minivan about 3:30-4:30 pm)' : plan === 'later' ? ' (minivan about 10:30 am)' : '') : '') +
       (g.down ? '\nDrop-off in Luang Prabang: ' + (train ? 'Luang Prabang train station (+' +
         String(CONFIG.kip.train).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' kip per person)' : 'city centre near the night market') : '') +
-      (!g.none ? (g.onlyDown ? '\nAccommodation in Nong Khiaw: ' : '\nAccommodation: ') + hotel + (mapLink ? '\nGoogle Maps: ' + mapLink : '') : '') + pickupLines + '\n' +
+      (g.up ? '\nAccommodation: ' + hotel + (mapLink ? '\nGoogle Maps: ' + mapLink : '') : '') +
+      (g.down ? '\nPickup in Nong Khiaw (way back): ' + (nkPick || 'our office inside The Trio Bar & Cafe') : '') + pickupLines + '\n' +
       people.join('\n') +
       (lunchKip ? '\n\nTakeaway lunch total: ' + String(lunchKip).replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
         ' kip (not included in the tour price, paid separately)' : '') +

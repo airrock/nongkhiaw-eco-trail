@@ -255,3 +255,21 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   go through `withoutFilter_` (filter taken off, rows deleted, the same filter and criteria put back), and re-read each row before
   deleting it so a sort in between can never remove a guest's row. `sortBookings_` waits for the script lock (a booking or the self-test
   in progress) instead of moving rows under it.
+
+## Round of 2026-10-21 (requests 61-67)
+- **Bookings waiting for the lock:** `doPost` lets a booking or agreement wait up to 5 minutes for the script lock (it was 20 s, and a
+  booking that arrived during a rebuild or self-test, which take 2-4 minutes, failed silently: the guest's WhatsApp went out but the
+  sheet never got the row). `selftest` / `rebuild` only start when nothing else is running (`tryLock`) and otherwise answer "busy".
+- **Agreement form:** "Who is filling in?" buttons (everyone on this phone, or one traveller; `?n=<traveller #>` in the link picks one)
+  and a button that shares the link (system share sheet, else WhatsApp). Only the travellers shown are checked and sent, so each guest
+  signs their own part on their own phone; "same emergency contact as traveller 1" shows only when traveller 1 is on the page.
+- **Receipt:** I8:I11 replace Name, Tour date, Tour line, Payment method; L16:N27 "Travellers by hand" are used when the booking has no
+  travellers. A Booking ID not in Bookings shows empty lines (it showed the Bookings column headings: INDEX with row 0 returns the whole
+  column) and still gets a receipt number in the log. A missing tour date stays empty (it showed 30/12/1899).
+- **New booking tab:** optional Booking ID (re-enter a website booking under the guest's own reference; refused if it already exists),
+  tour price USD per person and transport amount kip for prices agreed with the guest. The travellers block moved to row 24 and the save
+  box to B36; typed fields survive a rebuild by label.
+- **Transport:** the team message says `ໄປກັບ Npax` only for round trips (one way: `Npax`), and `ບ່ອນຮັບໜອງຂຽວ` on every way back, our
+  office (`NK_OFFICE`) when no other place is given. Website: an optional "Pickup in Nong Khiaw for the way back" field (`nkPickup`);
+  the Luang Prabang hotel and map are asked only for a ride up.
+- **Collect on arrival:** Tour code column (D).

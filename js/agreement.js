@@ -5,8 +5,8 @@
   var SHEET_URL = 'https://script.google.com/macros/s/AKfycbxq9ET0sZ-Vbdy5VMLahGd_qS71e-mVIeDFgBc-wJCVUYRUNQDGth4ddnQ6j24rYpPf/exec';
   var NAMES = { en: 'English', lo: 'ລາວ', th: 'ไทย', zh: '中文', ko: '한국어', ja: '日本語', fr: 'Français', de: 'Deutsch' };
   var $ = function (s, r) { return (r || document).querySelector(s); };
-  var key = '', lang = 'en', data = null;
-  try { key = new URLSearchParams(location.search).get('k') || ''; } catch (e) { key = ''; }
+  var key = '', lang = 'en', data = null, who = 'all';   // who: 'all' (everyone on this phone) or one traveller's number
+  try { key = new URLSearchParams(location.search).get('k') || ''; who = Number(new URLSearchParams(location.search).get('n')) || 'all'; } catch (e) { key = ''; }
 
   function pickLang() {
     var q = '';
@@ -76,8 +76,8 @@
         var em = el('div', 'ag-sec'); em.appendChild(el('h2', '', { 'data-ag': 'h_emerg' }));
         field(em, 'textarea', 'f_med', 'med' + tr.n, { maxlength: '500' });
         em.appendChild(el('h2', '', { 'data-ag': 'h_contact' }));
-        if (idx > 0) {
-          var same = el('label', 'ag-check'); same.appendChild(el('input', '', { type: 'checkbox', name: 'same' + tr.n }));
+        if (idx > 0 && data.signed.indexOf(data.travellers[0].n) === -1) {
+          var same = el('label', 'ag-check ag-same'); same.appendChild(el('input', '', { type: 'checkbox', name: 'same' + tr.n }));
           same.appendChild(el('span', '', { 'data-ag': 'same_ec' })); em.appendChild(same);
         }
         field(em, 'input', 'f_ecname', 'ecn' + tr.n, { type: 'text', autocomplete: 'off', maxlength: '80' });
@@ -100,6 +100,7 @@
   function syncSame() {   // "same emergency contact as traveller 1" copies and locks the three fields
     data.travellers.forEach(function (tr, idx) {
       var box = $('[name="same' + tr.n + '"]'); if (!box) return;
+      if (who !== 'all') box.checked = false;   // traveller 1's fields are not on this phone
       ['ecn', 'ecp', 'ins'].forEach(function (p) {
         var f = $('[name="' + p + tr.n + '"]'), src = $('[name="' + p + data.travellers[0].n + '"]');
         if (box.checked && src) { f.value = src.value; f.readOnly = true; } else f.readOnly = false;
@@ -110,7 +111,7 @@
   function collect() {
     var people = [], bad = 0;
     data.travellers.forEach(function (tr) {
-      if (data.signed.indexOf(tr.n) !== -1) return;
+      if (data.signed.indexOf(tr.n) !== -1 || (who !== 'all' && who !== tr.n)) return;   // only the travellers shown on this phone
       var photo = ($('[name="photo' + tr.n + '"]:checked') || {}).value;
       var p = { n: tr.n, photo: photo, medical: val('med' + tr.n), ecName: val('ecn' + tr.n), ecPhone: val('ecp' + tr.n),
         insurance: val('ins' + tr.n), signedName: val('sign' + tr.n), accept: !!$('[name="agree' + tr.n + '"]').checked };
@@ -131,8 +132,35 @@
     var all = d.travellers.length && d.travellers.every(function (x) { return d.signed.indexOf(x.n) !== -1; });
     $('#state').hidden = true;
     $('#form').hidden = all; $('#done').hidden = !all;
-    if (!all) buildTravellers();
+    if (!all) { buildTravellers(); buildWho(); }
     applyText();
+  }
+
+  // "Who is filling in?": everyone on one phone, or one traveller on their own phone (same link; ?n= picks the traveller).
+  function buildWho() {
+    var open = data.travellers.filter(function (x) { return data.signed.indexOf(x.n) === -1; });
+    if (who !== 'all' && !open.some(function (x) { return x.n === who; })) who = 'all';
+    var box = $('#whoBtns'); box.innerHTML = '';
+    $('#who').hidden = data.travellers.length < 2;
+    var btn = function (value, label, isKey) {
+      var b = el('button', 'ag-who-btn' + (who === value ? ' on' : ''), { type: 'button' });
+      if (isKey) b.setAttribute('data-ag', label); else b.textContent = label;
+      b.addEventListener('click', function () { who = value; buildWho(); applyText(); });
+      box.appendChild(b);
+    };
+    btn('all', 'who_all', true);
+    open.forEach(function (x) { btn(x.n, x.full || t('traveller', x.n), false); });
+    document.querySelectorAll('.ag-trav').forEach(function (c) {
+      var n = Number(c.getAttribute('data-n'));
+      c.hidden = who !== 'all' && n !== who;
+    });
+    document.querySelectorAll('.ag-same').forEach(function (l) { l.hidden = who !== 'all'; });
+  }
+
+  function shareLink() {
+    var url = location.origin + location.pathname + '?k=' + encodeURIComponent(key) + '&lang=' + lang, text = t('share_text');
+    if (navigator.share) { navigator.share({ title: t('title'), text: text, url: url }).catch(function () { /* closed */ }); return; }
+    window.open('https://wa.me/?text=' + encodeURIComponent(text + ' ' + url), '_blank', 'noopener');
   }
 
   function submit(ev) {
@@ -160,6 +188,7 @@
     sel.addEventListener('change', function () { lang = sel.value; try { localStorage.setItem('nke-lang', lang); } catch (e) { /* private mode */ } applyText(); });
     applyText();
     $('#form').addEventListener('submit', submit);
+    $('#share').addEventListener('click', shareLink);
     $('#form').addEventListener('input', function (e) { if (/^(same|ecn|ecp|ins)/.test(e.target.name || '')) syncSame(); });
     if (!/^[a-f0-9]{16}$/.test(key)) { var s = $('#state'); s.className = 'ag-state bad'; s.setAttribute('data-ag', 'invalid'); applyText(); return; }
     load().then(function (d) {

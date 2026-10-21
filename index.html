@@ -441,6 +441,9 @@
         <select id="fRet103"><option value="end" data-i18n="ret_end">On the last day of the tour</option><option value="later" data-i18n="ret_later">Another day</option></select>
       </label>
       <label class="check" id="trainRow" hidden><input type="checkbox" id="fTrain"><span data-i18n="lbl_train">Drop me at Luang Prabang train station on the way back (+{kipTrain} kip per person)</span></label>
+      <label id="nkRow" hidden><span data-i18n="lbl_nkpick">Pickup in Nong Khiaw for the way back (optional)</span>
+        <input type="text" id="fNkPick" name="nk_pickup" maxlength="120" data-i18n-ph="ph_nkpick" placeholder="Empty = our office inside The Trio Bar &amp; Cafe">
+      </label>
       <div class="pickup" id="hotelRow" hidden>
         <label><span id="hotelLbl" data-i18n="lbl_hotel">Accommodation in Luang Prabang</span>
           <input type="text" id="fHotel" name="hotel" data-i18n-ph="ph_hotel" placeholder="Name of your hotel or hostel">

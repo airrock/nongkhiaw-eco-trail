@@ -411,3 +411,5 @@ em{font-style:italic}
 
 .prv-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px}
 .trn-note+.trn-note{margin-top:12px}
+/* the hidden attribute always wins over a display rule (form rows are labels with display:grid/flex) */
+[hidden]{display:none !important}

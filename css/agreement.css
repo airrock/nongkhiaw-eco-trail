@@ -49,3 +49,5 @@ textarea{min-height:76px;resize:vertical}
 .ag-who-btn{border:2px solid var(--forest,#0b3d2e);background:#fff;color:var(--forest,#0b3d2e);border-radius:999px;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer}
 .ag-who-btn.on{background:var(--forest,#0b3d2e);color:#fff}
 .ag-share{border:0;background:#25d366;color:#fff;border-radius:10px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}
+/* the hidden attribute always wins over a display rule (form rows are labels with display:grid/flex) */
+[hidden]{display:none !important}

@@ -273,3 +273,8 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   office (`NK_OFFICE`) when no other place is given. Website: an optional "Pickup in Nong Khiaw for the way back" field (`nkPickup`);
   the Luang Prabang hotel and map are asked only for a ride up.
 - **Collect on arrival:** Tour code column (D).
+
+## 2026-10-21 (requests 68-69)
+- Team message: a `**` line between the way up (ຂຶ້ນ) and the way back (ລົງ) of a round trip.
+- Bookings `Train station drop-off` is a Yes / No dropdown. Changing it recalculates `Est. transfer kip` (with the train extra) and redraws
+  Transport through `bookingEdited_`; the receipt reads the booking, so the drop-off line and amount follow.

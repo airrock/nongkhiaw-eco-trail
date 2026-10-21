@@ -63,7 +63,7 @@ function setup() {
   ss.setSpreadsheetTimeZone(TIME_ZONE);
   ss.setSpreadsheetLocale('en_GB');  // dates are typed and shown Day/Month/Year
   setupSettings_(ss);
-  setupTable_(ss, TABS.bookings, BOOKING_COLS, { 'Status': STATUSES, 'Source': SOURCES, 'Transfer': TRANSFERS }, FORMATS.Bookings);
+  setupTable_(ss, TABS.bookings, BOOKING_COLS, { 'Status': STATUSES, 'Source': SOURCES, 'Transfer': TRANSFERS, 'Train station drop-off': ['Yes', 'No'] }, FORMATS.Bookings);
   greyCancelled_(ss);
   setupTable_(ss, TABS.travellers, TRAVELLER_COLS, { 'Takeaway lunch': lunchDishes_(ss), 'Traveller status': TRAVELLER_STATUSES }, FORMATS.Travellers);
   passportDatesToDates_(ss);
@@ -1121,6 +1121,7 @@ function setupHelp_(ss) {
     ['1. Change the yellow date: the minivan list for that day appears. "↑ ຂຶ້ນ" = pickups in Luang Prabang to Nong Khiaw, "↓ ລົງ" = Nong Khiaw back to Luang Prabang. Each list ends with the total pax.'],
     ['2. Take a screenshot and send it to the driver team. When they send the plate numbers, type them in the yellow column (also the remark, the guest\'s WhatsApp number, the Nong Khiaw pickup). It is saved in Bookings.'],
     ['3. Click "Message guest": WhatsApp opens with the minivan details (date, plate, pickup, drop-off) ready to send to the guest.'],
+    ['   A guest who changes the drop-off to Luang Prabang train station (or back to the city center): in Bookings set "Train station drop-off" to Yes (or No). The extra charge is added to the transport amount, and Transport and the receipt follow at once. (A transport amount typed by hand in Bookings is replaced by the worked-out one; type it again if a special price was agreed.)'],
     ['4. A guest who booked one way and now wants to go back: type the Return date in Bookings. The booking becomes "Round trip" and appears in Transport that day. The list also updates when you change dates, status or names in Bookings.'],
     [''],
     ['NEW BOOKING  (tab "New booking")'],
@@ -2078,6 +2079,7 @@ function teamMessage_(people, up, down, train, guest, phone, id, receipt, nk, re
     'ລູກຄ້າ: ' + guest + (digits.length >= 7 ? '  WhatsApp: ' + String(phone).trim() + ' https://wa.me/' + digits : '')]
     .concat(others.length ? ['ຜູ້ຕິດຕາມ: ' + others.join(', ')] : [])   // the other guests (followers), so the driver can check everyone
     .concat(up ? ['ຂຶ້ນ: ' + dm(up), 'ບ່ອນຮັບ: ' + places.join(' / ')] : [])
+    .concat(up && down ? ['**'] : [])   // between the way up and the way back, easier for the team to read
     .concat(down ? ['ລົງ: ' + dm(down) + ' ' + returnTime_(remark) + ' ' + (train ? 'ສົ່ງສະຖານີລົດໄຟ' : 'ສົ່ງກາງເມືອງ')] : [])
     .concat(down ? ['ບ່ອນຮັບໜອງຂຽວ: ' + (nk || NK_OFFICE)] : []).join('\n');
 }
@@ -2687,6 +2689,7 @@ function transportSelfTest_(ss, id) {
     if (a.v[12].indexOf('Booking id: ' + id + '\nReceipt no: ') !== 0 || a.v[12].indexOf('\nໄປກັບ 1pax\n') === -1 || a.v[12].indexOf('ສົ່ງສະຖານີລົດໄຟ') === -1) return 'team message';
     var totals = sh.getRange(a.row, 5, sh.getLastRow() - a.row + 1, 2).getValues().filter(function (v) { return v[0] === 'Total'; });
     if (String(sh.getRange(TRANSPORT_START - 1, 1).getValue()).indexOf('↑ ຂຶ້ນ') !== 0 || !totals.length || totals[0][1] !== '1 pax') return 'labels/total';
+    if (a.v[12].indexOf('\n**\nລົງ:') === -1) return 'separator';
     if (returnTime_('Back after the tour, about 3:30-4:30 PM') !== '3:30-4:30 PM' || a.v[12].indexOf('ລົງ: 18/01 10:00-10:30 AM ສົ່ງສະຖານີລົດໄຟ') === -1) return 'return time in message';
     if (a.v[12].indexOf('ລູກຄ້າ: Test Person  WhatsApp: +856 20 1234 5678 https://wa.me/8562012345678') === -1) return 'team whatsapp';
     if (a.v[9] !== 'ກກ 5696' || f.indexOf('wa.me/8562012345678') === -1 || f.indexOf('plate no: ກກ 5696') === -1 || f.indexOf('please wait at the reception') === -1) return 'plate saved';

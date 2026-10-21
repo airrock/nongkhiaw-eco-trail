@@ -14,3 +14,4 @@ Static site (HTML, CSS, JS). No build step.
 - WhatsApp number: search `8562058975057` in `index.html` and `js/main.js`.
 
  Ask a native speaker (especially for Lao) to review before launch.....
+.

@@ -43,6 +43,7 @@ var FORMATS = {
 
 var STATUSES = ['Requested', 'Confirmed', 'Paid', 'Cancelled', 'No-show'];
 var TRAVELLER_STATUSES = ['Cancelled', 'No-show'];
+var FOODS = ['Regular', 'Vegetarian', 'Vegan', 'Gluten-free', 'No pork', 'No fish', 'No beef', 'No seafood', 'Halal', 'No spicy'];   // typed text is fine too
 var INQUIRY_STATUSES = ['New', 'Replied', 'Booked', 'Closed'];
 var SOURCES = ['Google', 'Google Maps', 'Facebook', 'Instagram', 'TripAdvisor', 'Hostel / hotel', 'Friend', 'Walk-in', 'WhatsApp', 'Other'];
 // Minivan transfer choices (website, New booking tab, Bookings dropdown). "Up" = Luang Prabang -> Nong Khiaw, "down" = back.
@@ -65,7 +66,7 @@ function setup() {
   setupSettings_(ss);
   setupTable_(ss, TABS.bookings, BOOKING_COLS, { 'Status': STATUSES, 'Source': SOURCES, 'Transfer': TRANSFERS, 'Train station drop-off': ['Yes', 'No'] }, FORMATS.Bookings);
   greyCancelled_(ss);
-  setupTable_(ss, TABS.travellers, TRAVELLER_COLS, { 'Takeaway lunch': lunchDishes_(ss), 'Traveller status': TRAVELLER_STATUSES }, FORMATS.Travellers);
+  setupTable_(ss, TABS.travellers, TRAVELLER_COLS, { 'Takeaway lunch': lunchDishes_(ss), 'Traveller status': TRAVELLER_STATUSES, 'Food': FOODS }, FORMATS.Travellers);
   passportDatesToDates_(ss);
   setupTable_(ss, TABS.inquiries, INQUIRY_COLS, { 'Status': INQUIRY_STATUSES, 'Source': SOURCES }, FORMATS.Inquiries);
   setupReviews_(ss);
@@ -306,7 +307,8 @@ var RECEIPT_TEXT = [   // key, then the 8 languages in RECEIPT_LANGS order
 var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by', 'Form key'];
 var RECEIPT_RATE = 22500;
 var RECEIPT_MANUAL = 'I2:I11';   // typed lines of the Receipt tab: pickup, return, tour USD, transport kip, lunch text, lunch kip, name, tour date, tour, payment
-var RECEIPT_TRAV = 'L16:N27';    // travellers typed by hand (name, passport, food) for a receipt whose booking has none
+var RECEIPT_TRAV = 'L16:N27';
+var DROPOFFS = ['City center', 'Train station'];   // Receipt I12    // travellers typed by hand (name, passport, food) for a receipt whose booking has none
 
 // Receipt settings live in Settings E8:F12; written once, then staff-owned.
 function setupReceiptSettings_(ss) {
@@ -376,6 +378,10 @@ function setupReceipt_(ss) {
   sh.getRange('I2:I3').setNumberFormat('@'); sh.getRange('I6').setNumberFormat('@'); sh.getRange('I8').setNumberFormat('@');
   sh.getRange('I9').setNumberFormat('dd/mm/yyyy').setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false).build());
   sh.getRange('I10:I11').setNumberFormat('@');
+  sh.getRange('H12').setValue('Drop-off in Luang Prabang (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('I12').setBackground('#cfe2a8').setFontWeight('bold')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(DROPOFFS, true).setAllowInvalid(false).build())
+    .setNote('Changes the booking itself: Train station adds the extra kip per person (Settings F4) to the transport amount, City center removes it. Transport and the receipt follow.');
   // Travellers by hand: used only when the booking has no travellers (a booking typed nowhere else, or not in Bookings at all)
   sh.getRange('L14').setValue('Travellers by hand (only if the booking shows none)').setFontWeight('bold');
   sh.getRange('L15:N15').setValues([['Name', 'Passport', 'Food']]).setFontWeight('bold').setBackground('#e8f0ea');
@@ -599,7 +605,32 @@ function onEdit(e) {
   if (tab !== TABS.receipt) return;
   var a1r = r.getA1Notation();
   if (a1r === 'B1') numberPickedReceipt_(e.source);
+  else if (a1r === 'I12') receiptDropoff_(e.source);
   else if (a1r === 'B3' || a1r === 'D2' || a1r === 'F2' || (r.getColumn() === 9 && r.getRow() >= 2 && r.getRow() <= 11)) refreshReceiptAmounts_(e.source);   // typed changes
+}
+
+// I12 shows the picked booking's drop-off (empty when it has no ride back to Luang Prabang).
+function showDropoff_(ss, id) {
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  var cell = ss.getSheetByName(TABS.receipt).getRange('I12');
+  if (at < 1 || !goesDown_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) { cell.clearContent(); return; }
+  cell.setValue(bk.getRange(at + 1, BOOKING_COLS.indexOf('Train station drop-off') + 1).getValue() === 'Yes' ? 'Train station' : 'City center');
+}
+
+// Drop-off picked on the Receipt tab: saved in the booking, the transport amount worked out again, Transport redrawn.
+function receiptDropoff_(ss) {
+  var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim(), want = String(sh.getRange('I12').getValue());
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  if (at < 1 || !want) { ss.toast('Pick a booking from Bookings first.', 'Drop-off', 6); return; }
+  if (!goesDown_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) {
+    sh.getRange('I12').clearContent(); ss.toast('This booking has no minivan back to Luang Prabang. Change its Transfer in Bookings first.', 'Drop-off', 8); return;
+  }
+  bk.getRange(at + 1, BOOKING_COLS.indexOf('Train station drop-off') + 1).setValue(want === 'Train station' ? 'Yes' : 'No');
+  fillAmounts_(ss, at + 1, true);   // transfer kip with or without the train extra
+  SpreadsheetApp.flush();
+  refreshReceiptAmounts_(ss);
+  buildTransport_(ss);
+  ss.toast(want === 'Train station' ? 'Drop-off: Luang Prabang train station. The extra was added to the transport amount.' : 'Drop-off: city center. The train station extra was removed.', 'Drop-off', 8);
 }
 
 // What was typed on the Receipt tab for the previous booking (paid amount, times, manual lines) does not carry to the next one.
@@ -631,6 +662,7 @@ function numberPickedReceipt_(ss) {
   try {
     fillMissingFor_(ss, id);
     clearReceiptManual_(ss);   // typed changes belong to the receipt that was open before
+    showDropoff_(ss, id);
     var r = issueReceipt_(ss, id);
     if (r.isNew) buildTransport_(ss);   // the team message in Transport shows the new number
     ss.toast(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.', 'Receipts', 6);
@@ -694,6 +726,17 @@ function receiptManualSelfTest_(ss, sh) {
   } finally { sh.getRange(RECEIPT_MANUAL).setValues(was); SpreadsheetApp.flush(); }
 }
 
+function receiptDropoffSelfTest_(ss, sh, id) {
+  var k = kipPrices_(ss), was = sh.getRange('I12').getValue();
+  try {
+    showDropoff_(ss, id); if (sh.getRange('I12').getValue() !== 'Train station') return false;
+    sh.getRange('I12').setValue('City center'); receiptDropoff_(ss); SpreadsheetApp.flush();
+    var city = sh.getRange('E31').getValue() === k.round && sh.getRange('B14').getDisplayValue().indexOf('Bahnhof') === -1;
+    sh.getRange('I12').setValue('Train station'); receiptDropoff_(ss); SpreadsheetApp.flush();
+    return city && sh.getRange('E31').getValue() === k.round + k.train;
+  } finally { sh.getRange('I12').setValue(was); }
+}
+
 // A Booking ID that is not in Bookings: empty lines (no column headings, no 30/12/1899) and the travellers typed by hand.
 function receiptNoBookingSelfTest_(sh) {
   var was = sh.getRange('B1').getValue();
@@ -725,7 +768,7 @@ function receiptSelfTest_(ss, id) {
         sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
       all: allGuestsSelfTest_(ss, id),
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
-      manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
+      dropoff: receiptDropoffSelfTest_(ss, sh, id), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' lines=' + [sh.getRange('E30').getValue(), sh.getRange('E31').getValue(), sh.getRange('E32').getValue()].join('/') +
       ' prices=' + [k.one, k.round, k.train, rate].join('/') + ' stored=' + [lookup[BOOKING_COLS.indexOf('Est. tour USD')], lookup[BOOKING_COLS.indexOf('Est. transfer kip')], lookup[BOOKING_COLS.indexOf('Lunch kip')]].join('/') + ' bal=' + bal + ' trav=' + trav : true;
@@ -1121,7 +1164,7 @@ function setupHelp_(ss) {
     ['1. Change the yellow date: the minivan list for that day appears. "↑ ຂຶ້ນ" = pickups in Luang Prabang to Nong Khiaw, "↓ ລົງ" = Nong Khiaw back to Luang Prabang. Each list ends with the total pax.'],
     ['2. Take a screenshot and send it to the driver team. When they send the plate numbers, type them in the yellow column (also the remark, the guest\'s WhatsApp number, the Nong Khiaw pickup). It is saved in Bookings.'],
     ['3. Click "Message guest": WhatsApp opens with the minivan details (date, plate, pickup, drop-off) ready to send to the guest.'],
-    ['   A guest who changes the drop-off to Luang Prabang train station (or back to the city center): in Bookings set "Train station drop-off" to Yes (or No). The extra charge is added to the transport amount, and Transport and the receipt follow at once. (A transport amount typed by hand in Bookings is replaced by the worked-out one; type it again if a special price was agreed.)'],
+    ['   A guest who changes the drop-off to Luang Prabang train station (or back to the city center): on the Receipt tab pick it in the green "Drop-off" cell (I12), or in Bookings set "Train station drop-off" to Yes (or No). The extra charge is added to the transport amount, and Transport and the receipt follow at once. (A transport amount typed by hand in Bookings is replaced by the worked-out one; type it again if a special price was agreed.)'],
     ['4. A guest who booked one way and now wants to go back: type the Return date in Bookings. The booking becomes "Round trip" and appears in Transport that day. The list also updates when you change dates, status or names in Bookings.'],
     [''],
     ['NEW BOOKING  (tab "New booking")'],
@@ -1132,6 +1175,7 @@ function setupHelp_(ss) {
     [''],
     ['TAKEAWAY LUNCH ADDED LATER, ONE TRAVELLER CANCELLING  (tab "Travellers")'],
     ['A guest orders takeaway food after booking (WhatsApp): in Travellers, choose the dish in the column "Takeaway lunch" on that traveller\'s row (dropdown of the Lunch menu). The price, the booking\'s Takeaway lunch / Lunch kip, the receipt and the Lunch report follow at once.'],
+    ['Food for one guest ("No pork", "No fish", ...): in Travellers choose or type it in the Food column on that guest\'s row. The receipt, Trip sheet, Guide report and the booking\'s Food follow.'],
     ['One traveller of a group cancels: choose Cancelled in the column "Traveller status" (far right) on that row. The row turns red, and that person leaves the Trip sheet, Guide report, Lunch report and Transport. The column "Status" before it is automatic (it follows the booking in Bookings).'],
     [''],
     ['CANCELLING A BOOKING'],
@@ -1520,6 +1564,11 @@ function travellerLunchSelfTest_(ss, id) {
     cell('Takeaway lunch').setValue(dish); travellerEdited_(ss, cell('Takeaway lunch'));
     var text = String(bcell('Takeaway lunch').getValue()), kip = Number(bcell('Lunch kip').getValue());
     if (text.indexOf(dish + ' 1') === -1 || text.indexOf('Avocado sandwich 1') === -1 || kip !== menu[dish].price + menu['Avocado sandwich'].price) return 'booking lunch: ' + text;
+    var food = cell('Food'), was = food.getValue();
+    food.setValue('No pork'); travellerEdited_(ss, food);
+    var summary = String(bcell('Food').getValue());
+    food.setValue(was); syncFood_(ss, id);
+    if (summary !== 'No pork 1, Regular 1') return 'food summary: ' + summary;
     return true;
   } catch (err) { return 'error: ' + err; }
   finally { cell('Takeaway lunch').clearContent(); cell('Lunch kip').clearContent(); syncLunch_(ss, id); }
@@ -2550,6 +2599,23 @@ function travellerEdited_(ss, range) {
     if (done.length) ss.toast('Takeaway lunch added up for ' + done.join(', ') + ' (Bookings and the receipt follow).', 'Travellers', 6);
   }
   if (hit('Traveller status')) buildTransport_(ss);
+  if (hit('Food')) {   // "No pork" for one guest: the booking's Food summary ("Regular 1, No pork 1") follows; the receipt and reports read Travellers
+    var fids = {};
+    for (var f = 0; f < Math.min(range.getNumRows(), 200); f++) { var fid = String(sh.getRange(range.getRow() + f, 1).getValue()); if (fid) fids[fid] = true; }
+    Object.keys(fids).forEach(function (id) { syncFood_(ss, id); });
+  }
+}
+
+function syncFood_(ss, id) {
+  var tr = ss.getSheetByName(TABS.travellers), bk = ss.getSheetByName(TABS.bookings);
+  var at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  if (at < 1 || tr.getLastRow() < 2) return;
+  var count = {};
+  tr.getRange(2, 1, tr.getLastRow() - 1, TRAVELLER_COLS.length).getValues().forEach(function (r) {
+    if (String(r[0]) !== id) return;
+    var f = String(r[TRAVELLER_COLS.indexOf('Food')]).trim() || 'Regular'; count[f] = (count[f] || 0) + 1;
+  });
+  bk.getRange(at + 1, BOOKING_COLS.indexOf('Food') + 1).setValue(Object.keys(count).map(function (f) { return f + ' ' + count[f]; }).join(', '));
 }
 
 // The booking's Takeaway lunch text ("Pad Thai (Chicken) 1; Avocado sandwich 2") and Lunch kip from its travellers' rows.

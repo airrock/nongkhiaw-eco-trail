@@ -278,3 +278,12 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - Team message: a `**` line between the way up (ຂຶ້ນ) and the way back (ລົງ) of a round trip.
 - Bookings `Train station drop-off` is a Yes / No dropdown. Changing it recalculates `Est. transfer kip` (with the train extra) and redraws
   Transport through `bookingEdited_`; the receipt reads the booking, so the drop-off line and amount follow.
+
+## 2026-10-22 (requests 70-71)
+- Travellers `Food` is a dropdown (`FOODS`: Regular, Vegetarian, Vegan, Gluten-free, No pork, No fish, ...) that also takes typed text;
+  editing it re-counts the booking's `Food` summary (`syncFood_`). The receipt, Trip sheet and Guide report read Travellers.
+- Receipt `I12` (green): Drop-off in Luang Prabang, City center / Train station. Picking a booking shows its drop-off; changing it writes
+  `Train station drop-off` (Yes / No) in Bookings, recalculates `Est. transfer kip` (train extra per rider, Settings F4), refreshes the
+  receipt log amounts and redraws Transport. Bookings with no ride back are refused with a message.
+- Booking form: `[hidden]{display:none !important}` (form rows are labels with display:grid, which kept hidden rows on screen; the 103
+  "back after the tour" choice showed for every package).

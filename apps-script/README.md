@@ -293,3 +293,19 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   details, tour USD, transport kip, lunch kip) and the travellers A16:D27 into typed text, with dropdowns (tours, `NB_PAY`, `TRANSFERS`
   with the train station, `FOODS`). F9 (receipt no), F12 (Booking ID) and the totals stay formulas, so the total and the log amounts
   follow. Unticking, or picking another booking, runs `setupReceipt_` (formulas back; validations of A5:F41 cleared there).
+
+## 2026-10-22 (requests 74-78, Noy's "Website 22.10.26" sheet)
+- **Lunch after booking (74):** website page `/lunch/?k=<form key>` (`lunch/index.html`, `js/lunch.js`, text from `js/i18n*.js`
+  keys `lunch_*`), the same private code as the agreement form (Receipt log "Form key", so the receipt must be issued first). `doGet
+  ?lunch=` → `lunchJson_` (travellers' first names + current order, the Lunch menu); `doPost {type:'lunch'}` → `saveLunch_` writes
+  Travellers Takeaway lunch / Lunch kip at the menu price and `syncLunch_` re-counts the booking, so the receipt and the Lunch report
+  follow. Receipt F3 is the link to send to the guest.
+- **Each pays (75):** receipt traveller rows are one formula row each (`receiptTravellerFormulas_`, A16:F27): No, Name, Passport, Food,
+  Takeaway lunch, "Each pays (USD / Kip)" = tour USD / people × rate + their share of the transport (riders only) + their own lunch kip,
+  shown for groups of 2+. Travellers typed by hand (L:N) are the fallback for each row.
+- **Food / lunch on the receipt (78):** typing in D16:E27 (dropdowns `FOODS` / `lunchDishes_`) is saved on the traveller by
+  `receiptTravellerEdit_` (→ `travellerEdited_` → `syncLunch_` / `syncFood_`) and the formula put back, so the kitchen's Lunch report
+  sees it. The yellow "Takeaway lunch (text)" cell stays a receipt-only override. `clearReceiptManual_` rewrites the rows' formulas.
+- **Lao (76):** ລົງ line says `ສົ່ງຕົວເມືອງ ໃກ້ຕະຫຼາດມືດ` for the city centre drop-off.
+- **Luggage (77):** `trn_luggage` and the sentence in `inf2p` now say large luggage can be left at the Nong Khiaw office (the Luang
+  Prabang office sentence of request 50 was withdrawn).

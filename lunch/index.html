@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Takeaway lunch | Nong Khiaw Eco-Trail</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Noto+Sans+Lao:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/agreement.css">
+<style>
+.ln-trav{display:grid;gap:10px}
+.ln-trav h3{margin:0 0 4px;font-size:1.15rem}
+.ln-row{display:grid;gap:8px}
+.ln-row select{width:100%;padding:10px 12px;font:inherit;border:1px solid var(--line);border-radius:10px;background:#fff}
+.ln-price{color:var(--muted);font-size:.95rem}
+.ln-total{display:flex;justify-content:space-between;font-weight:800;font-size:1.1rem;padding-top:10px;border-top:2px solid var(--forest)}
+</style>
+</head>
+<body>
+<header class="ag-head">
+  <div class="ag-wrap ag-bar">
+    <img src="../images/receipt-logo.png" alt="" width="56" height="56">
+    <div>
+      <strong>Eco Lao Adventure Trails</strong>
+      <span>Nong Khiaw, Laos</span>
+    </div>
+    <label class="ag-lang"><span data-i18n="lunch_lang">Language</span>
+      <select id="lang" aria-label="Language"></select>
+    </label>
+  </div>
+</header>
+<main class="ag-wrap">
+  <h1 data-i18n="lunch_title">Takeaway lunch for your tour</h1>
+  <p class="ag-sub" data-i18n="lunch_sub">Pick a dish for each traveller.</p>
+  <p id="state" class="ag-state" role="status">…</p>
+  <form id="form" class="ag-form" hidden novalidate>
+    <section class="ag-card" id="people"></section>
+    <section class="ag-card">
+      <div class="ln-total"><span data-i18n="lunch_total">Total</span><span id="total">0</span></div>
+    </section>
+    <p id="err" class="ag-err" role="alert" hidden></p>
+    <button type="submit" class="ag-btn" id="send" data-i18n="lunch_save">Save my order</button>
+  </form>
+  <section id="done" class="ag-card ag-done" hidden>
+    <h2 data-i18n="lunch_saved">Saved!</h2>
+    <div id="summary"></div>
+    <p><a href="#" id="again" data-i18n="lunch_change">Change the order</a></p>
+  </section>
+</main>
+<script src="../js/i18n.js"></script>
+<script src="../js/i18n-tours.js"></script>
+<script src="../js/lunch.js"></script>
+</body>
+</html>

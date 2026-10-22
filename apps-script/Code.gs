@@ -302,7 +302,8 @@ var RECEIPT_TEXT = [   // key, then the 8 languages in RECEIPT_LANGS order
   ['time', 'Time', 'ເວລາ', 'เวลา', '时间', '시간', '時間', 'Heure', 'Uhrzeit'],
   ['draft', 'DRAFT', 'ຮ່າງ', 'ฉบับร่าง', '草稿', '초안', '下書き', 'BROUILLON', 'ENTWURF'],
   ['paid', 'Paid', 'ຈ່າຍແລ້ວ', 'ชำระแล้ว', '已付款', '결제 완료', '支払済み', 'Payé', 'Bezahlt'],
-  ['bookingid', 'Booking ID', 'ລະຫັດການຈອງ', 'รหัสการจอง', '预订编号', '예약 번호', '予約番号', 'N° de réservation', 'Buchungsnummer']
+  ['bookingid', 'Booking ID', 'ລະຫັດການຈອງ', 'รหัสการจอง', '预订编号', '예약 번호', '予約番号', 'N° de réservation', 'Buchungsnummer'],
+  ['perperson', 'Each pays', 'ແຕ່ລະຄົນຈ່າຍ', 'แต่ละคนจ่าย', '每人应付', '1인당 금액', '1人あたり', 'Par personne', 'Pro Person']
 ];
 var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language', 'Total USD', 'Total kip', 'Deposit USD', 'Balance USD', 'Issued by', 'Form key'];
 var RECEIPT_RATE = 22500;
@@ -396,6 +397,8 @@ function setupReceipt_(ss) {
   sh.setColumnWidth(12, 200); sh.setColumnWidth(13, 120); sh.setColumnWidth(14, 100);
   sh.getRange('I5').setNote('Type the transport amount in kip if the booking has none or an old price. Empty = the booking\'s amount (or the current price from Settings).');
   sh.setColumnWidth(7, 20); sh.setColumnWidth(8, 250); sh.setColumnWidth(9, 280);
+  sh.getRange('F3').setFormula('=IF($K$3>0,HYPERLINK("https://nongkhiawlaos.com/lunch/?k="&INDEX(\'' + TABS.receiptLog + '\'!$J$1:$J,$K$3),"Lunch order link (send to the guest)"),"")')
+    .setFontWeight('bold').setFontColor('#1155cc').setWrap(true);
   sh.getRange('K1').setFormula('=IFERROR(MATCH($B$1,Bookings!$A$1:$A,0),0)');
   sh.getRange('K2').setFormula('=IFERROR(MATCH($B$2,\'' + TABS.receiptText + '\'!$B$1:$I$1,0),1)');
   sh.getRange('K3').setFormula('=IFERROR(MATCH($B$1,\'' + TABS.receiptLog + '\'!$C$1:$C,0),0)');
@@ -441,11 +444,15 @@ function setupReceipt_(ss) {
   sh.getRange('B15').setFormula('=' + L('name'));
   sh.getRange('C15').setFormula('=' + L('passport'));
   sh.getRange('D15').setFormula('=' + L('food'));
-  sh.getRange('A15:F15').setFontWeight('bold').setBackground('#e8f0ea');
-  var T = function (c) { return 'Travellers!$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1) + '$2:$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1); };
-  sh.getRange('A16').setFormula('=IFERROR(FILTER({' + T('Traveller #') + ',' + T('Full name') + ',' + T('Passport no') + ',' + T('Food') +
-    '},(' + T('Booking ID') + '=$B$1)*($B$1<>"")),IFERROR(FILTER({ROW($L$16:$L$27)-15,$L$16:$L$27,$M$16:$M$27,$N$16:$N$27},$L$16:$L$27<>""),""))');
-  sh.getRange('A16:F27').setBorder(null, null, true, null, null, true, '#cfd8d3', SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange('E15').setFormula('=' + L('lunch'));
+  sh.getRange('F15').setFormula('=' + L('perperson') + '&" (USD / "&' + L('kip') + '&")"');
+  sh.getRange('A15:F15').setFontWeight('bold').setBackground('#e8f0ea').setWrap(true);
+  writeReceiptTravellers_(ss, sh);
+  sh.getRange('A16:F27').setBorder(null, null, true, null, null, true, '#cfd8d3', SpreadsheetApp.BorderStyle.SOLID).setWrap(true).setVerticalAlignment('middle');
+  sh.getRange('D16:D27').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(FOODS, true).setAllowInvalid(true).build());
+  var dishes = lunchDishes_(ss);
+  if (dishes.length) sh.getRange('E16:E27').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList([''].concat(dishes), true).setAllowInvalid(true).build());
+  sh.getRange('D16:E27').setNote('Type or pick here: it is saved on the traveller (Travellers tab), so the kitchen\'s Lunch report, the reports and this receipt all follow.');
 
   // amounts
   sh.getRange('A29:B29').merge().setFormula('=' + L('item'));
@@ -486,6 +493,47 @@ function setupReceipt_(ss) {
   sh.setColumnWidth(1, 90); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 190); sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 120); sh.setColumnWidth(6, 120);
   sh.setRowHeights(5, 3, 26); sh.setRowHeights(1, 3, 24);
   sh.getRange('A5:F41').setVerticalAlignment('middle');
+}
+
+// Rows 16-27 of the receipt: traveller n = row - 15 of the picked booking (or the traveller typed by hand in L:N). Food (D) and
+// Takeaway lunch (E) are formulas too, but typing in them is saved on the traveller by receiptTravellerEdit_ and the formula put back.
+// F: what each person pays (tour per person + their share of the transport + their own lunch), shown for groups of 2 or more.
+function receiptTravellerFormulas_(row) {
+  var n = row - 15, T = function (c) { return 'Travellers!$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1) + '$2:$' + colLetter_(TRAVELLER_COLS.indexOf(c) + 1); };
+  var mine = '(' + T('Booking ID') + '=$B$1)*(' + T('Traveller #') + '=' + n + ')';
+  var pick = function (col, fallback) { return '=IF($A' + row + '="","",IFERROR(INDEX(FILTER(' + T(col) + ',' + mine + '),1),' + fallback + '))'; };
+  var people = 'COUNTIF($A$16:$A$27,">0")', riders = 'COUNTIFS(' + T('Booking ID') + ',$B$1,' + T('Pickup place') + ',"<>No transfer")';
+  var ridesMe = '(COUNTIFS(' + T('Booking ID') + ',$B$1,' + T('Traveller #') + ',' + n + ',' + T('Pickup place') + ',"<>No transfer")>0)';
+  var lunchMe = 'IF($K$1>0,SUMIFS(' + T('Lunch kip') + ',' + T('Booking ID') + ',$B$1,' + T('Traveller #') + ',' + n + '),IF(' + people + '>0,$E$32/' + people + ',0))';
+  var kip = 'ROUND(IF(' + people + '>0,$D$30/' + people + ',0)*$K$4+IF(' + riders + '>0,IF(' + ridesMe + ',$E$31/' + riders + ',0),IF(' + people + '>0,$E$31/' + people + ',0))+' + lunchMe + ',0)';
+  return [
+    '=IF($B$1="","",IF(COUNTIFS(' + T('Booking ID') + ',$B$1,' + T('Traveller #') + ',' + n + ')>0,' + n + ',IF($L' + row + '<>"",' + n + ',"")))',
+    pick('Full name', '$L' + row), pick('Passport no', '$M' + row), pick('Food', '$N' + row), pick('Takeaway lunch', '""'),
+    '=IF(OR($A' + row + '="",' + people + '<2),"",LET(k,' + kip + ',TEXT(k/$K$4,"#,##0.00")&" / "&TEXT(k,"#,##0")))'];
+}
+
+function writeReceiptTravellers_(ss, sh) {
+  var rows = [];
+  for (var r = 16; r <= 27; r++) rows.push(receiptTravellerFormulas_(r));
+  sh.getRange('A16:F27').setFormulas(rows);
+}
+
+// Food or Takeaway lunch typed on the receipt (D16:E27): saved on that traveller in Travellers, the booking re-counted, formula back.
+function receiptTravellerEdit_(ss, range) {
+  var sh = range.getSheet(), row = range.getRow(), col = range.getColumn(), typed = String(range.getValue()).trim();
+  var id = String(sh.getRange('B1').getValue()).trim(), n = Number(sh.getRange(row, 1).getValue());
+  var tr = ss.getSheetByName(TABS.travellers), at = -1;
+  if (id && n && tr.getLastRow() > 1) {
+    var v = tr.getRange(2, 1, tr.getLastRow() - 1, TRAVELLER_COLS.indexOf('Traveller #') + 1).getValues();
+    for (var i = 0; i < v.length; i++) if (String(v[i][0]) === id && Number(v[i][TRAVELLER_COLS.indexOf('Traveller #')]) === n) { at = i + 2; break; }
+  }
+  if (at < 0) return;   // a traveller typed by hand (L:N): what was typed stays as it is
+  var cell = tr.getRange(at, TRAVELLER_COLS.indexOf(col === 4 ? 'Food' : 'Takeaway lunch') + 1);
+  cell.setValue(typed);
+  travellerEdited_(ss, cell);   // prices the lunch, re-counts the booking's lunch / food
+  range.setFormula(receiptTravellerFormulas_(row)[col - 1]);
+  refreshReceiptAmounts_(ss);
+  ss.toast((col === 4 ? 'Food' : 'Takeaway lunch') + ' saved for traveller ' + n + ' (Travellers, the booking, the Lunch report and this receipt follow).', 'Receipt', 6);
 }
 
 // The printable part of the Receipt tab as a PDF (Google's export link; the script adds the file name).
@@ -614,6 +662,8 @@ function onEdit(e) {
   if (a1r === 'B1') numberPickedReceipt_(e.source);
   else if (a1r === 'I12') receiptDropoff_(e.source);
   else if (a1r === RECEIPT_EDIT) { if (r.getValue() === true) receiptUnlock_(e.source); else { setupReceipt_(e.source); refreshReceiptAmounts_(e.source); } }
+  else if (r.getNumRows() === 1 && r.getNumColumns() === 1 && r.getRow() >= 16 && r.getRow() <= 27 && (r.getColumn() === 4 || r.getColumn() === 5) &&
+    r.getSheet().getRange(RECEIPT_EDIT).getValue() !== true) receiptTravellerEdit_(e.source, r);   // food / lunch typed on a traveller row
   else if (r.getRow() >= 9 && r.getRow() <= 41 && r.getColumn() <= 6) refreshReceiptAmounts_(e.source);   // a typed amount on the receipt
   else if (a1r === 'B3' || a1r === 'D2' || a1r === 'F2' || (r.getColumn() === 9 && r.getRow() >= 2 && r.getRow() <= 11)) refreshReceiptAmounts_(e.source);   // typed changes
 }
@@ -627,7 +677,7 @@ function receiptUnlock_(ss) {
     var c = sh.getRange(a), num = /^[DE]3[0-2]$/.test(a);
     c.setValue(num ? (Number(c.getValue()) || 0) : c.getDisplayValue());
   });
-  var trav = sh.getRange('A16:D27'), v = trav.getDisplayValues();
+  var trav = sh.getRange('A16:F27'), v = trav.getDisplayValues();
   trav.clearContent(); trav.setValues(v);
   var list = function (items) { return SpreadsheetApp.newDataValidation().requireValueInList(items, true).setAllowInvalid(true).build(); };
   var tours = ss.getSheetByName(TABS.settings).getRange('A2:B20').getValues().filter(function (r) { return String(r[0]).trim(); })
@@ -670,6 +720,7 @@ function clearReceiptManual_(ss) {
   var sh = ss.getSheetByName(TABS.receipt);
   sh.getRange('B3').clearContent(); sh.getRange('D2').clearContent(); sh.getRange('F2').clearContent(); sh.getRange(RECEIPT_MANUAL).clearContent();
   sh.getRange(RECEIPT_TRAV).clearContent();
+  writeReceiptTravellers_(ss, sh);   // a typed-over traveller row (typed travellers) goes back to formulas
 }
 
 // The number is issued when the booking is picked, usually before the deposit is typed: keep the log's amounts current.
@@ -771,6 +822,16 @@ function receiptEditSelfTest_(ss, sh) {
   } catch (e) { return 'error: ' + e; }
 }
 
+// A food typed on traveller 1's receipt row reaches Travellers and the booking; the cell is a formula again afterwards.
+function receiptTravellerEditSelfTest_(ss, sh, id) {
+  var cell = sh.getRange('D16');
+  cell.setValue('No pork'); receiptTravellerEdit_(ss, cell); SpreadsheetApp.flush();
+  var bk = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[0];
+  var ok = cell.getFormula() !== '' && cell.getDisplayValue() === 'No pork' && bk[BOOKING_COLS.indexOf('Food')] === 'No pork 1, Regular 1';
+  cell.setValue('Vegetarian'); receiptTravellerEdit_(ss, cell); SpreadsheetApp.flush();
+  return ok && cell.getDisplayValue() === 'Vegetarian';
+}
+
 function receiptDropoffSelfTest_(ss, sh, id) {
   var k = kipPrices_(ss), was = sh.getRange('I12').getValue();
   try {
@@ -808,12 +869,13 @@ function receiptSelfTest_(ss, id) {
     var lookup = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[0] || [];
     var c = { draft: draft === 'ENTWURF', title: title === 'QUITTUNG', no6: /^\d{6}$/.test(r1.no), first: r1.isNew, second: !r2.isNew && r2.no === r1.no,
       shown: sh.getRange('F9').getDisplayValue() === r1.no, kip: kip === wantKip, bal: Math.abs(bal - (60 + (k.round + k.train + 65000) / rate - 10)) < 0.01,
-      agree: agreementSelfTest_(ss, id, r1.key) === true,
+      agree: agreementSelfTest_(ss, id, r1.key) === true, lunchLink: lunchSelfTest_(ss, id, r1.key) === true,
+      eachPays: sh.getRange('F16').getDisplayValue().indexOf(' / ') !== -1 && sh.getRange('E16').getDisplayValue() === '' && sh.getRange('E17').getDisplayValue() === 'Avocado sandwich',
       ret: sh.getRange('A14').getDisplayValue() === 'Rückfahrt:' && sh.getRange('B14').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1 &&
         sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
       all: allGuestsSelfTest_(ss, id),
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
-      dropoff: receiptDropoffSelfTest_(ss, sh, id), edit: receiptEditSelfTest_(ss, sh), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
+      dropoff: receiptDropoffSelfTest_(ss, sh, id), travEdit: receiptTravellerEditSelfTest_(ss, sh, id), edit: receiptEditSelfTest_(ss, sh), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' lines=' + [sh.getRange('E30').getValue(), sh.getRange('E31').getValue(), sh.getRange('E32').getValue()].join('/') +
       ' prices=' + [k.one, k.round, k.train, rate].join('/') + ' stored=' + [lookup[BOOKING_COLS.indexOf('Est. tour USD')], lookup[BOOKING_COLS.indexOf('Est. transfer kip')], lookup[BOOKING_COLS.indexOf('Lunch kip')]].join('/') + ' bal=' + bal + ' trav=' + trav : true;
@@ -925,6 +987,62 @@ function agreementSelfTest_(ss, id, key) {
   try { saveAgreement_(ss, { key: '0123456789abcdef', people: people }); } catch (e) { wrongKey = true; }
   return j.travellers.length === 2 && j.travellers[0].first === 'Test' && j.signed.length === 0 && badKey && first === 1 && again === 0 &&
     after.signed.length === 1 && after.signed[0] === 1 && wrongKey;
+}
+
+/* ---------- Takeaway lunch ordered after booking (website page /lunch/, same private link code as the agreement form) ----------
+   The guest sees the travellers (first names) with what each has ordered, picks dishes from the Lunch menu and sends. It is saved on
+   the travellers (Takeaway lunch, Lunch kip at the menu price) and the booking is re-counted, so the receipt and the Lunch report follow. */
+function lunchJson_(ss, key) {
+  var hit = agreementHit_(ss, key);
+  if (!hit) return JSON.stringify({ error: 'invalid' });
+  var bk = ss.getSheetByName(TABS.bookings), v = bk.getDataRange().getValues(), at = -1;
+  for (var i = 1; i < v.length; i++) if (v[i][0] === hit.id) { at = i; break; }
+  if (at < 0) return JSON.stringify({ error: 'invalid' });
+  var b = function (c) { return v[at][BOOKING_COLS.indexOf(c)]; };
+  var tr = ss.getSheetByName(TABS.travellers), ix = function (c) { return TRAVELLER_COLS.indexOf(c); }, people = [];
+  if (tr.getLastRow() > 1) tr.getRange(2, 1, tr.getLastRow() - 1, TRAVELLER_COLS.length).getValues().forEach(function (r) {
+    if (r[0] !== hit.id || String(r[ix('Status')]) === 'Cancelled') return;
+    var m = /^(.*?)(?:\s*\((.*)\))?$/.exec(String(r[ix('Takeaway lunch')]).trim());
+    people.push({ n: Number(r[ix('Traveller #')]), first: String(r[ix('First name')]) || String(r[ix('Full name')]), lunch: m[1], choice: m[2] || '' });
+  });
+  return JSON.stringify({ date: dayText_(b('Tour date')), tour: String(b('Tour')), tourName: String(b('Tour name')), menu: lunchMenuJson_(ss), travellers: people });
+}
+
+// d: { key, people: [{ n, lunch, choice }] }; a dish not on the menu (or empty) clears the order. Returns how many travellers were set.
+function saveLunch_(ss, d) {
+  var hit = agreementHit_(ss, d.key);
+  if (!hit) throw new Error('lunch: bad key');
+  var tr = ss.getSheetByName(TABS.travellers), menu = lunchMap_(ss), ix = function (c) { return TRAVELLER_COLS.indexOf(c); }, saved = 0;
+  if (tr.getLastRow() < 2) return 0;
+  var rows = tr.getRange(2, 1, tr.getLastRow() - 1, ix('Traveller #') + 1).getValues();
+  (Array.isArray(d.people) ? d.people : []).slice(0, 30).forEach(function (p) {
+    var n = Number(p.n), at = -1;
+    for (var i = 0; i < rows.length; i++) if (rows[i][0] === hit.id && Number(rows[i][ix('Traveller #')]) === n) { at = i + 2; break; }
+    if (at < 0) return;
+    var dish = clean_(p.lunch, 80), item = menu[dish], choice = clean_(p.choice, 40);
+    var text = item ? dish + (item.choices.indexOf(choice) !== -1 ? ' (' + choice + ')' : '') : '';
+    tr.getRange(at, ix('Takeaway lunch') + 1).setValue(text);
+    tr.getRange(at, ix('Lunch kip') + 1).setValue(item ? item.price : '');
+    saved++;
+  });
+  if (saved) syncLunch_(ss, hit.id);
+  return saved;
+}
+
+// Orders a dish for traveller 1 through the link, reads it back, then clears it.
+function lunchSelfTest_(ss, id, key) {
+  var menu = lunchMap_(ss), dish = Object.keys(menu).filter(function (k) { return menu[k].choices.length; })[0];
+  if (!dish) return 'no dish with choices';
+  var choice = menu[dish].choices[0];
+  var before = JSON.parse(lunchJson_(ss, key));
+  if (!before.travellers || before.travellers.length !== 2 || !before.menu.length) return 'json';
+  var n = saveLunch_(ss, { key: key, people: [{ n: 1, lunch: dish, choice: choice }] });
+  var after = JSON.parse(lunchJson_(ss, key)), t1 = after.travellers.filter(function (x) { return x.n === 1; })[0];
+  var bk = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[0];
+  var ok = n === 1 && t1 && t1.lunch === dish && t1.choice === choice && bk[BOOKING_COLS.indexOf('Takeaway lunch')].indexOf(dish + ' (' + choice + ') 1') !== -1 &&
+    JSON.parse(lunchJson_(ss, '0123456789abcdef')).error === 'invalid';
+  saveLunch_(ss, { key: key, people: [{ n: 1, lunch: '' }] });
+  return ok ? true : 'order: ' + (t1 && t1.lunch) + ' / ' + bk[BOOKING_COLS.indexOf('Takeaway lunch')];
 }
 
 /* ---------- All guests: one row per traveller with the booking beside it (read-only view) ---------- */
@@ -1185,6 +1303,9 @@ function setupHelp_(ss) {
     ['3. Menu "Receipts" > "Download PDF" saves it as "No 000001 <guest name>.pdf". Send that file to the guest. Balance = tour + transport + food - paid.'],
     ['   Quickest: click "⬇ PDF: download / print" at the top of the Receipt tab (works for everyone, also on a phone). To print for the guest to sign: open it, then Ctrl+P (Cmd+P on a Mac).'],
     ['   Change the receipt by hand: the yellow cells at the right of the Receipt tab (columns H:I) replace the pickup line, the return line, the tour amount, the transport amount (kip), the takeaway lunch text and its amount. Empty = from the booking. Pickup time and Return time (yellow, top) are filled in from the booking (7:30 - 8:00 AM; back 10:00 - 10:30 AM, or 3:30 - 4:30 PM for the 103 "after the tour" return); type to change. Everything typed is cleared when you pick another booking.'],
+    ['   Food and Takeaway lunch of one traveller: type or pick them in the traveller rows of the receipt (columns D and E, dropdowns). They are saved on the traveller, so the kitchen\'s Lunch report, the reports, the booking and the amounts follow. (The yellow "Takeaway lunch (text)" cell on the right only changes the wording on this receipt: the kitchen does not see it.)'],
+    ['   "Each pays": for a group of 2 or more, the last column of the traveller rows shows what each person pays (USD / kip): tour per person + their share of the transport + their own lunch.'],
+    ['   Guests who forgot the takeaway lunch: send them the "Lunch order link" (F3, next to the agreement form). They pick their dishes on the website; the travellers, the booking, this receipt and the Lunch report update by themselves.'],
     ['   Or tick the green "Edit on the receipt" box (I13): every line of the receipt (name, date, tour, pickup, return, payment, travellers and food, transport details and the amounts) becomes text you can type over, with dropdowns for the tour, payment method, transport and food. Totals still add up; the Booking ID and receipt number stay. Untick it, or pick another booking, to go back to the booking. To change the booking itself (Transport, reports), change it in Bookings / Travellers.'],
     ['   The same yellow cells also replace the Name, Tour date, Tour line and Payment method. A booking that is not in Bookings at all (lost, or never sent): type its Booking ID in B1 anyway, fill the yellow cells and the travellers in "Travellers by hand" (columns L:N); it gets a receipt number like any other. Better: add it in the New booking tab with the same Booking ID, so it also reaches Transport and the reports.'],
     ['   Transport amount empty in the booking or an old price? It is worked out at today\'s prices. To change a booking\'s amounts for good: select its row in Bookings and use menu "Bookings" > "Recalculate amounts" (today\'s prices), or type the amount in Bookings (Est. transfer kip).'],
@@ -1401,6 +1522,7 @@ function doPost(e) {
     }
     else if (d.type === 'inquiry') saveInquiry_(ss, d);
     else if (d.type === 'agreement') return reply_(JSON.stringify({ saved: saveAgreement_(ss, d) }));
+    else if (d.type === 'lunch') return reply_(JSON.stringify({ saved: saveLunch_(ss, d) }));
     else if (d.type === 'selftest') return reply_(selfTest_(ss));
     else if (d.type === 'rebuild') { var stray = clearStrayPrivate_(ss); setup(); return reply_('rebuilt' + (stray ? ' (' + stray + ' stray private-tour marks cleared)' : '')); }  // idempotent; never touches data rows
     else return reply_('unknown type');
@@ -1422,6 +1544,9 @@ function doGet(e) {
   }
   if (e && e.parameter.config === '1') {
     return ContentService.createTextOutput(configJson_()).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (e && e.parameter.lunch) {
+    return ContentService.createTextOutput(lunchJson_(SpreadsheetApp.getActive(), e.parameter.lunch)).setMimeType(ContentService.MimeType.JSON);
   }
   if (e && e.parameter.agreement) {
     return ContentService.createTextOutput(agreementJson_(SpreadsheetApp.getActive(), e.parameter.agreement)).setMimeType(ContentService.MimeType.JSON);
@@ -2175,7 +2300,7 @@ function teamMessage_(people, up, down, train, guest, phone, id, receipt, nk, re
     .concat(others.length ? ['ຜູ້ຕິດຕາມ: ' + others.join(', ')] : [])   // the other guests (followers), so the driver can check everyone
     .concat(up ? ['ຂຶ້ນ: ' + dm(up), 'ບ່ອນຮັບ: ' + places.join(' / ')] : [])
     .concat(up && down ? ['**'] : [])   // between the way up and the way back, easier for the team to read
-    .concat(down ? ['ລົງ: ' + dm(down) + ' ' + returnTime_(remark) + ' ' + (train ? 'ສົ່ງສະຖານີລົດໄຟ' : 'ສົ່ງກາງເມືອງ')] : [])
+    .concat(down ? ['ລົງ: ' + dm(down) + ' ' + returnTime_(remark) + ' ' + (train ? 'ສົ່ງສະຖານີລົດໄຟ' : 'ສົ່ງຕົວເມືອງ ໃກ້ຕະຫຼາດມືດ')] : [])
     .concat(down ? ['ບ່ອນຮັບໜອງຂຽວ: ' + (nk || NK_OFFICE)] : []).join('\n');
 }
 

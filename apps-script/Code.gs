@@ -1332,6 +1332,7 @@ function setupHelp_(ss) {
     ['2. Take a screenshot and send it to the driver team. When they send the plate numbers, type them in the yellow column (also the remark, the guest\'s WhatsApp number, the Nong Khiaw pickup). It is saved in Bookings.'],
     ['3. Click "Message guest": WhatsApp opens with the minivan details (date, plate, pickup, drop-off) ready to send to the guest.'],
     ['   A guest who changes the drop-off to Luang Prabang train station (or back to the city center): on the Receipt tab pick it in the green "Drop-off" cell (I12), or in Bookings set "Train station drop-off" to Yes (or No). The extra charge is added to the transport amount, and Transport and the receipt follow at once. (A transport amount typed by hand in Bookings is replaced by the worked-out one; type it again if a special price was agreed.)'],
+    ['   A guest who leaves on another day (stays longer, or earlier): type the new date in the yellow date column of their row (Pickup date / Departure date). It is saved in Bookings and the row moves to that day\'s list; the receipt follows.'],
     ['4. A guest who booked one way and now wants to go back: type the Return date in Bookings. The booking becomes "Round trip" and appears in Transport that day. The list also updates when you change dates, status or names in Bookings.'],
     [''],
     ['NEW BOOKING  (tab "New booking")'],
@@ -2227,8 +2228,9 @@ var TRANSPORT_ARR = ['Booking date', 'Booking ID', 'Receipt No', 'WhatsApp no', 
 var TRANSPORT_DEP = ['Booking date', 'Booking ID', 'Receipt No', 'WhatsApp no', 'Name', 'Pax', 'Departure date (to Luang Prabang)',
   'Pickup location (Nong Khiaw)', 'Vehicle / plate no (to Luang Prabang)', 'Drop-off', 'Remark', 'Message guest', 'Message for the minivan team (copy)'];
 // Typed columns of each list (1-based) -> the Bookings column they are saved in.
-var TRANSPORT_EDIT = { arr: { 4: 'WhatsApp no', 10: 'Vehicle to Nong Khiaw', 11: 'Transport remark' },
-  dep: { 4: 'WhatsApp no', 8: 'Pickup in Nong Khiaw', 9: 'Vehicle to Luang Prabang', 11: 'Transport remark' } };
+var TRANSPORT_EDIT = { arr: { 4: 'WhatsApp no', 7: 'Pickup date', 10: 'Vehicle to Nong Khiaw', 11: 'Transport remark' },
+  dep: { 4: 'WhatsApp no', 7: 'Return date', 8: 'Pickup in Nong Khiaw', 9: 'Vehicle to Luang Prabang', 11: 'Transport remark' } };
+// The date columns (7) are typed too: a guest who stays a day longer gets the new date here, saved in Bookings, and moves to that day's list.
 var TRANSPORT_WIDTH = 14;  // 13 visible columns + a hidden one saying which list the row belongs to
 
 function dayKey_(v) {   // 'yyyy-MM-dd' for a date or a dd/mm/yyyy text; '' otherwise
@@ -2399,7 +2401,12 @@ function saveTransportEdit_(ss, range) {
       var target = TRANSPORT_EDIT[kind][c];
       if (!target) continue;
       var v = sh.getRange(r, c).getValue();
-      bk.getRange(at + 1, cols.indexOf(target) + 1).setValue(target === 'WhatsApp no' ? text_(String(v)) : clean_(v, 200));
+      if (target === 'Pickup date' || target === 'Return date') {
+        var day = v instanceof Date ? v : (dayKey_(v) ? parseDate_(dayKey_(v)) : null);   // a date, or typed dd/mm/yyyy
+        if (!day) { ss.toast('Type the date as dd/mm/yyyy (for example 24/10/2026).', 'Transport', 8); continue; }
+        bk.getRange(at + 1, cols.indexOf(target) + 1).setValue(day);
+        ss.toast(meta[4] + ': ' + target.toLowerCase() + ' is now ' + Utilities.formatDate(day, TIME_ZONE, 'dd/MM/yyyy') + ' (saved in Bookings). Change the yellow date at the top to see that day\'s list.', 'Transport', 8);
+      } else bk.getRange(at + 1, cols.indexOf(target) + 1).setValue(target === 'WhatsApp no' ? text_(String(v)) : clean_(v, 200));
       changed = true;
     }
   }
@@ -2933,6 +2940,14 @@ function transportSelfTest_(ss, id) {
     cell.setValue(new Date(2030, 0, 18, 12)); buildTransport_(ss);
     var dRow = find('dep');
     if (!dRow || dRow.v[9] !== 'Luang Prabang train station' || dRow.v[6] instanceof Date === false) return 'departure row';
+    // the guest stays a day longer: the date typed in the list goes to Bookings and the row moves to the 19th
+    sh.getRange(dRow.row, 7).setValue(new Date(2030, 0, 19, 12)); saveTransportEdit_(ss, sh.getRange(dRow.row, 7));
+    var bk = ss.getSheetByName(TABS.bookings), ids = bk.getRange(1, 1, bk.getLastRow(), 1).getDisplayValues().map(function (r) { return r[0]; });
+    var retCell = bk.getRange(ids.indexOf(id) + 1, BOOKING_COLS.indexOf('Return date') + 1);
+    if (dayKey_(retCell.getValue()) !== '2030-01-19' || find('dep')) return 'date typed in the list';
+    cell.setValue(new Date(2030, 0, 19, 12)); buildTransport_(ss);
+    if (!find('dep')) return 'moved row';
+    retCell.setValue(new Date(2030, 0, 18, 12));
     return true;
   } catch (err) { return 'error: ' + err; }
   finally { cell.setValue(saved); buildTransport_(ss); }

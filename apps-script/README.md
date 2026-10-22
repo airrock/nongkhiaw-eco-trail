@@ -309,3 +309,6 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - **Lao (76):** ລົງ line says `ສົ່ງຕົວເມືອງ ໃກ້ຕະຫຼາດມືດ` for the city centre drop-off.
 - **Luggage (77):** `trn_luggage` and the sentence in `inf2p` now say large luggage can be left at the Nong Khiaw office (the Luang
   Prabang office sentence of request 50 was withdrawn).
+
+- 2026-10-22 (79): Transport column 7 (Pickup date / Departure date) is a typed column too (`TRANSPORT_EDIT`): a Date or dd/mm/yyyy text is
+  saved in Bookings `Pickup date` / `Return date` and the list redrawn, so a guest who stays longer moves to the new day's list.

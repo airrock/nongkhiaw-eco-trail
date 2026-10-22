@@ -287,3 +287,9 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   receipt log amounts and redraws Transport. Bookings with no ride back are refused with a message.
 - Booking form: `[hidden]{display:none !important}` (form rows are labels with display:grid, which kept hidden rows on screen; the 103
   "back after the tour" choice showed for every package).
+
+## 2026-10-22 (requests 72-73)
+- Receipt `I13` "Edit on the receipt": ticking turns the printed lines (`RECEIPT_TYPED`: name, tour date, tour, pickup, return, payment,
+  details, tour USD, transport kip, lunch kip) and the travellers A16:D27 into typed text, with dropdowns (tours, `NB_PAY`, `TRANSFERS`
+  with the train station, `FOODS`). F9 (receipt no), F12 (Booking ID) and the totals stay formulas, so the total and the log amounts
+  follow. Unticking, or picking another booking, runs `setupReceipt_` (formulas back; validations of A5:F41 cleared there).

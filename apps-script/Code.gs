@@ -308,7 +308,9 @@ var RECEIPT_LOG_COLS = ['Receipt No', 'Date of issue', 'Booking ID', 'Language',
 var RECEIPT_RATE = 22500;
 var RECEIPT_MANUAL = 'I2:I11';   // typed lines of the Receipt tab: pickup, return, tour USD, transport kip, lunch text, lunch kip, name, tour date, tour, payment
 var RECEIPT_TRAV = 'L16:N27';
-var DROPOFFS = ['City center', 'Train station'];   // Receipt I12    // travellers typed by hand (name, passport, food) for a receipt whose booking has none
+var DROPOFFS = ['City center', 'Train station'];   // Receipt I12
+var RECEIPT_EDIT = 'I13';   // tick: the printed receipt becomes typed text (Booking ID and receipt number stay)
+var RECEIPT_TYPED = ['B10', 'B11', 'B12', 'B13', 'B14', 'F11', 'C30', 'C31', 'C32', 'D30', 'E31', 'E32'];   // lines that become typed text    // travellers typed by hand (name, passport, food) for a receipt whose booking has none
 
 // Receipt settings live in Settings E8:F12; written once, then staff-owned.
 function setupReceiptSettings_(ss) {
@@ -378,6 +380,11 @@ function setupReceipt_(ss) {
   sh.getRange('I2:I3').setNumberFormat('@'); sh.getRange('I6').setNumberFormat('@'); sh.getRange('I8').setNumberFormat('@');
   sh.getRange('I9').setNumberFormat('dd/mm/yyyy').setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false).build());
   sh.getRange('I10:I11').setNumberFormat('@');
+  sh.getRange('A5:F41').clearDataValidations();
+  sh.getRange('H13').setValue('Edit on the receipt (tick, then type over any line)').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange(RECEIPT_EDIT).insertCheckboxes().setValue(false).setBackground('#cfe2a8')
+    .setNote('Ticked: the receipt lines (name, date, tour, pickup, return, payment, travellers, details and amounts) become text you can type over, ' +
+      'with dropdowns. Totals still add up. Untick, or pick another booking, to go back to the booking\'s details.');
   sh.getRange('H12').setValue('Drop-off in Luang Prabang (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('I12').setBackground('#cfe2a8').setFontWeight('bold')
     .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(DROPOFFS, true).setAllowInvalid(false).build())
@@ -606,7 +613,32 @@ function onEdit(e) {
   var a1r = r.getA1Notation();
   if (a1r === 'B1') numberPickedReceipt_(e.source);
   else if (a1r === 'I12') receiptDropoff_(e.source);
+  else if (a1r === RECEIPT_EDIT) { if (r.getValue() === true) receiptUnlock_(e.source); else { setupReceipt_(e.source); refreshReceiptAmounts_(e.source); } }
+  else if (r.getRow() >= 9 && r.getRow() <= 41 && r.getColumn() <= 6) refreshReceiptAmounts_(e.source);   // a typed amount on the receipt
   else if (a1r === 'B3' || a1r === 'D2' || a1r === 'F2' || (r.getColumn() === 9 && r.getRow() >= 2 && r.getRow() <= 11)) refreshReceiptAmounts_(e.source);   // typed changes
+}
+
+// Tick "Edit on the receipt": the printed lines become their own text (what they show now), with dropdowns, so Noy can type over
+// anything but the Booking ID and the receipt number. Totals stay formulas. Unticking or picking a booking rebuilds the tab.
+function receiptUnlock_(ss) {
+  var sh = ss.getSheetByName(TABS.receipt);
+  SpreadsheetApp.flush();
+  RECEIPT_TYPED.forEach(function (a) {
+    var c = sh.getRange(a), num = /^[DE]3[0-2]$/.test(a);
+    c.setValue(num ? (Number(c.getValue()) || 0) : c.getDisplayValue());
+  });
+  var trav = sh.getRange('A16:D27'), v = trav.getDisplayValues();
+  trav.clearContent(); trav.setValues(v);
+  var list = function (items) { return SpreadsheetApp.newDataValidation().requireValueInList(items, true).setAllowInvalid(true).build(); };
+  var tours = ss.getSheetByName(TABS.settings).getRange('A2:B20').getValues().filter(function (r) { return String(r[0]).trim(); })
+    .map(function (r) { return 'Code: ' + String(r[0]).trim() + ' – ' + r[1]; }).concat(['Transport only']);
+  var rides = [];
+  TRANSFERS.forEach(function (t) { rides.push(t); if (goesDown_(t)) rides.push(t + ' + Luang Prabang train station'); });
+  sh.getRange('B12').setDataValidation(list(tours));
+  sh.getRange('F11').setDataValidation(list(NB_PAY));
+  sh.getRange('C31').setDataValidation(list(rides));
+  sh.getRange('D16:D27').setDataValidation(list(FOODS));
+  ss.toast('Type over any line of the receipt (Booking ID and receipt number stay). Untick or pick another booking to go back to the booking.', 'Edit on the receipt', 10);
 }
 
 // I12 shows the picked booking's drop-off (empty when it has no ride back to Luang Prabang).
@@ -661,6 +693,7 @@ function numberPickedReceipt_(ss) {
   var lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
     fillMissingFor_(ss, id);
+    if (ss.getSheetByName(TABS.receipt).getRange(RECEIPT_EDIT).getValue() === true) setupReceipt_(ss);   // a typed receipt goes back to the booking
     clearReceiptManual_(ss);   // typed changes belong to the receipt that was open before
     showDropoff_(ss, id);
     var r = issueReceipt_(ss, id);
@@ -726,6 +759,18 @@ function receiptManualSelfTest_(ss, sh) {
   } finally { sh.getRange(RECEIPT_MANUAL).setValues(was); SpreadsheetApp.flush(); }
 }
 
+function receiptEditSelfTest_(ss, sh) {
+  try {
+    var name = sh.getRange('B10').getDisplayValue(), total = Number(sh.getRange('E33').getValue()), was = Number(sh.getRange('E31').getValue());
+    sh.getRange(RECEIPT_EDIT).setValue(true); receiptUnlock_(ss);
+    if (sh.getRange('B10').getFormula() || sh.getRange('B10').getDisplayValue() !== name) return false;
+    sh.getRange('B10').setValue('Typed over'); sh.getRange('E31').setValue(was + 1000); SpreadsheetApp.flush();
+    var ok = Number(sh.getRange('E33').getValue()) === total + 1000 && sh.getRange('F9').getFormula() !== '' && sh.getRange('B16').getDisplayValue() !== '';
+    sh.getRange(RECEIPT_EDIT).setValue(false); setupReceipt_(ss); SpreadsheetApp.flush();
+    return ok && sh.getRange('B10').getDisplayValue() === name && sh.getRange('B10').getFormula() !== '' && sh.getRange(RECEIPT_EDIT).getValue() === false;
+  } catch (e) { return 'error: ' + e; }
+}
+
 function receiptDropoffSelfTest_(ss, sh, id) {
   var k = kipPrices_(ss), was = sh.getRange('I12').getValue();
   try {
@@ -768,7 +813,7 @@ function receiptSelfTest_(ss, id) {
         sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
       all: allGuestsSelfTest_(ss, id),
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
-      dropoff: receiptDropoffSelfTest_(ss, sh, id), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
+      dropoff: receiptDropoffSelfTest_(ss, sh, id), edit: receiptEditSelfTest_(ss, sh), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' lines=' + [sh.getRange('E30').getValue(), sh.getRange('E31').getValue(), sh.getRange('E32').getValue()].join('/') +
       ' prices=' + [k.one, k.round, k.train, rate].join('/') + ' stored=' + [lookup[BOOKING_COLS.indexOf('Est. tour USD')], lookup[BOOKING_COLS.indexOf('Est. transfer kip')], lookup[BOOKING_COLS.indexOf('Lunch kip')]].join('/') + ' bal=' + bal + ' trav=' + trav : true;
@@ -1140,6 +1185,7 @@ function setupHelp_(ss) {
     ['3. Menu "Receipts" > "Download PDF" saves it as "No 000001 <guest name>.pdf". Send that file to the guest. Balance = tour + transport + food - paid.'],
     ['   Quickest: click "⬇ PDF: download / print" at the top of the Receipt tab (works for everyone, also on a phone). To print for the guest to sign: open it, then Ctrl+P (Cmd+P on a Mac).'],
     ['   Change the receipt by hand: the yellow cells at the right of the Receipt tab (columns H:I) replace the pickup line, the return line, the tour amount, the transport amount (kip), the takeaway lunch text and its amount. Empty = from the booking. Pickup time and Return time (yellow, top) are filled in from the booking (7:30 - 8:00 AM; back 10:00 - 10:30 AM, or 3:30 - 4:30 PM for the 103 "after the tour" return); type to change. Everything typed is cleared when you pick another booking.'],
+    ['   Or tick the green "Edit on the receipt" box (I13): every line of the receipt (name, date, tour, pickup, return, payment, travellers and food, transport details and the amounts) becomes text you can type over, with dropdowns for the tour, payment method, transport and food. Totals still add up; the Booking ID and receipt number stay. Untick it, or pick another booking, to go back to the booking. To change the booking itself (Transport, reports), change it in Bookings / Travellers.'],
     ['   The same yellow cells also replace the Name, Tour date, Tour line and Payment method. A booking that is not in Bookings at all (lost, or never sent): type its Booking ID in B1 anyway, fill the yellow cells and the travellers in "Travellers by hand" (columns L:N); it gets a receipt number like any other. Better: add it in the New booking tab with the same Booking ID, so it also reaches Transport and the reports.'],
     ['   Transport amount empty in the booking or an old price? It is worked out at today\'s prices. To change a booking\'s amounts for good: select its row in Bookings and use menu "Bookings" > "Recalculate amounts" (today\'s prices), or type the amount in Bookings (Est. transfer kip).'],
     ['4. After the receipt, "Open agreement form" (Receipt tab) opens the guests\' tour agreement on the website. Let each guest complete and sign it on a phone or tablet. The answers appear in the "Agreements" tab.'],

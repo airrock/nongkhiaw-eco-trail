@@ -61,6 +61,7 @@ reads back and deletes a sample booking/inquiry/receipt/agreement.
 ## Conventions
 
 - Commit messages: plain sentence describing the user-visible change (see `git log`), no prefixes.
+  No trailers: never append `Co-Authored-By` or any other AI attribution line; the author is the person pushing.
 - Translations are AI-written; flag Lao in particular for native review when adding text.
 - "Noy" in commits and docs is the business owner; her paper forms and PDFs are the source of truth for tour
   facts, policy and agreement wording.

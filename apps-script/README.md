@@ -312,3 +312,12 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 
 - 2026-10-22 (79): Transport column 7 (Pickup date / Departure date) is a typed column too (`TRANSPORT_EDIT`): a Date or dd/mm/yyyy text is
   saved in Bookings `Pickup date` / `Return date` and the list redrawn, so a guest who stays longer moves to the new day's list.
+
+## 2026-10-22 (requests 80-82)
+- **80:** no cell notes inside the receipt's printed area A5:F41 (the PDF export prints each note as a `[n]` footnote marker); the
+  food / lunch explanation is a note on H1 and `setupReceipt_` clears notes in the printed area.
+- **81:** Tour plans add-on table has a third column `Starts on day` (migration fills 2 for 102 / 103); Guide report column
+  "Add. package date" = tour date + that day - 1. Header merges / widths / self-test indexes shifted by one column.
+- **82:** "Message guest" uses `guestMessage_` (Noy's wording: Hello <first name>! Your minivan to ... is booked for tomorrow /
+  today / on dd/mm/yyyy, pickup place and time, plate number, hotel reception, and the transport manager from Settings F13 when
+  typed). `waLink_` now takes one text with a `{day}` placeholder.

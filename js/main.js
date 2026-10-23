@@ -357,7 +357,7 @@
           '<a class="btn btn-line btn-sm" data-k="pkfind" href="https://www.google.com/maps/search/?api=1&amp;query=Luang+Prabang" ' +
           'target="_blank" rel="noopener" data-i18n="btn_findmap">' + t('btn_findmap') + '</a>' +
         '</div></div>' : '') +
-      field('lbl_lunch', '<select data-k="lunch"></select>') +
+      field('lbl_lunch', '<select data-k="lunch"></select><small data-i18n="lunch_tip">' + t('lunch_tip') + '</small>') +
       '<div class="lunch-choice" hidden>' + field('lbl_lunch_choice', '<select data-k="lunchchoice"></select>') + '</div>';
     fillLunch(f);
     return f;

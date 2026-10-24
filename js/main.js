@@ -277,8 +277,13 @@
     if (!SHEET_URL) return;
     data.lang = current;
     data.referrer = referrer();
+    var body = JSON.stringify(data), queued = false;
+    // A beacon is delivered even when the page is left at once (on a phone, opening WhatsApp freezes this tab, and a plain
+    // request sent at that moment can be lost: the guest's message arrives but the sheet never gets the booking).
+    try { queued = !!(navigator.sendBeacon && navigator.sendBeacon(SHEET_URL, new Blob([body], { type: 'text/plain;charset=utf-8' }))); } catch (e) { queued = false; }
+    if (queued) return;
     fetch(SHEET_URL, { method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(data) })
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body })
       .catch(function (err) { console.error('Saving to the bookings sheet failed', err); });
   }
   function referrer() {

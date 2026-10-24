@@ -658,7 +658,11 @@ function onEdit(e) {
     else if (a1 === AR_SAVE && r.getValue() === true) saveArrange_(e.source);
     return;
   }
-  if (tab === TABS.newBooking) { if (r.getA1Notation() === NB_SAVE && r.getValue() === true) saveManualBooking_(e.source); return; }
+  if (tab === TABS.newBooking) {
+    if (r.getA1Notation() === NB_SAVE && r.getValue() === true) saveManualBooking_(e.source);
+    if (r.getA1Notation() === NB_IMPORT && r.getValue() === true) importWhatsAppBooking_(e.source);
+    return;
+  }
   if (tab !== TABS.receipt) return;
   var a1r = r.getA1Notation();
   if (a1r === 'B1') numberPickedReceipt_(e.source);
@@ -1340,6 +1344,7 @@ function setupHelp_(ss) {
     [''],
     ['NEW BOOKING  (tab "New booking")'],
     ['A booking taken on WhatsApp, by phone or at the office: type the yellow cells (tour or "Transport only", dates, minivan, travellers) and tick "Save booking". It is saved like a website booking and shows in Transport, the Trip sheet, the Guide report and the Receipt.'],
+    ['A booking the guest sent from the website but that is not in Bookings (the receipt shows nothing): copy the guest\'s whole WhatsApp message, paste it into the yellow box at the bottom of New booking, and tick "Import". It is saved with the guest\'s own Booking ref, with the travellers, passports, transfer and lunch.'],
     ['Guests already in Nong Khiaw who only go back: Minivan transfer "One way to Luang Prabang", the date back and their place in Nong Khiaw.'],
     ['Booking ID: type the guest\'s own reference (from their WhatsApp message) to add a website booking that did not reach the sheet; empty = a new ID. Tour price USD per person and Transport amount kip: type them to use a price agreed with the guest instead of Settings (empty = the usual prices). Pickup place in Nong Khiaw empty = our office inside The Trio Bar & Cafe.'],
     ['Tick "Private tour" for a group that has the tour to itself; it shows in Bookings (column Private tour) and in the Guide report.'],
@@ -1650,6 +1655,8 @@ function pickupSummary_(pickup) {
 // Writes one sample booking and inquiry, reads them back, then deletes them. Returns what was written.
 function selfTest_(ss) {
   var id = 'SELFTEST-' + new Date().getTime().toString(36);  // must fit the 20-char ID limit
+  // test bookings sent before this run (e.g. one sent from the website to check delivery): counted, then removed with the others
+  var leftover = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r.join('|').indexOf('SELFTEST-') !== -1; }).length;
   var booking = { id: id, tour: '101', date: '2030-01-15', transfer: 'Round trip', pickupDate: '2030-01-15', returnDate: '2030-01-18',
     train: true, hotel: 'Test hostel', map: 'https://maps.app.goo.gl/test', source: 'Other', payment: 'BCEL QR',
     travellers: [{ first: 'Test', last: 'Person', gender: 'X', nat: 'deutsch', food: 'Vegetarian', pass: 'ab123',
@@ -1697,6 +1704,7 @@ function selfTest_(ss) {
   out.arrangeOk = arrangeSelfTest_(ss);
   out.collectOk = collectSelfTest_(ss, id);
   out.newBookingOk = newBookingSelfTest_(ss);
+  out.importOk = importSelfTest_(ss);
   out.receiptOk = receiptSelfTest_(ss, id);
   out.travellerLunchOk = travellerLunchSelfTest_(ss, id);
   out.reviewsOk = JSON.parse(reviewsJson_()).length > 0;
@@ -1721,6 +1729,7 @@ function selfTest_(ss) {
       if (name === TABS.bookings) cleaned.push(r + 1 + ':' + now[0]);
     }
   }); });
+  out.testBookingsFoundBefore = leftover;
   out.tabsOk = ss.getSheets().length >= 6;
   out.frozenOk = [TABS.bookings, TABS.travellers, TABS.inquiries].every(function (n) { return ss.getSheetByName(n).getFrozenRows() === 1; });
   return JSON.stringify(out);
@@ -2635,6 +2644,7 @@ var NB_FIELDS = [   // [label, kind]; the value is typed in column B from row 4
   ['Private tour (only this group)', 'check'],
   ['Booking ID (from the guest\'s WhatsApp message; empty = a new one)', 'id'],
   ['Tour price USD per person (empty = Settings price)', 'usd'], ['Transport amount kip, whole booking (empty = worked out)', 'kip']];
+var NB_PASTE = 'B40', NB_IMPORT = 'B48';   // a pasted WhatsApp booking message, and its Import tick box
 var NB_FIRST = 4, NB_TRAV = 24, NB_TRAV_ROWS = 10, NB_TRAV_COLS = 6, NB_SAVE = 'B36', NB_PAY = ['USD cash', 'Kip cash', 'Card (USD only, 3% bank fee)', 'BCEL QR'];
 
 function setupNewBooking_(ss) {
@@ -2644,6 +2654,7 @@ function setupNewBooking_(ss) {
   if (sh.getLastRow() >= NB_FIRST) sh.getRange(NB_FIRST, 1, Math.min(sh.getLastRow() - NB_FIRST + 1, 40), 2).getValues().forEach(function (r) { if (r[0]) keep[String(r[0])] = r[1]; });
   var head = sh.getLastRow() > 1 ? sh.getRange(1, 1, Math.min(sh.getLastRow(), 60), 1).getValues().map(function (r) { return r[0]; }).indexOf('Traveller') + 1 : 0;
   var keepTrav = head > 0 ? sh.getRange(head + 1, 2, NB_TRAV_ROWS, NB_TRAV_COLS).getValues() : null;
+  var keepPaste = String(sh.getRange(NB_PASTE).getValue());
   sh.clear(); sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearDataValidations();
   sh.getRange('A1').setValue('New booking (WhatsApp, phone or office)').setFontSize(16).setFontWeight('bold');
   sh.getRange('A2:F2').merge().setValue('Type the yellow cells, then tick "Save booking". It is saved in Bookings and Travellers like a website booking ' +
@@ -2682,6 +2693,16 @@ function setupNewBooking_(ss) {
   if (keepTrav) sh.getRange(NB_TRAV, 2, NB_TRAV_ROWS, NB_TRAV_COLS).setValues(keepTrav);
   sh.getRange(NB_SAVE).offset(0, -1).setValue('Save booking →').setFontWeight('bold').setFontSize(12);
   sh.getRange(NB_SAVE).insertCheckboxes().setValue(false).setBackground('#cfe2a8');
+  // A website booking that did not reach the sheet: paste the guest's WhatsApp message (it holds everything) and tick Import.
+  sh.getRange('A38:F38').merge().setValue('WEBSITE BOOKING MISSING FROM THE SHEET? Paste the guest\'s whole WhatsApp booking message ("Hello! I would like to book: ...") ' +
+    'into the yellow box below and tick "Import". It is saved with the guest\'s own Booking ref, like a website booking.').setFontWeight('bold').setWrap(true).setFontColor('#2f6b4f');
+  sh.setRowHeight(38, 40);
+  sh.getRange('A40').setValue('WhatsApp message →').setFontWeight('bold').setVerticalAlignment('top');
+  var box = sh.getRange('B40:F46');
+  box.getMergedRanges().forEach(function (m) { m.breakApart(); });
+  box.merge().setBackground('#fff2a8').setWrap(true).setVerticalAlignment('top').setNumberFormat('@').setValue(keepPaste);
+  sh.getRange(NB_IMPORT).offset(0, -1).setValue('Import →').setFontWeight('bold').setFontSize(12);
+  sh.getRange(NB_IMPORT).insertCheckboxes().setValue(false).setBackground('#cfe2a8');
   sh.setColumnWidth(1, 330); sh.setColumnWidths(2, 6, 170); sh.setColumnWidth(2, 260); sh.setColumnWidth(7, 230);
   freezeRows_(sh, 2);
 }
@@ -2744,6 +2765,108 @@ function saveManualBooking_(ss) {
   } finally { lock.releaseLock(); }
 }
 
+// The website's WhatsApp message (js/main.js builds it) back into the booking it describes. Copied from WhatsApp, lines may start
+// with "• " or "- ". Returns { d: booking for saveBooking_ } or { error }.
+function parseWhatsAppBooking_(text) {
+  var lines = String(text || '').split(/\r?\n/).map(function (l) { return l.replace(/^[\s\u2022\u00b7*-]+/, '').trim(); }).filter(String);
+  var find = function (re) { for (var i = 0; i < lines.length; i++) { var m = re.exec(lines[i]); if (m) return m; } return null; };
+  var ymd = function (dmy) {   // dd/mm/yy or dd/mm/yyyy -> yyyy-mm-dd
+    var m = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(String(dmy || '').trim());
+    if (!m) return '';
+    var y = m[3].length === 2 ? '20' + m[3] : m[3];
+    return y + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  };
+  var ref = find(/^Booking ref:\s*([A-Za-z0-9-]+)/), tour = find(/^(?:Package|Tour)\s+(\d{3})\b/);
+  var only = find(/^Transport only/i);
+  if (!ref) return { error: 'No "Booking ref" in the message: paste the whole message, from "Hello! I would like to book".' };
+  if (!tour && !only) return { error: 'The tour (Package 101, 102, 103, Tour 001 or Transport only) is missing in the message.' };
+  var date = find(/^Date:\s*(\S+)/), transfer = find(/^Minivan transfer:\s*(.+)$/);
+  var t = transfer ? transfer[1].trim() : 'No';
+  if (TRANSFERS.indexOf(t) === -1) t = 'No';
+  var back = find(/^Date back[^:]*:\s*(\S+)(.*)$/), pick = find(/^Pickup date[^:]*:\s*(\S+)/);
+  var hotel = find(/^Accommodation(?: in Nong Khiaw)?:\s*(.+)$/), map = find(/^Google Maps:\s*(\S+)/);
+  var nk = find(/^Pickup in Nong Khiaw \(way back\):\s*(.+)$/), drop = find(/^Drop-off in Luang Prabang:\s*(.+)$/);
+  var pay = find(/^Payment method:\s*(.+)$/), noteAt = String(text).search(/\n\s*Note:\s*/);
+  var people = [], cur = null;
+  lines.forEach(function (l) {
+    var head = /^Traveller (\d+):\s*(.*)$/.exec(l);
+    if (head) { cur = { name: head[2], first: '', last: '', gender: '', nat: '', pass: '', issued: '', expires: '', food: 'Regular', pickup: 'same', lunch: '', lunchChoice: '' }; people.push(cur); return; }
+    if (!cur) return;
+    var m;
+    if ((m = /^First name:\s*(.*)$/.exec(l))) cur.first = m[1];
+    else if ((m = /^Last name:\s*(.*)$/.exec(l))) cur.last = m[1];
+    else if ((m = /^Gender:\s*(.*)$/.exec(l))) cur.gender = m[1];
+    else if ((m = /^Nationality:\s*(.*)$/.exec(l))) cur.nat = m[1];
+    else if ((m = /^Passport:\s*(\S*)\s*\(issued\s*(\S+),\s*expires\s*([^)\s]+)\)/.exec(l))) { cur.pass = m[1]; cur.issued = ymd(m[2]); cur.expires = ymd(m[3]); }
+    else if ((m = /^Food:\s*(.*)$/.exec(l))) cur.food = m[1] || 'Regular';
+    else if ((m = /^Takeaway lunch:\s*(.+?)(?:\s*\((.+)\))?,\s*[\d,.]+\s*kip$/i.exec(l))) { cur.lunch = m[1]; cur.lunchChoice = m[2] || ''; }
+    else if (/^(Takeaway lunch total|Note):/.test(l)) cur = null;
+  });
+  if (!people.length) return { error: 'No travellers ("Traveller 1: ...") in the message.' };
+  var dt = ymd(date && date[1]);
+  if (!only && !dt) return { error: 'The tour date ("Date: dd/mm/yy") is missing in the message.' };
+  var plan = back && /last day of the tour/i.test(back[2]) ? 'end' : back && /10:30/.test(back[2]) ? 'later' : '';
+  return { d: {
+    type: 'booking', id: ref[1].toUpperCase(), tour: only ? TRANSPORT_ONLY : tour[1], date: only ? '' : dt, transfer: t,
+    pickupDate: ymd(pick && pick[1]), returnDate: ymd(back && back[1]), returnPlan: plan,
+    private: !!find(/^PRIVATE TOUR/), nkPickup: nk && !/^our office/i.test(nk[1]) ? nk[1] : '',
+    hotel: hotel ? hotel[1] : '', map: map ? map[1] : '', train: !!(drop && /train/i.test(drop[1])),
+    payment: pay ? pay[1] : '', phone: '', source: 'Website (from WhatsApp)', lang: 'Staff',
+    note: noteAt >= 0 ? String(text).slice(noteAt).replace(/^\s*Note:\s*/, '').trim() : '',
+    travellers: people } };
+}
+
+// Import tick on the New booking tab: the pasted message becomes the booking (same Booking ref), form emptied.
+function importWhatsAppBooking_(ss) {
+  var sh = ss.getSheetByName(TABS.newBooking), box = sh.getRange(NB_IMPORT), msg = box.offset(0, 1);
+  var stop = function (why) { box.setValue(false); msg.setValue(why).setFontColor('#a33'); ss.toast(why, 'Not imported', 10); };
+  var p = parseWhatsAppBooking_(sh.getRange(NB_PASTE).getValue());
+  if (p.error) return stop(p.error);
+  var ids = ss.getSheetByName(TABS.bookings).getRange('A:A').getDisplayValues().map(function (r) { return r[0]; });
+  if (ids.indexOf(p.d.id) !== -1) return stop('Booking ' + p.d.id + ' is already in Bookings.');
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    saveBooking_(ss, p.d);
+    sh.getRange(NB_PASTE).clearContent(); box.setValue(false);
+    msg.setValue('Imported ' + p.d.id + ' (' + p.d.travellers.length + ' pax). Pick it in the Receipt tab for the receipt.').setFontColor('#2f6b4f');
+    sortBookings_(ss); buildTransport_(ss);
+    ss.toast('Booking ' + p.d.id + ' imported (' + p.d.travellers.length + ' pax).', 'New booking', 8);
+  } catch (err) {
+    box.setValue(false); msg.setValue('Not imported: ' + (err.message || err)).setFontColor('#a33');
+    throw err;
+  } finally { lock.releaseLock(); }
+}
+
+// A message exactly as the website writes it (5 lines of travellers, lunch with a choice, round trip, Nong Khiaw office) is imported.
+function importSelfTest_(ss) {
+  var sh = ss.getSheetByName(TABS.newBooking), paste = sh.getRange(NB_PASTE), keep = paste.getValue();
+  var id = ('SELFTEST-I' + new Date().getTime().toString(36).slice(-6)).toUpperCase(), menu = lunchMap_(ss);   // refs are saved in capitals
+  var dish = Object.keys(menu).filter(function (k) { return menu[k].choices.length; })[0];
+  var text = ['Hello! I would like to book:', 'Package 101: Overnight Camping Above the Clouds 360° Viewpoint (USD 30)', 'Booking ref: ' + id,
+    'Date: 25/02/30', 'People: 2', 'Payment method: Kip cash', 'Minivan transfer: Round trip', 'Pickup date (Luang Prabang to Nong Khiaw): 25/02/30',
+    'Date back (Nong Khiaw to Luang Prabang): 26/02/30', 'Drop-off in Luang Prabang: city centre near the night market', 'Accommodation: SELFTEST Elephant',
+    'Google Maps: https://maps.app.goo.gl/x', 'Pickup in Nong Khiaw (way back): our office inside The Trio Bar & Cafe', '',
+    'Traveller 1: SELFTEST-Aden Alsop', '• First name: SELFTEST-Aden', '• Last name: Alsop', '• Gender: Male', '• Nationality: Australian',
+    '• Passport: RA8392450 (issued 18/02/25, expires 18/02/35)', '• Food: Regular', '• Takeaway lunch: ' + dish + ' (' + menu[dish].choices[0] + '), 69,000 kip', '',
+    'Traveller 2: Heine Brunborg', '• First name: Heine', '• Last name: Brunborg', '• Gender: Male', '• Nationality: Norway',
+    '• Passport: CFC647265 (issued 27/06/24, expires 27/06/34)', '• Food: Vegetarian', '', 'Note: no peanuts'].join('\n');
+  try {
+    paste.setValue(text); sh.getRange(NB_IMPORT).setValue(true); importWhatsAppBooking_(ss);
+    var b = ss.getSheetByName(TABS.bookings).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; })[0];
+    var t = ss.getSheetByName(TABS.travellers).getDataRange().getDisplayValues().filter(function (r) { return r[0] === id; });
+    if (!b) return 'not saved: ' + sh.getRange(NB_IMPORT).offset(0, 1).getDisplayValue();
+    var c = function (n) { return b[BOOKING_COLS.indexOf(n)]; };
+    if (c('Tour') !== '101' || c('Tour date') !== '25/02/2030' || c('Transfer') !== 'Round trip' || c('Return date') !== '26/02/2030' ||
+      c('People') !== '2' || c('Accommodation') !== 'SELFTEST Elephant' || c('Payment method') !== 'Kip cash' || c('Note') !== 'no peanuts' ||
+      c('Pickup in Nong Khiaw') !== NK_OFFICE) return 'booking: ' + [c('Tour'), c('Tour date'), c('Transfer'), c('Return date'), c('People'), c('Note')].join('/');
+    if (t.length !== 2 || t[0][TRAVELLER_COLS.indexOf('Passport no')] !== 'RA8392450' || t[0][TRAVELLER_COLS.indexOf('Passport expires')] !== '18/02/2035' ||
+      t[0][TRAVELLER_COLS.indexOf('Takeaway lunch')] !== dish + ' (' + menu[dish].choices[0] + ')' || t[1][TRAVELLER_COLS.indexOf('Food')] !== 'Vegetarian') return 'travellers';
+    if (parseWhatsAppBooking_('Hello').error === undefined) return 'bad text accepted';
+    return true;
+  } catch (err) { return 'error: ' + err; }
+  finally { paste.setValue(keep); sh.getRange(NB_IMPORT).setValue(false); }
+}
+
 // Saves a transport-only booking back to Luang Prabang through the New booking tab and checks Bookings and the Transport
 // message; whatever staff had half-typed in the form is put back. The SELFTEST rows are removed by selfTest_.
 function newBookingSelfTest_(ss) {
@@ -2759,7 +2882,8 @@ function newBookingSelfTest_(ss) {
         'Transport amount kip, whole booking (empty = worked out)': 333000 }[f[0]] || ''];
     }));
     trav.clearContent();
-    sh.getRange(NB_TRAV, 2, 2, NB_TRAV_COLS).setValues([['SELFTEST-Lead', 'Person', 'France', 'Regular', '', ''], ['Second', 'Guest', 'France', 'Vegan', '', 'Avocado sandwich']]);
+    var dish = lunchDishes_(ss)[0] || '';   // the first dish on the menu now
+    sh.getRange(NB_TRAV, 2, 2, NB_TRAV_COLS).setValues([['SELFTEST-Lead', 'Person', 'France', 'Regular', '', ''], ['Second', 'Guest', 'France', 'Vegan', '', dish]]);
     saveManualBooking_(ss);
     var bk = ss.getSheetByName(TABS.bookings), v = bk.getDataRange().getValues(), h = v[0];
     var b = v.filter(function (r) { return r[h.indexOf('Lead name')] === 'SELFTEST-Lead Person'; }).pop();
@@ -2767,7 +2891,7 @@ function newBookingSelfTest_(ss) {
     if (b[h.indexOf('Transfer')] !== 'One way to Luang Prabang' || dayKey_(b[h.indexOf('Return date')]) !== '2030-01-20' || b[h.indexOf('Pickup date')] !== '' ||
       b[h.indexOf('Est. transfer kip')] !== 333000 || b[h.indexOf('Pickup in Nong Khiaw')] !== 'SELFTEST hostel' || b[h.indexOf('Status')] !== 'Confirmed') return 'booking row: ' + ['Transfer', 'Return date', 'Pickup date', 'Est. transfer kip', 'Pickup in Nong Khiaw', 'Status']
       .map(function (c) { var x = b[h.indexOf(c)]; return c + '=' + (x instanceof Date ? dayKey_(x) : x); }).join(' / ');
-    if (b[h.indexOf('Private tour')] !== 'Yes' || b[h.indexOf('Takeaway lunch')] !== 'Avocado sandwich 1') return 'private tour / lunch: ' + b[h.indexOf('Private tour')] + '/' + b[h.indexOf('Takeaway lunch')];
+    if (b[h.indexOf('Private tour')] !== 'Yes' || b[h.indexOf('Takeaway lunch')] !== (dish ? dish + ' 1' : '')) return 'private tour / lunch: ' + b[h.indexOf('Private tour')] + '/' + b[h.indexOf('Takeaway lunch')];
     tp.getRange('B2').setValue(back); buildTransport_(ss);
     var rows = tp.getRange(TRANSPORT_START, 1, tp.getLastRow() - TRANSPORT_START + 1, TRANSPORT_WIDTH).getValues();
     var dep = rows.filter(function (r) { return r[1] === b[0] && r[TRANSPORT_WIDTH - 1] === 'dep' && r[12]; })[0];

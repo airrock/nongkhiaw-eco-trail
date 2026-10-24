@@ -321,3 +321,12 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - **82:** "Message guest" uses `guestMessage_` (Noy's wording: Hello <first name>! Your minivan to ... is booked for tomorrow /
   today / on dd/mm/yyyy, pickup place and time, plate number, hotel reception, and the transport manager from Settings F13 when
   typed). `waLink_` now takes one text with a `{day}` placeholder.
+
+## 2026-10-24: bookings lost on phones, import from WhatsApp
+- A website booking (NK261024-1JNI) reached WhatsApp but not the sheet. The endpoint itself was fine (a test booking of the same shape
+  saved in 24 s): the request was lost in the guest's browser, which opens WhatsApp at the same moment. `saveToSheet` (js/main.js) now
+  sends with `navigator.sendBeacon` (delivered even when the page is left; checked end to end), falling back to `fetch` keepalive.
+- New booking tab, rows 38-48: paste the guest's WhatsApp booking message into B40 and tick B48 "Import". `parseWhatsAppBooking_` reads
+  the website's message format (ref, tour, date, payment, transfer, dates, drop-off, accommodation, map, Nong Khiaw pickup, private,
+  each traveller with passport dates, food and takeaway lunch, note) and `saveBooking_` saves it under the guest's own ref (refused if
+  it exists). Self-test `importOk` imports a sample message; `testBookingsFoundBefore` counts test bookings left from earlier checks.

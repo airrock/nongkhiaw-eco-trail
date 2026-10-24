@@ -622,6 +622,8 @@ function issueReceipt_(ss, id) {
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][2] === id) {
       if (!rows[i][keyCol]) { rows[i][keyCol] = newKey_(); log.getRange(i + 2, keyCol + 1).setValue(rows[i][keyCol]); }
+      // numbered while the booking was missing from Bookings (added later, e.g. imported from WhatsApp): the booking gets the number now
+      if (at > 0) { var nc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Receipt No') + 1); if (!nc.getDisplayValue().trim()) nc.setValue(text_(rows[i][0])); }
       return { no: rows[i][0], isNew: false, key: rows[i][keyCol] };
     }
     if (rows[i][byCol] !== OLD_RECEIPT) next = Math.max(next, (Number(rows[i][0]) || 0) + 1);

@@ -4,6 +4,9 @@ Booking site for a locally run tour company in Nong Khiaw, Laos (https://nongkhi
 Sheet back office its forms write to. Owner-facing operating detail lives in `README.md` and
 `apps-script/README.md`; read the relevant one before changing behaviour. This file is the map.
 
+**Read `MEMORY.md` too** before working here: how requests arrive, how to deploy and check, traps already hit, open items.
+Ownership and what is left to move to Noy: `HANDOVER.md`.
+
 ## Shape
 
 - **Static site, no build step, no framework, no package.json.** Plain HTML/CSS/ES5-style JS (IIFEs, `var`,

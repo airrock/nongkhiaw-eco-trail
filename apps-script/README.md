@@ -361,3 +361,15 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   through the test, a website booking ran at the same time, and `addRow_` (`getLastRow()+1`) from both runs wrote into the same
   row: one booking was gone. They now use `ownLock_(ms)`, which only takes and releases a lock the run does not already hold.
   Checked: a booking sent 10 s into a self-test now answers after the test ends.
+
+## 2026-10-25 (request 89): change the transfer from the receipt
+- Noy typed "One way to Luang Prabang" into the yellow I14 (wording only) for a one-way-up booking that now wanted the ride back;
+  nothing changed in the booking. New green **I17 "Transfer (changes the booking)"** (`RECEIPT_TRANSFER`, dropdown of `TRANSFERS`):
+  `receiptTransfer_` writes Bookings `Transfer`, `setTransfer_` defaults `Pickup in Nong Khiaw` to the office for a ride back and
+  recomputes `Est. transfer kip` (`fillAmounts_(…, true)`), then the drop-off and return cells, the receipt amounts and Transport
+  follow. `showTransfer_` fills I17 when a booking is picked.
+- A Return date picked in I15 for a one-way-to-Nong-Khiaw booking makes it a Round trip (same rule as typing the date in
+  Bookings), instead of the old "change its Transfer in Bookings first" toast.
+- Self-test `receiptReturnSelfTest_` now also switches the sample booking to one way (1 x one-way price) and back to round trip
+  through a return date (round trip + train). The header check ignores trailing columns with no header (a note typed in a spare
+  column of Travellers made it fail).

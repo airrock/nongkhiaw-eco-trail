@@ -314,6 +314,7 @@ var RECEIPT_MANUAL = 'I2:I11';   // typed lines of the Receipt tab: pickup, retu
 var RECEIPT_TRAV = 'L16:N27';
 var DROPOFFS = ['City center', 'Train station'];   // Receipt I12
 var RECEIPT_TRANSPORT = 'I14';   // typed transport wording on the receipt (e.g. "Private minivan"); only this receipt
+var RECEIPT_TRANSFER = 'I17';    // the booking's Transfer (one way / round trip / no), green: changes the booking
 var RETURN_TIMES = ['10:00-10:30 AM', '10:30 AM', '3:30-4:30 PM'];   // Receipt I16 (typing another time is fine)
 var RECEIPT_EDIT = 'I13';   // tick: the printed receipt becomes typed text (Booking ID and receipt number stay)
 var RECEIPT_TYPED = ['B10', 'B11', 'B12', 'B13', 'B14', 'F11', 'C30', 'C31', 'C32', 'D30', 'E31', 'E32'];   // lines that become typed text    // travellers typed by hand (name, passport, food) for a receipt whose booking has none
@@ -401,6 +402,11 @@ function setupReceipt_(ss) {
   sh.getRange('H16').setValue('Return time (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('I16').setBackground('#cfe2a8').setFontWeight('bold').setNumberFormat('@')
     .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(RETURN_TIMES, true).setAllowInvalid(true).build());
+  sh.getRange('H17').setValue('Transfer (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange(RECEIPT_TRANSFER).setBackground('#cfe2a8').setFontWeight('bold').setNumberFormat('@')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(TRANSFERS, true).setAllowInvalid(false).build())
+    .setNote('Changes the booking itself: one way, round trip or no minivan. The transport amount is worked out again at today\'s prices, ' +
+      'and Transport follows. For a ride back, pick the Return date and time above too.');
   sh.getRange('H12').setValue('Drop-off in Luang Prabang (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('I12').setBackground('#cfe2a8').setFontWeight('bold')
     .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(DROPOFFS, true).setAllowInvalid(false).build())
@@ -684,6 +690,7 @@ function onEdit(e) {
   if (a1r === 'B1') numberPickedReceipt_(e.source);
   else if (a1r === 'I12') receiptDropoff_(e.source);
   else if (a1r === 'I15' || a1r === 'I16') receiptReturn_(e.source);
+  else if (a1r === RECEIPT_TRANSFER) receiptTransfer_(e.source);
   else if (a1r === RECEIPT_EDIT) { if (r.getValue() === true) receiptUnlock_(e.source); else { setupReceipt_(e.source); refreshReceiptAmounts_(e.source); } }
   else if (r.getNumRows() === 1 && r.getNumColumns() === 1 && r.getRow() >= 16 && r.getRow() <= 27 && (r.getColumn() === 4 || r.getColumn() === 5) &&
     r.getSheet().getRange(RECEIPT_EDIT).getValue() !== true) receiptTravellerEdit_(e.source, r);   // food / lunch typed on a traveller row
@@ -732,16 +739,55 @@ function showReturn_(ss, id) {
   sh.getRange('I16').setValue(returnTime_(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transport remark') + 1).getValue()));
 }
 
+// I17 shows the picked booking's Transfer.
+function showTransfer_(ss, id) {
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  var cell = ss.getSheetByName(TABS.receipt).getRange(RECEIPT_TRANSFER);
+  if (at < 1) { cell.clearContent(); return; }
+  cell.setValue(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()) || 'No');
+}
+
+// After a booking's Transfer changed (row in Bookings): the way-back pickup defaults to the office, and the transport amount
+// is worked out again at today's prices for the riders.
+function setTransfer_(ss, row, transfer) {
+  var bk = ss.getSheetByName(TABS.bookings), nk = bk.getRange(row, BOOKING_COLS.indexOf('Pickup in Nong Khiaw') + 1);
+  if (goesDown_(transfer) && !String(nk.getValue()).trim()) nk.setValue(NK_OFFICE);
+  fillAmounts_(ss, row, true);
+}
+
+// Transfer picked on the Receipt tab (green I17): saved in the booking, amounts and Transport follow. Request 89: a one-way
+// booking that now wants a ride back, changed from the receipt instead of the yellow text cell (which only changes the wording).
+function receiptTransfer_(ss) {
+  var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim(), want = String(sh.getRange(RECEIPT_TRANSFER).getValue()).trim();
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  if (at < 1) { sh.getRange(RECEIPT_TRANSFER).clearContent(); ss.toast('Pick a booking from Bookings first.', 'Transfer', 6); return; }
+  if (TRANSFERS.indexOf(want) === -1) { showTransfer_(ss, id); ss.toast('Pick one of the list.', 'Transfer', 6); return; }
+  var tc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1);
+  if (String(tc.getValue()) === want) return;
+  tc.setValue(want);
+  setTransfer_(ss, at + 1, want);
+  SpreadsheetApp.flush();
+  showDropoff_(ss, id); showReturn_(ss, id);
+  refreshReceiptAmounts_(ss);
+  buildTransport_(ss);
+  var needDate = goesDown_(want) && !(bk.getRange(at + 1, BOOKING_COLS.indexOf('Return date') + 1).getValue() instanceof Date);
+  ss.toast('Transfer changed to "' + want + '"; the transport amount was worked out again and Transport follows.' +
+    (needDate ? ' Now pick the Return date (and time) above for the ride back.' : ''), 'Transfer', 10);
+}
+
 // Return date / time changed on the Receipt tab: saved in the booking (Return date; the time in Transport remark), so the
 // receipt, the Transport list and the minivan team message all show it.
 function receiptReturn_(ss) {
   var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim();
   var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
   if (at < 1) { ss.toast('Pick a booking from Bookings first.', 'Return', 6); return; }
-  if (!goesDown_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) {
-    sh.getRange('I15:I16').clearContent(); ss.toast('This booking has no minivan back to Luang Prabang. Change its Transfer in Bookings first.', 'Return', 8); return;
-  }
   var d = sh.getRange('I15').getValue(), time = String(sh.getRange('I16').getValue()).trim();
+  var tc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1), transfer = String(tc.getValue()), upgraded = false;
+  if (!goesDown_(transfer)) {
+    // A return date picked for a one-way ride up makes the booking a round trip (as typing it in Bookings does); request 89.
+    if (goesUp_(transfer) && d instanceof Date) { tc.setValue('Round trip'); setTransfer_(ss, at + 1, 'Round trip'); upgraded = true; }
+    else { sh.getRange('I15:I16').clearContent(); ss.toast('This booking has no minivan back to Luang Prabang. Pick its Transfer in the green cell below first.', 'Return', 8); return; }
+  }
   if (d instanceof Date) bk.getRange(at + 1, BOOKING_COLS.indexOf('Return date') + 1).setValue(d);
   if (time) {
     if (!TIME_RE.test(time)) { ss.toast('Type the time like 10:30 AM or 3:30-4:30 PM.', 'Return', 8); return; }
@@ -751,8 +797,9 @@ function receiptReturn_(ss) {
   sh.getRange('F2').clearContent();   // a typed return time at the top would hide the booking's
   SpreadsheetApp.flush();
   buildTransport_(ss);
-  ss.toast('Return saved in the booking' + (d instanceof Date ? ': ' + Utilities.formatDate(d, TIME_ZONE, 'dd/MM/yyyy') : '') + (time ? ' ' + time : '') +
-    '. Transport and the minivan message follow.', 'Return', 8);
+  if (upgraded) { showTransfer_(ss, id); showDropoff_(ss, id); refreshReceiptAmounts_(ss); }
+  ss.toast((upgraded ? 'The booking is now a round trip (transport amount worked out again). ' : '') + 'Return saved in the booking' +
+    (d instanceof Date ? ': ' + Utilities.formatDate(d, TIME_ZONE, 'dd/MM/yyyy') : '') + (time ? ' ' + time : '') + '. Transport and the minivan message follow.', 'Return', 8);
 }
 
 // Drop-off picked on the Receipt tab: saved in the booking, the transport amount worked out again, Transport redrawn.
@@ -761,7 +808,7 @@ function receiptDropoff_(ss) {
   var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
   if (at < 1 || !want) { ss.toast('Pick a booking from Bookings first.', 'Drop-off', 6); return; }
   if (!goesDown_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) {
-    sh.getRange('I12').clearContent(); ss.toast('This booking has no minivan back to Luang Prabang. Change its Transfer in Bookings first.', 'Drop-off', 8); return;
+    sh.getRange('I12').clearContent(); ss.toast('This booking has no minivan back to Luang Prabang. Pick its Transfer in the green cell below first.', 'Drop-off', 8); return;
   }
   bk.getRange(at + 1, BOOKING_COLS.indexOf('Train station drop-off') + 1).setValue(want === 'Train station' ? 'Yes' : 'No');
   fillAmounts_(ss, at + 1, true);   // transfer kip with or without the train extra
@@ -802,7 +849,7 @@ function numberPickedReceipt_(ss) {
     fillMissingFor_(ss, id);
     if (ss.getSheetByName(TABS.receipt).getRange(RECEIPT_EDIT).getValue() === true) setupReceipt_(ss);   // a typed receipt goes back to the booking
     clearReceiptManual_(ss);   // typed changes belong to the receipt that was open before
-    showDropoff_(ss, id); showReturn_(ss, id);
+    showDropoff_(ss, id); showReturn_(ss, id); showTransfer_(ss, id);
     var r = issueReceipt_(ss, id);
     if (r.isNew) buildTransport_(ss);   // the team message in Transport shows the new number
     ss.toast(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.', 'Receipts', 6);
@@ -894,14 +941,24 @@ function receiptReturnSelfTest_(ss, sh, id) {
   var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
   var dc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Return date') + 1), rc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Transport remark') + 1);
   var wasD = dc.getValue(), wasR = rc.getValue(), wasT = sh.getRange(RECEIPT_TRANSPORT).getValue();
+  var tc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1), kc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Est. transfer kip') + 1), wasTr = tc.getValue(), wasK = kc.getValue();
   try {
     showReturn_(ss, id); if (dayKey_(sh.getRange('I15').getValue()) !== '2030-01-18' || sh.getRange('I16').getValue() !== '10:00-10:30 AM') return false;
     sh.getRange('I15').setValue(new Date(2030, 0, 20, 12)); sh.getRange('I16').setValue('3:30-4:30 PM'); receiptReturn_(ss); SpreadsheetApp.flush();
     var ok = dayKey_(dc.getValue()) === '2030-01-20' && String(rc.getValue()).indexOf('3:30-4:30 PM') !== -1 &&
       sh.getRange('B14').getDisplayValue().indexOf('20/01/2030 3:30-4:30 PM') !== -1;
     sh.getRange(RECEIPT_TRANSPORT).setValue('Private minivan'); SpreadsheetApp.flush();
-    return ok && sh.getRange('C31').getDisplayValue() === 'Private minivan' && returnTime_('Minivan back 2 PM') === '2 PM';
-  } finally { dc.setValue(wasD); rc.setValue(wasR); sh.getRange(RECEIPT_TRANSPORT).setValue(wasT); showReturn_(ss, id); }
+    ok = ok && sh.getRange('C31').getDisplayValue() === 'Private minivan' && returnTime_('Minivan back 2 PM') === '2 PM';
+    // Request 89: the green Transfer cell. Round trip (1 rider, train) -> one way up: 1 x one-way price; then a return date picked
+    // on the receipt makes it a round trip again with the train extra.
+    var k = kipPrices_(ss);
+    showTransfer_(ss, id); if (sh.getRange(RECEIPT_TRANSFER).getValue() !== 'Round trip') return 'transfer shown ' + sh.getRange(RECEIPT_TRANSFER).getValue();
+    sh.getRange(RECEIPT_TRANSFER).setValue('One way to Nong Khiaw'); receiptTransfer_(ss); SpreadsheetApp.flush();
+    if (tc.getValue() !== 'One way to Nong Khiaw' || Number(kc.getValue()) !== k.one || sh.getRange('I15').getValue() !== '') return 'one way: ' + tc.getValue() + ' ' + kc.getValue() + ' ' + sh.getRange('I15').getValue();
+    sh.getRange('I15').setValue(new Date(2030, 0, 21, 12)); receiptReturn_(ss); SpreadsheetApp.flush();
+    if (tc.getValue() !== 'Round trip' || Number(kc.getValue()) !== k.round + k.train || dayKey_(dc.getValue()) !== '2030-01-21' || sh.getRange(RECEIPT_TRANSFER).getValue() !== 'Round trip') return 'back to round trip: ' + tc.getValue() + ' ' + kc.getValue() + ' ' + dayKey_(dc.getValue());
+    return ok;
+  } finally { tc.setValue(wasTr); kc.setValue(wasK); dc.setValue(wasD); rc.setValue(wasR); sh.getRange(RECEIPT_TRANSPORT).setValue(wasT); showReturn_(ss, id); showTransfer_(ss, id); showDropoff_(ss, id); }
 }
 
 function receiptDropoffSelfTest_(ss, sh, id) {
@@ -1381,6 +1438,7 @@ function setupHelp_(ss) {
     ['   Guests who forgot the takeaway lunch: send them the "Lunch order link" (F3, next to the agreement form). They pick their dishes on the website; the travellers, the booking, this receipt and the Lunch report update by themselves.'],
     ['   Or tick the green "Edit on the receipt" box (I13): every line of the receipt (name, date, tour, pickup, return, payment, travellers and food, transport details and the amounts) becomes text you can type over, with dropdowns for the tour, payment method, transport and food. Totals still add up; the Booking ID and receipt number stay. Untick it, or pick another booking, to go back to the booking. To change the booking itself (Transport, reports), change it in Bookings / Travellers.'],
     ['   Return date and time (green, I15:I16): pick the date from the calendar and the time from the list (or type one, e.g. 2 PM). It changes the booking, so Transport and the minivan message show the new day and time. (The yellow "Return line" only changes the wording on this receipt.)'],
+    ['   Transfer (green, I17): one way, round trip or no minivan. It changes the booking: the transport amount is worked out again at today\'s prices and Transport follows. A guest who booked one way and now wants the ride back: pick "Round trip" here (or simply pick a Return date above), then the Return date and time. (The yellow "Transport (text)" cell only changes the wording on this receipt.)'],
     ['   Transport (text, I14): type or pick the wording for the transport line, e.g. "Private minivan". Only this receipt changes; type the price in "Transport amount kip".'],
     ['   The same yellow cells also replace the Name, Tour date, Tour line and Payment method. A booking that is not in Bookings at all (lost, or never sent): type its Booking ID in B1 anyway, fill the yellow cells and the travellers in "Travellers by hand" (columns L:N); it gets a receipt number like any other. Better: add it in the New booking tab with the same Booking ID, so it also reaches Transport and the reports.'],
     ['   Transport amount empty in the booking or an old price? It is worked out at today\'s prices. To change a booking\'s amounts for good: select its row in Bookings and use menu "Bookings" > "Recalculate amounts" (today\'s prices), or type the amount in Bookings (Est. transfer kip).'],
@@ -1748,7 +1806,12 @@ function selfTest_(ss) {
   var kpis = dash.getRange('A5:F5').getDisplayValues()[0], tables = dash.getRange('A10:W10').getDisplayValues()[0];
   var out = { dashboardOk: Number(kpis[0]) >= 1 && Number(kpis[5]) >= 1 && ['A', 'G', 'L', 'O', 'R', 'U'].every(function (c) {
     return tables[dash.getRange(c + '1').getColumn() - 1] !== ''; }) };
-  var header = function (name) { var sh = ss.getSheetByName(name); return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].join('|'); };
+  // Trailing columns without a header are ignored: staff sometimes type a note in a spare column (Travellers V, 25/10).
+  var header = function (name) {
+    var sh = ss.getSheetByName(name), h = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    while (h.length && String(h[h.length - 1]) === '') h.pop();
+    return h.join('|');
+  };
   out.headersOk = header(TABS.bookings) === BOOKING_COLS.join('|') && header(TABS.travellers) === TRAVELLER_COLS.join('|');
   if (!out.headersOk) {   // column names are public (they are in the repo): name the first one that differs
     [[TABS.bookings, BOOKING_COLS], [TABS.travellers, TRAVELLER_COLS]].forEach(function (x) {

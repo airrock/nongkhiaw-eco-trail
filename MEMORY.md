@@ -66,6 +66,12 @@ it, the traps already hit, and what is still open. Keep it current: change it in
   while a rebuild + self-test ran at 07:53-07:57 Lao time. Since then every website booking is appended to the **Website inbox**
   tab before the lock (`inboxAdd_`) and saved from there by the next run or on open (`drainInbox_`); a row left `new` or
   `failed:` there is the first place to look when a booking is missing. Run rebuild / self-test at night in Laos (UTC+7) when you can.
+- **Never `lock.releaseLock()` in a helper that doPost may call.** The lock is reentrant, so a helper's `releaseLock` drops the
+  lock doPost holds: a booking then ran in the middle of a self-test and its row was overwritten by `addRow_` (`getLastRow()+1`)
+  from the other run. Use `ownLock_(ms)` (takes/releases only if not already held). `addRow_` is only safe under the lock.
+- **Testing the live endpoint:** `~/nongkhiaw-work/tests/matrix.py` (20 booking shapes, concurrency, a booking during the
+  self-test) and `lock.py`. Only `SELFTEST-` names; the next self-test removes them and reports how many it found
+  (`testBookingsFoundBefore`), which is the only read-back available without sheet access.
 - **Staff filters.** Noy keeps a filter on Bookings. Sorting through a filter that does not cover every column moves rows but
   leaves the other columns behind (`widenFilter_` fixes the range before sorting). `deleteRow` on a row hidden by a filter
   silently does nothing (`withoutFilter_` for any deleting). Re-read a row before deleting it; never delete by a stale index.

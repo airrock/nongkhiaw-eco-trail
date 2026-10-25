@@ -355,3 +355,9 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   leaves a `new` row and checks that the drain saves it; the cleanup also removes `SELFTEST-` rows from the inbox.
 - Rebuild and self-test still block bookings for 2-4 minutes, but a booking that arrives then is in the inbox and is saved when
   the run ends. Prefer running them at night in Laos anyway.
+- **Lock released mid-run (found by a 20-booking test matrix the same day):** `readyReceipt_`, `numberPickedReceipt_`,
+  `issueReceipt`, `removeDuplicateRows`, the New booking save and the WhatsApp import each took the script lock and released it in
+  `finally`. Called from inside the self-test (which runs under `doPost`'s lock), that `releaseLock` gave the lock away halfway
+  through the test, a website booking ran at the same time, and `addRow_` (`getLastRow()+1`) from both runs wrote into the same
+  row: one booking was gone. They now use `ownLock_(ms)`, which only takes and releases a lock the run does not already hold.
+  Checked: a booking sent 10 s into a self-test now answers after the test ends.

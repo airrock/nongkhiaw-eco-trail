@@ -568,8 +568,8 @@ function readyReceipt_() {
   var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(TABS.receipt);
   var id = String(sh.getRange('B1').getValue()).trim(), r;
   fillMissingFor_(ss, id);
-  var lock = LockService.getScriptLock(); lock.waitLock(20000);
-  try { r = issueReceipt_(ss, id); } finally { lock.releaseLock(); }
+  var lock = ownLock_(20000);
+  try { r = issueReceipt_(ss, id); } finally { lock.release(); }
   refreshReceiptAmounts_(ss);
   SpreadsheetApp.flush();
   return { ss: ss, sh: sh, no: r.no, name: receiptFileName_(r.no, sh.getRange('B10').getDisplayValue()) };
@@ -797,7 +797,7 @@ function refreshReceiptAmounts_(ss) {
 function numberPickedReceipt_(ss) {
   var id = String(ss.getSheetByName(TABS.receipt).getRange('B1').getValue()).trim();
   if (!id) return;
-  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  var lock = ownLock_(20000);
   try {
     fillMissingFor_(ss, id);
     if (ss.getSheetByName(TABS.receipt).getRange(RECEIPT_EDIT).getValue() === true) setupReceipt_(ss);   // a typed receipt goes back to the booking
@@ -808,12 +808,12 @@ function numberPickedReceipt_(ss) {
     ss.toast(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.', 'Receipts', 6);
   } catch (err) {
     ss.toast(String(err.message || err), 'Receipt not numbered', 10);
-  } finally { lock.releaseLock(); }
+  } finally { lock.release(); }
 }
 
 function issueReceipt() {
   var ss = SpreadsheetApp.getActive(), ui = SpreadsheetApp.getUi();
-  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  var lock = ownLock_(20000);
   try {
     var id = String(ss.getSheetByName(TABS.receipt).getRange('B1').getValue()).trim();
     var r = issueReceipt_(ss, id);
@@ -823,7 +823,7 @@ function issueReceipt() {
       'This booking already has receipt ' + r.no + '. Nothing changed; the receipt tab shows it.');
   } catch (e) {
     ui.alert(String(e.message || e));
-  } finally { lock.releaseLock(); }
+  } finally { lock.release(); }
 }
 
 // From the Bookings tab: click any cell in the booking's row, then this item.
@@ -2564,12 +2564,12 @@ function saveTransportEdit_(ss, range) {
 // Menu Bookings > Remove duplicate rows: a booking or traveller saved twice. Only exact copies go (same Booking ID and the
 // same lead name / same traveller name and passport); the first copy stays, with whatever staff typed on it.
 function removeDuplicateRows() {
-  var ss = SpreadsheetApp.getActive(), lock = LockService.getScriptLock(); lock.waitLock(20000);
+  var ss = SpreadsheetApp.getActive(), lock = ownLock_(20000);
   try {
     var n = dropDuplicates_(ss, TABS.bookings, function (r, h) { return [r[h['Booking ID']], r[h['Lead name']]]; }) +
       ' booking(s) and ' + dropDuplicates_(ss, TABS.travellers, function (r, h) { return [r[h['Booking ID']], r[h['Full name']], r[h['Passport no']]]; }) + ' traveller(s)';
     ss.toast('Removed ' + n + ' that were saved twice.', 'Duplicates', 8);
-  } finally { lock.releaseLock(); }
+  } finally { lock.release(); }
 }
 
 function dropDuplicates_(ss, name, keyOf) {
@@ -2843,7 +2843,7 @@ function saveManualBooking_(ss) {
   if (typedId && !/^[A-Z0-9-]{4,20}$/.test(typedId)) return stop('Booking ID: letters, numbers and - only (like NK261019-ZX50).');
   var bkIds = ss.getSheetByName(TABS.bookings).getRange('A:A').getDisplayValues().map(function (r) { return r[0]; });
   if (typedId && bkIds.indexOf(typedId) !== -1) return stop('Booking ' + typedId + ' is already in Bookings: change it there instead.');
-  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  var lock = ownLock_(20000);
   try {
     var id = typedId || ('NK' + Utilities.formatDate(new Date(), TIME_ZONE, 'yyMMdd') + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 4).toUpperCase());
     var up = goesUp_(transfer), nkPlace = String(get('Pickup place in Nong Khiaw (for the way back)')).trim();
@@ -2879,7 +2879,7 @@ function saveManualBooking_(ss) {
     box.setValue(false);
     msg.setValue('Not saved: ' + (err.message || err)).setFontColor('#a33');
     throw err;   // also listed under Apps Script > Executions
-  } finally { lock.releaseLock(); }
+  } finally { lock.release(); }
 }
 
 // The website's WhatsApp message (js/main.js builds it) back into the booking it describes. Copied from WhatsApp, lines may start
@@ -2941,7 +2941,7 @@ function importWhatsAppBooking_(ss) {
   if (p.error) return stop(p.error);
   var ids = ss.getSheetByName(TABS.bookings).getRange('A:A').getDisplayValues().map(function (r) { return r[0]; });
   if (ids.indexOf(p.d.id) !== -1) return stop('Booking ' + p.d.id + ' is already in Bookings.');
-  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  var lock = ownLock_(20000);
   try {
     saveBooking_(ss, p.d);
     sh.getRange(NB_PASTE).clearContent(); box.setValue(false);
@@ -2951,7 +2951,7 @@ function importWhatsAppBooking_(ss) {
   } catch (err) {
     box.setValue(false); msg.setValue('Not imported: ' + (err.message || err)).setFontColor('#a33');
     throw err;
-  } finally { lock.releaseLock(); }
+  } finally { lock.release(); }
 }
 
 // ---- Website inbox: every website booking lands here first, so none is lost ------------------------------------------------------
@@ -3358,6 +3358,14 @@ function addMissingColumns_(sh, cols) {
 }
 
 function sheet_(ss, name) { return ss.getSheetByName(name) || ss.insertSheet(name); }
+
+// Takes the script lock unless this run already holds it: a self-test inside doPost calls these functions, and releasing the
+// lock there let a website booking write into the same row as a test row (25/10). release() gives back only what was taken here.
+function ownLock_(waitMs) {
+  var lock = LockService.getScriptLock(), mine = !lock.hasLock();
+  if (mine) lock.waitLock(waitMs);
+  return { release: function () { if (mine) lock.releaseLock(); } };
+}
 
 function reply_(msg) { return ContentService.createTextOutput(msg).setMimeType(ContentService.MimeType.TEXT); }
 

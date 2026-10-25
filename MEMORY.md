@@ -66,6 +66,8 @@ it, the traps already hit, and what is still open. Keep it current: change it in
 - **Staff filters.** Noy keeps a filter on Bookings. Sorting through a filter that does not cover every column moves rows but
   leaves the other columns behind (`widenFilter_` fixes the range before sorting). `deleteRow` on a row hidden by a filter
   silently does nothing (`withoutFilter_` for any deleting). Re-read a row before deleting it; never delete by a stale index.
+- **Receipt cells that change the booking vs. only the receipt.** Green cells (drop-off I12, return date/time I15:I16) write
+  Bookings, so Transport follows; yellow cells (I2:I11, I14) only change the printed receipt. Noy mixes them up: point her to the green ones.
 - **Script-drawn tabs** (Transport, the receipt rows, Arrange tour) are rewritten from Bookings: typing there is lost unless that
   column is listed as editable and saved back (`TRANSPORT_EDIT`, `receiptTravellerEdit_`). When Noy says "I changed it but it
   doesn't change", this is usually why.

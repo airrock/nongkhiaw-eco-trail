@@ -23,7 +23,8 @@ var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'To
 // Status and Receipt No are formulas (spilled from their header cell) that look the booking up: never written per row.
 var TRAVELLER_COLS = ['Booking ID', 'Tour date', 'Tour', 'Traveller #', 'First name', 'Last name', 'Full name', 'Country',
   'Gender', 'Passport no', 'Passport issued', 'Passport expires', 'Food', 'Pickup place', 'Pickup map', 'Takeaway lunch', 'Lunch kip', 'Status', 'Receipt No',
-  'Traveller status'];   // typed: Cancelled / No-show for one traveller; Status (formula) shows it, else the booking's status
+  'Traveller status',   // typed: Cancelled / No-show for one traveller; Status (formula) shows it, else the booking's status
+  'Traveller WhatsApp'];   // typed by staff: that guest's own number, shown in the minivan message of their pickup stop
 // Headers renamed in a later version: the old name is renamed in place, so its data stays put.
 var RENAMES = { Travellers: { 'Name': 'Full name' }, Bookings: { 'Special food': 'Food' } };
 // Reviews shown on the website: staff tick Show; newest Date first, at most REVIEWS_SHOWN.
@@ -36,7 +37,7 @@ var FORMATS = {
   Bookings: { 'Submitted at': 'dd/mm/yyyy hh:mm', 'Tour date': 'dd/mm/yyyy', 'Tour month': '@', 'Tour': '@',
     'Pickup date': 'dd/mm/yyyy', 'Return date': 'dd/mm/yyyy',
     'Est. tour USD': '#,##0', 'Est. transfer kip': '#,##0', 'Lunch kip': '#,##0', 'Amount paid USD': '#,##0.00', 'WhatsApp no': '@' },
-  Travellers: { 'Tour date': 'dd/mm/yyyy', 'Tour': '@', 'Lunch kip': '#,##0', 'Passport no': '@', 'Passport issued': 'dd/mm/yyyy', 'Passport expires': 'dd/mm/yyyy' },
+  Travellers: { 'Traveller WhatsApp': '@', 'Tour date': 'dd/mm/yyyy', 'Tour': '@', 'Lunch kip': '#,##0', 'Passport no': '@', 'Passport issued': 'dd/mm/yyyy', 'Passport expires': 'dd/mm/yyyy' },
   Inquiries: { 'Submitted at': 'dd/mm/yyyy hh:mm', 'Month': '@', 'Tour': '@' },
   Agreements: { 'Submitted at': 'dd/mm/yyyy hh:mm', 'Tour date': 'dd/mm/yyyy', 'Tour': '@', 'Receipt No': '@', 'Passport no': '@', 'Emergency phone': '@' }
 };
@@ -311,6 +312,8 @@ var RECEIPT_RATE = 22500;
 var RECEIPT_MANUAL = 'I2:I11';   // typed lines of the Receipt tab: pickup, return, tour USD, transport kip, lunch text, lunch kip, name, tour date, tour, payment
 var RECEIPT_TRAV = 'L16:N27';
 var DROPOFFS = ['City center', 'Train station'];   // Receipt I12
+var RECEIPT_TRANSPORT = 'I14';   // typed transport wording on the receipt (e.g. "Private minivan"); only this receipt
+var RETURN_TIMES = ['10:00-10:30 AM', '10:30 AM', '3:30-4:30 PM'];   // Receipt I16 (typing another time is fine)
 var RECEIPT_EDIT = 'I13';   // tick: the printed receipt becomes typed text (Booking ID and receipt number stay)
 var RECEIPT_TYPED = ['B10', 'B11', 'B12', 'B13', 'B14', 'F11', 'C30', 'C31', 'C32', 'D30', 'E31', 'E32'];   // lines that become typed text    // travellers typed by hand (name, passport, food) for a receipt whose booking has none
 
@@ -347,7 +350,7 @@ function setupReceipt_(ss) {
 
   var sh = ss.getSheetByName(TABS.receipt) || ss.insertSheet(TABS.receipt);
   var keep = sh.getRange('B1:B3').getValues(), keepTimes = [sh.getRange('D2').getValue(), sh.getRange('F2').getValue()];   // what staff picked survives a rebuild
-  var keepManual = sh.getRange(RECEIPT_MANUAL).getValues(), keepTrav = sh.getRange(RECEIPT_TRAV).getValues();
+  var keepManual = sh.getRange(RECEIPT_MANUAL).getValues(), keepTrav = sh.getRange(RECEIPT_TRAV).getValues(), keepTransport = sh.getRange(RECEIPT_TRANSPORT).getValue();
   sh.clear(); sh.clearConditionalFormatRules(); sh.setHiddenGridlines(true);
   var lang = keep[1][0] || 'English';
   var L = function (k) { return 'IFERROR(INDEX(\'' + TABS.receiptText + '\'!$B$2:$I$60,MATCH("' + k + '",\'' + TABS.receiptText + '\'!$A$2:$A$60,0),$K$2),"' + k + '")'; };
@@ -387,6 +390,16 @@ function setupReceipt_(ss) {
   sh.getRange(RECEIPT_EDIT).insertCheckboxes().setValue(false).setBackground('#cfe2a8')
     .setNote('Ticked: the receipt lines (name, date, tour, pickup, return, payment, travellers, details and amounts) become text you can type over, ' +
       'with dropdowns. Totals still add up. Untick, or pick another booking, to go back to the booking\'s details.');
+  sh.getRange('H14').setValue('Transport (text, e.g. Private minivan)').setFontWeight('bold').setHorizontalAlignment('right');
+  var rides = []; TRANSFERS.forEach(function (t) { if (t !== 'No') rides.push(t); });
+  sh.getRange(RECEIPT_TRANSPORT).setBackground('#fff2a8').setNumberFormat('@').setValue(keepTransport)
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(rides.concat(['Private minivan', 'Private minivan, round trip']), true).setAllowInvalid(true).build());
+  sh.getRange('H15').setValue('Return date (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('I15').setBackground('#cfe2a8').setFontWeight('bold').setNumberFormat('dd/mm/yyyy')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false).build());
+  sh.getRange('H16').setValue('Return time (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange('I16').setBackground('#cfe2a8').setFontWeight('bold').setNumberFormat('@')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(RETURN_TIMES, true).setAllowInvalid(true).build());
   sh.getRange('H12').setValue('Drop-off in Luang Prabang (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('I12').setBackground('#cfe2a8').setFontWeight('bold')
     .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(DROPOFFS, true).setAllowInvalid(false).build())
@@ -405,7 +418,7 @@ function setupReceipt_(ss) {
   sh.getRange('K3').setFormula('=IFERROR(MATCH($B$1,\'' + TABS.receiptLog + '\'!$C$1:$C,0),0)');
   sh.getRange('K4').setFormula('=' + S('$F$8'));
   var rem = bk('Transport remark') + '&""';
-  sh.getRange('K5').setFormula('=IF($F$2<>"",$F$2,IF(REGEXMATCH(' + rem + ',"3:30"),"3:30 - 4:30 PM",IF(REGEXMATCH(' + rem + ',"10:30"),"10:30 AM","10:00 - 10:30 AM")))');   // return time: typed, else from the booking
+  sh.getRange('K5').setFormula('=IF($F$2<>"",$F$2,IFERROR(REGEXEXTRACT(' + rem + ',"(?i)\\d{1,2}(?::\\d{2})?\\s*(?:-\\s*\\d{1,2}(?::\\d{2})?\\s*)?(?:AM|PM)"),"10:00 - 10:30 AM"))');   // return time: typed, else from the booking
   sh.getRange('K6').setFormula('=IF($D$2<>"",$D$2,"7:30 - 8:00 AM")');   // pickup time: typed, else the usual
   sh.getRange('J1:J6').setValues([['row'], ['lang'], ['logged'], ['rate'], ['return time'], ['pickup time']]);
   sh.hideColumns(10, 2);
@@ -470,7 +483,7 @@ function setupReceipt_(ss) {
     '="Yes",OR(' + tr + '="Round trip",REGEXMATCH(' + tr + '&"","(?i)to luang prabang"))),Settings!$F$4,0))*' + riders + ')';
   var lines = [
     [30, 'tour', '=IF(N(' + bk('People') + ')>0,' + bk('People') + ',COUNTA($L$16:$L$27))&" "&' + L('people'), '=IF($I$4<>"",N($I$4),N(' + bk('Est. tour USD') + '))', '=ROUND(D30*' + rate + ',0)'],
-    [31, 'transport', '=' + bk('Transfer') + '&IF(' + bk('Train station drop-off') + '="Yes"," + "&' + L('train') + ',"")', '=E31/' + rate,
+    [31, 'transport', '=IF($I$14<>"",$I$14,' + bk('Transfer') + '&IF(' + bk('Train station drop-off') + '="Yes"," + "&' + L('train') + ',""))', '=E31/' + rate,
       '=IF($I$5<>"",N($I$5),IF(N(' + bk('Est. transfer kip') + ')>0,N(' + bk('Est. transfer kip') + '),IF($B$1="",0,' + worked + ')))'],
     [32, 'lunch', '=IF($I$6<>"",$I$6,' + bk('Takeaway lunch') + ')', '=E32/' + rate, '=IF($I$7<>"",N($I$7),N(' + bk('Lunch kip') + '))']];
   lines.forEach(function (x) {
@@ -669,6 +682,7 @@ function onEdit(e) {
   var a1r = r.getA1Notation();
   if (a1r === 'B1') numberPickedReceipt_(e.source);
   else if (a1r === 'I12') receiptDropoff_(e.source);
+  else if (a1r === 'I15' || a1r === 'I16') receiptReturn_(e.source);
   else if (a1r === RECEIPT_EDIT) { if (r.getValue() === true) receiptUnlock_(e.source); else { setupReceipt_(e.source); refreshReceiptAmounts_(e.source); } }
   else if (r.getNumRows() === 1 && r.getNumColumns() === 1 && r.getRow() >= 16 && r.getRow() <= 27 && (r.getColumn() === 4 || r.getColumn() === 5) &&
     r.getSheet().getRange(RECEIPT_EDIT).getValue() !== true) receiptTravellerEdit_(e.source, r);   // food / lunch typed on a traveller row
@@ -707,6 +721,39 @@ function showDropoff_(ss, id) {
   cell.setValue(bk.getRange(at + 1, BOOKING_COLS.indexOf('Train station drop-off') + 1).getValue() === 'Yes' ? 'Train station' : 'City center');
 }
 
+// I15 / I16 show the picked booking's return date and time (empty when it has no ride back to Luang Prabang).
+function showReturn_(ss, id) {
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  var sh = ss.getSheetByName(TABS.receipt);
+  if (at < 1 || !goesDown_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) { sh.getRange('I15:I16').clearContent(); return; }
+  var d = bk.getRange(at + 1, BOOKING_COLS.indexOf('Return date') + 1).getValue();
+  if (d instanceof Date) sh.getRange('I15').setValue(d); else sh.getRange('I15').clearContent();
+  sh.getRange('I16').setValue(returnTime_(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transport remark') + 1).getValue()));
+}
+
+// Return date / time changed on the Receipt tab: saved in the booking (Return date; the time in Transport remark), so the
+// receipt, the Transport list and the minivan team message all show it.
+function receiptReturn_(ss) {
+  var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim();
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  if (at < 1) { ss.toast('Pick a booking from Bookings first.', 'Return', 6); return; }
+  if (!goesDown_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) {
+    sh.getRange('I15:I16').clearContent(); ss.toast('This booking has no minivan back to Luang Prabang. Change its Transfer in Bookings first.', 'Return', 8); return;
+  }
+  var d = sh.getRange('I15').getValue(), time = String(sh.getRange('I16').getValue()).trim();
+  if (d instanceof Date) bk.getRange(at + 1, BOOKING_COLS.indexOf('Return date') + 1).setValue(d);
+  if (time) {
+    if (!TIME_RE.test(time)) { ss.toast('Type the time like 10:30 AM or 3:30-4:30 PM.', 'Return', 8); return; }
+    var rc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Transport remark') + 1), was = String(rc.getValue());
+    rc.setValue(TIME_RE.test(was) ? was.replace(TIME_RE, time) : (was ? was + ' | ' : '') + 'Minivan back ' + time);
+  }
+  sh.getRange('F2').clearContent();   // a typed return time at the top would hide the booking's
+  SpreadsheetApp.flush();
+  buildTransport_(ss);
+  ss.toast('Return saved in the booking' + (d instanceof Date ? ': ' + Utilities.formatDate(d, TIME_ZONE, 'dd/MM/yyyy') : '') + (time ? ' ' + time : '') +
+    '. Transport and the minivan message follow.', 'Return', 8);
+}
+
 // Drop-off picked on the Receipt tab: saved in the booking, the transport amount worked out again, Transport redrawn.
 function receiptDropoff_(ss) {
   var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim(), want = String(sh.getRange('I12').getValue());
@@ -727,7 +774,7 @@ function receiptDropoff_(ss) {
 function clearReceiptManual_(ss) {
   var sh = ss.getSheetByName(TABS.receipt);
   sh.getRange('B3').clearContent(); sh.getRange('D2').clearContent(); sh.getRange('F2').clearContent(); sh.getRange(RECEIPT_MANUAL).clearContent();
-  sh.getRange(RECEIPT_TRAV).clearContent();
+  sh.getRange(RECEIPT_TRAV).clearContent(); sh.getRange(RECEIPT_TRANSPORT).clearContent();
   writeReceiptTravellers_(ss, sh);   // a typed-over traveller row (typed travellers) goes back to formulas
 }
 
@@ -754,7 +801,7 @@ function numberPickedReceipt_(ss) {
     fillMissingFor_(ss, id);
     if (ss.getSheetByName(TABS.receipt).getRange(RECEIPT_EDIT).getValue() === true) setupReceipt_(ss);   // a typed receipt goes back to the booking
     clearReceiptManual_(ss);   // typed changes belong to the receipt that was open before
-    showDropoff_(ss, id);
+    showDropoff_(ss, id); showReturn_(ss, id);
     var r = issueReceipt_(ss, id);
     if (r.isNew) buildTransport_(ss);   // the team message in Transport shows the new number
     ss.toast(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.', 'Receipts', 6);
@@ -840,6 +887,22 @@ function receiptTravellerEditSelfTest_(ss, sh, id) {
   return ok && cell.getDisplayValue() === 'Vegetarian';
 }
 
+// The sample booking (round trip back 18/01/2030) is moved to 20/01 at 3:30-4:30 PM from the receipt, checked in Bookings, the
+// receipt and the transport text, then put back.
+function receiptReturnSelfTest_(ss, sh, id) {
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  var dc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Return date') + 1), rc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Transport remark') + 1);
+  var wasD = dc.getValue(), wasR = rc.getValue(), wasT = sh.getRange(RECEIPT_TRANSPORT).getValue();
+  try {
+    showReturn_(ss, id); if (dayKey_(sh.getRange('I15').getValue()) !== '2030-01-18' || sh.getRange('I16').getValue() !== '10:00-10:30 AM') return false;
+    sh.getRange('I15').setValue(new Date(2030, 0, 20, 12)); sh.getRange('I16').setValue('3:30-4:30 PM'); receiptReturn_(ss); SpreadsheetApp.flush();
+    var ok = dayKey_(dc.getValue()) === '2030-01-20' && String(rc.getValue()).indexOf('3:30-4:30 PM') !== -1 &&
+      sh.getRange('B14').getDisplayValue().indexOf('20/01/2030 3:30-4:30 PM') !== -1;
+    sh.getRange(RECEIPT_TRANSPORT).setValue('Private minivan'); SpreadsheetApp.flush();
+    return ok && sh.getRange('C31').getDisplayValue() === 'Private minivan' && returnTime_('Minivan back 2 PM') === '2 PM';
+  } finally { dc.setValue(wasD); rc.setValue(wasR); sh.getRange(RECEIPT_TRANSPORT).setValue(wasT); showReturn_(ss, id); }
+}
+
 function receiptDropoffSelfTest_(ss, sh, id) {
   var k = kipPrices_(ss), was = sh.getRange('I12').getValue();
   try {
@@ -883,7 +946,7 @@ function receiptSelfTest_(ss, id) {
         sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
       all: allGuestsSelfTest_(ss, id),
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
-      dropoff: receiptDropoffSelfTest_(ss, sh, id), travEdit: receiptTravellerEditSelfTest_(ss, sh, id), edit: receiptEditSelfTest_(ss, sh), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
+      dropoff: receiptDropoffSelfTest_(ss, sh, id), ret: receiptReturnSelfTest_(ss, sh, id), travEdit: receiptTravellerEditSelfTest_(ss, sh, id), edit: receiptEditSelfTest_(ss, sh), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' lines=' + [sh.getRange('E30').getValue(), sh.getRange('E31').getValue(), sh.getRange('E32').getValue()].join('/') +
       ' prices=' + [k.one, k.round, k.train, rate].join('/') + ' stored=' + [lookup[BOOKING_COLS.indexOf('Est. tour USD')], lookup[BOOKING_COLS.indexOf('Est. transfer kip')], lookup[BOOKING_COLS.indexOf('Lunch kip')]].join('/') + ' bal=' + bal + ' trav=' + trav : true;
@@ -1315,6 +1378,8 @@ function setupHelp_(ss) {
     ['   "Each pays": for a group of 2 or more, the last column of the traveller rows shows what each person pays (USD / kip): tour per person + their share of the transport + their own lunch.'],
     ['   Guests who forgot the takeaway lunch: send them the "Lunch order link" (F3, next to the agreement form). They pick their dishes on the website; the travellers, the booking, this receipt and the Lunch report update by themselves.'],
     ['   Or tick the green "Edit on the receipt" box (I13): every line of the receipt (name, date, tour, pickup, return, payment, travellers and food, transport details and the amounts) becomes text you can type over, with dropdowns for the tour, payment method, transport and food. Totals still add up; the Booking ID and receipt number stay. Untick it, or pick another booking, to go back to the booking. To change the booking itself (Transport, reports), change it in Bookings / Travellers.'],
+    ['   Return date and time (green, I15:I16): pick the date from the calendar and the time from the list (or type one, e.g. 2 PM). It changes the booking, so Transport and the minivan message show the new day and time. (The yellow "Return line" only changes the wording on this receipt.)'],
+    ['   Transport (text, I14): type or pick the wording for the transport line, e.g. "Private minivan". Only this receipt changes; type the price in "Transport amount kip".'],
     ['   The same yellow cells also replace the Name, Tour date, Tour line and Payment method. A booking that is not in Bookings at all (lost, or never sent): type its Booking ID in B1 anyway, fill the yellow cells and the travellers in "Travellers by hand" (columns L:N); it gets a receipt number like any other. Better: add it in the New booking tab with the same Booking ID, so it also reaches Transport and the reports.'],
     ['   Transport amount empty in the booking or an old price? It is worked out at today\'s prices. To change a booking\'s amounts for good: select its row in Bookings and use menu "Bookings" > "Recalculate amounts" (today\'s prices), or type the amount in Bookings (Est. transfer kip).'],
     ['4. After the receipt, "Open agreement form" (Receipt tab) opens the guests\' tour agreement on the website. Let each guest complete and sign it on a phone or tablet. The answers appear in the "Agreements" tab.'],
@@ -1339,6 +1404,7 @@ function setupHelp_(ss) {
     ['TRANSPORT  (tab "Transport")'],
     ['1. Change the yellow date: the minivan list for that day appears. "↑ ຂຶ້ນ" = pickups in Luang Prabang to Nong Khiaw, "↓ ລົງ" = Nong Khiaw back to Luang Prabang. Each list ends with the total pax.'],
     ['2. Take a screenshot and send it to the driver team. When they send the plate numbers, type them in the yellow column (also the remark, the guest\'s WhatsApp number, the Nong Khiaw pickup). It is saved in Bookings.'],
+    ['   Guests of one booking picked up at different hotels: each pickup stop gets its own block and its own message for the minivan team (names at that stop, with their WhatsApp). Type a guest\'s own WhatsApp in Travellers, column "Traveller WhatsApp"; otherwise the booker\'s number is shown.'],
     ['3. Click "Message guest": WhatsApp opens with the message for that guest ("Hello Maja! Your minivan to Nong Khiaw is booked for tomorrow. Pickup at ... The plate number is ... Please wait at your hotel reception ..."). Type the transport manager\'s name and WhatsApp number in Settings F13 once: it is added to every message.'],
     ['   A guest who changes the drop-off to Luang Prabang train station (or back to the city center): on the Receipt tab pick it in the green "Drop-off" cell (I12), or in Bookings set "Train station drop-off" to Yes (or No). The extra charge is added to the transport amount, and Transport and the receipt follow at once. (A transport amount typed by hand in Bookings is replaced by the worked-out one; type it again if a special price was agreed.)'],
     ['   A guest who leaves on another day (stays longer, or earlier): type the new date in the yellow date column of their row (Pickup date / Departure date). It is saved in Bookings and the row moves to that day\'s list; the receipt follows.'],
@@ -1872,7 +1938,8 @@ function setupGuide_(ss) {
   var n = cols.length, last = colLetter_(n + 1), pax = 5, plan = 8;   // Pax (5th of cols) is shown once per booking
   sh.getRange('A1').setValue('Guide report').setFontSize(16).setFontWeight('bold');
   sh.getRange('A2:C2').merge().setValue('Date (tomorrow unless you change it; empty it to go back to tomorrow):').setFontWeight('bold');
-  sh.getRange('D2').setFormula('=TODAY()+1').setNumberFormat('ddd dd/mm/yyyy').setBackground('#fff2a8').setFontWeight('bold').setHorizontalAlignment('left');
+  sh.getRange('D2').setFormula('=TODAY()+1').setNumberFormat('ddd dd/mm/yyyy').setBackground('#fff2a8').setFontWeight('bold').setHorizontalAlignment('left')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build());   // double-click: calendar
   sh.getRange('E2:' + last + '2').merge().setValue('Everyone on tour that day (cancelled bookings left out), grouped by what they do: a guest of a 2- or 3-day tour shows on each day ' +
     '("Day 2 of 3") with that day\'s plan. Package, Day, Plan and Additional package come from the "Tour plans" tab; type a different Additional package or the Viewpoint on the booking in Bookings. Pax is on the first row of each booking, the total at the bottom.')
     .setFontColor('#5a665f').setWrap(true);
@@ -1956,7 +2023,8 @@ function setupLunchReport_(ss) {
   var n = cols.length, last = colLetter_(n + 1), pax = 5;
   sh.getRange('A1').setValue('Lunch report (takeaway food)').setFontSize(16).setFontWeight('bold');
   sh.getRange('A2:C2').merge().setValue('Date (tomorrow unless you change it; empty it to go back to tomorrow):').setFontWeight('bold');
-  sh.getRange('D2').setFormula('=TODAY()+1').setNumberFormat('ddd dd/mm/yyyy').setBackground('#fff2a8').setFontWeight('bold').setHorizontalAlignment('left');
+  sh.getRange('D2').setFormula('=TODAY()+1').setNumberFormat('ddd dd/mm/yyyy').setBackground('#fff2a8').setFontWeight('bold').setHorizontalAlignment('left')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build());   // double-click: calendar
   sh.getRange('E2:' + last + '2').merge().setValue('Takeaway food the guests ordered with their booking, for the kitchen. Copy the message on the right to The Trio Bar team. ' +
     'Cancelled bookings are left out. Dishes and prices: tab "Lunch menu".').setFontColor('#5a665f').setWrap(true);
   sh.setRowHeight(2, 40);
@@ -2298,7 +2366,8 @@ function transportData_(ss) {
     var id = String(T[r][ti['Booking ID']]);
     if (!id || String(T[r][ti['Pickup place']]) === 'No transfer' || String(T[r][ti['Status']]) === 'Cancelled') continue;
     (riders[id] = riders[id] || []).push({ n: Number(T[r][ti['Traveller #']]) || 0, name: String(T[r][ti['Full name']]), first: String(T[r][ti['First name']]),
-      place: String(T[r][ti['Pickup place']]), map: String(T[r][ti['Pickup map']]) });
+      place: String(T[r][ti['Pickup place']]), map: String(T[r][ti['Pickup map']]),
+      phone: ti['Traveller WhatsApp'] === -1 ? '' : String(T[r][ti['Traveller WhatsApp']] || '').replace(/^'/, '') });
   }
   Object.keys(riders).forEach(function (k) { riders[k].sort(function (a, b) { return a.n - b.n; }); });
   return { B: B, bi: bi, riders: riders };
@@ -2307,9 +2376,38 @@ function transportData_(ss) {
 // What Noy sends the minivan team for a booking, in her words: pax, the guest and their WhatsApp (a wa.me link the driver can
 // tap), up date, pickup (place + map), down date and drop-off.
 // "Back after the tour, about 3:30-4:30 PM" -> 3:30-4:30 PM; "...about 10:30 AM" -> 10:30 AM; otherwise the usual 10:00-10:30 AM.
+var TIME_RE = /\d{1,2}(?::\d{2})?\s*(?:-\s*\d{1,2}(?::\d{2})?\s*)?(?:AM|PM)/i;   // "10:30 AM", "3:30-4:30 PM", "2 PM"
 function returnTime_(remark) {
-  var r = String(remark || '');
-  return /3:30/.test(r) ? '3:30-4:30 PM' : /10:30/.test(r) ? '10:30 AM' : '10:00-10:30 AM';
+  var m = TIME_RE.exec(String(remark || ''));
+  return m ? m[0].replace(/\s*-\s*/, '-') : '10:00-10:30 AM';
+}
+
+// The riders of a booking grouped by pickup place (and map), in traveller order.
+function pickupStops_(people) {
+  var at = {}, out = [];
+  people.forEach(function (p) {
+    var k = String(p.place).trim().toLowerCase() + '|' + String(p.map).trim();
+    if (at[k] === undefined) { at[k] = out.length; out.push([]); }
+    out[at[k]].push(p);
+  });
+  return out;
+}
+
+// Team message for one pickup stop of a booking whose guests are picked up at several places: who is at this stop (with their
+// own WhatsApp when staff typed it in Travellers), the booker's WhatsApp, the date and the place.
+function stopMessage_(g, si, n, up, id, receipt, lead, phone) {
+  var wa = function (num) { var d = String(num || '').replace(/\D/g, '').replace(/^00/, ''); return d.length >= 7 ? '  WhatsApp: ' + String(num).trim() + ' https://wa.me/' + d : ''; };
+  var no = String(receipt || '').replace(/^'/, '').trim();
+  if (/^\d+$/.test(no)) no = ('00' + Number(no)).slice(-Math.max(3, String(Number(no)).length));
+  var leadKey = String(lead || '').trim().toLowerCase(), leadHere = g.some(function (p) { return String(p.name).trim().toLowerCase() === leadKey; });
+  return ['Booking id: ' + id, 'Receipt no: ' + no, 'ຈຸດຮັບ ' + (si + 1) + '/' + n + ': ' + g.length + 'pax']
+    .concat(g.map(function (p) {
+      var own = p.phone || (String(p.name).trim().toLowerCase() === leadKey ? phone : '');
+      return '- ' + p.name + wa(own);
+    }))
+    .concat(leadHere ? [] : ['ຕິດຕໍ່ (booked by ' + lead + ')' + wa(phone)])
+    .concat(['ຂຶ້ນ: ' + (up instanceof Date ? Utilities.formatDate(up, TIME_ZONE, 'dd/MM') : String(up || '')),
+      'ບ່ອນຮັບ: ' + (g[0].place + ' ' + g[0].map).trim()]).join('\n');
 }
 
 function teamMessage_(people, up, down, train, guest, phone, id, receipt, nk, remark) {
@@ -2367,10 +2465,18 @@ function buildTransport_(ss) {
       var plate = String(V(row, 'Vehicle to Nong Khiaw'));
       var first = people[0].first || String(people[0].name).split(' ')[0];
       var msg = guestMessage_(first, 'Nong Khiaw', people[0].place || 'your hotel', '7:30 and 8:00 AM', plate, 'Please wait at your hotel reception for the driver to pick you up.', manager);
-      arr.push({ key: people[0].place + '|' + id, rows: people.map(function (p, i) {
-        return base(p, i).concat([V(row, 'Pickup date'), p.place, p.map ? '=HYPERLINK("' + p.map.replace(/"/g, '%22') + '","Map")' : '',
-          i ? '' : plate, i ? '' : V(row, 'Transport remark'), i ? '' : waLink_(phone, msg), i ? '' : team, 'arr']);
-      }) });
+      // Guests of one booking picked up at different places: one block and one team message per pickup stop.
+      var stops = pickupStops_(people), lead = V(row, 'Lead name') || people[0].name;
+      stops.forEach(function (g, si) {
+        var teamS = stops.length === 1 ? team : stopMessage_(g, si, stops.length, V(row, 'Pickup date'), id, receipt, lead, phone);
+        var msgS = stops.length === 1 ? msg : guestMessage_(first, 'Nong Khiaw', g[0].place || 'your hotel', '7:30 and 8:00 AM', plate,
+          'Please wait at your hotel reception for the driver to pick you up.', manager);
+        arr.push({ key: g[0].place + '|' + id + '|' + si, rows: g.map(function (p, i) {
+          return [i ? '' : V(row, 'Submitted at'), id, text_(receipt), i ? '' : text_(String(phone)), p.name, i ? '' : g.length]
+            .concat([V(row, 'Pickup date'), p.place, p.map ? '=HYPERLINK("' + p.map.replace(/"/g, '%22') + '","Map")' : '',
+              i ? '' : plate, i ? '' : V(row, 'Transport remark'), i ? '' : waLink_(phone, msgS), i ? '' : teamS, 'arr']);
+        }) });
+      });
     }
     if (back && dayKey_(V(row, 'Return date')) === day) {
       var plate2 = String(V(row, 'Vehicle to Luang Prabang')), nk = String(V(row, 'Pickup in Nong Khiaw')) || NK_OFFICE;
@@ -3081,6 +3187,9 @@ function transportSelfTest_(ss, id) {
     var totals = sh.getRange(a.row, 5, sh.getLastRow() - a.row + 1, 2).getValues().filter(function (v) { return v[0] === 'Total'; });
     if (String(sh.getRange(TRANSPORT_START - 1, 1).getValue()).indexOf('↑ ຂຶ້ນ') !== 0 || !totals.length || totals[0][1] !== '1 pax') return 'labels/total';
     if (a.v[12].indexOf('\n**\nລົງ:') === -1) return 'separator';
+    var st = pickupStops_([{ name: 'A', place: 'X', map: '' }, { name: 'B', place: 'Y', map: '' }, { name: 'C', place: 'x', map: '' }]);
+    var sm = stopMessage_(st[1], 1, 2, new Date(2030, 0, 15, 12), 'SELFTEST-S', '7', 'A', '+856 20 1234 5678');
+    if (st.length !== 2 || st[0].length !== 2 || sm.indexOf('ຈຸດຮັບ 2/2: 1pax\n- B') === -1 || sm.indexOf('booked by A)  WhatsApp: +856 20 1234 5678') === -1) return 'pickup stops';
     if (returnTime_('Back after the tour, about 3:30-4:30 PM') !== '3:30-4:30 PM' || a.v[12].indexOf('ລົງ: 18/01 10:00-10:30 AM ສົ່ງສະຖານີລົດໄຟ') === -1) return 'return time in message';
     if (a.v[12].indexOf('ລູກຄ້າ: Test Person  WhatsApp: +856 20 1234 5678 https://wa.me/8562012345678') === -1) return 'team whatsapp';
     if (a.v[9] !== 'ກກ 5696' || f.indexOf('wa.me/8562012345678') === -1 || f.indexOf('plate number is ກກ 5696') === -1 || f.indexOf('wait at your hotel reception') === -1 || f.indexOf('Hello Test!') === -1 || f.indexOf('Pickup at Test hostel between 7:30 and 8:00 AM') === -1) return 'plate saved / guest message';

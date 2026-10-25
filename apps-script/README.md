@@ -330,3 +330,17 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   the website's message format (ref, tour, date, payment, transfer, dates, drop-off, accommodation, map, Nong Khiaw pickup, private,
   each traveller with passport dates, food and takeaway lunch, note) and `saveBooking_` saves it under the guest's own ref (refused if
   it exists). Self-test `importOk` imports a sample message; `testBookingsFoundBefore` counts test bookings left from earlier checks.
+
+## 2026-10-25 (requests 80-86)
+- **Report dates:** Guide report and Lunch report D2 have a date validation, so double-clicking opens a calendar (the formula
+  `=TODAY()+1` stays until a date is picked).
+- **Receipt I14 "Transport (text)":** replaces the wording of the transport line on this receipt only (dropdown of the transfers +
+  "Private minivan", typing allowed). The amount stays in "Transport amount kip".
+- **Receipt I15 / I16 "Return date / Return time (changes the booking)":** shown from the booking when it is picked; editing writes
+  Bookings `Return date` and puts the time into `Transport remark` (replacing a time already there), then redraws Transport.
+  `returnTime_` (and the receipt's K5) take any time in the remark (`TIME_RE`: "10:30 AM", "3:30-4:30 PM", "2 PM").
+- **Pickup stops:** a booking whose riders are picked up at several places gets one Transport block and one team message per stop
+  (`pickupStops_`, `stopMessage_`: names at the stop, each guest's own WhatsApp from the new Travellers column `Traveller WhatsApp`
+  when typed, else the booker's). A single-stop booking keeps the full message.
+- **Load (85):** 6 bookings sent at the same moment all saved (they queue on the script lock; the last answered after 72 s, well
+  inside the 5-minute wait). Guests do not wait: the site sends with a beacon and opens WhatsApp at once.

@@ -12,7 +12,7 @@ var TABS = { bookings: 'Bookings', travellers: 'Travellers', inquiries: 'Inquiri
   dashboard: 'Dashboard', content: 'Content', contentBase: 'Content base', help: 'How to edit', trip: 'Trip sheet', lunch: 'Lunch menu',
   receipt: 'Receipt', receiptLog: 'Receipt log', receiptText: 'Receipt text', agreements: 'Agreements', allGuests: 'All guests', transport: 'Transport', guide: 'Guide report',
   agency: 'Agency share', newBooking: 'New booking', plans: 'Tour plans', lunchReport: 'Lunch report', arrange: 'Arrange tour',
-  accounts: 'Tour accounts', collect: 'Collect on arrival' };
+  accounts: 'Tour accounts', collect: 'Collect on arrival', inbox: 'Website inbox' };
 
 var BOOKING_COLS = ['Booking ID', 'Submitted at', 'Tour date', 'Tour month', 'Tour', 'Tour name', 'People', 'Lead name',
   'Traveller names', 'Countries', 'Food', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
@@ -84,6 +84,7 @@ function setup() {
   setupTrip_(ss);
   setupReceipt_(ss);
   setupAgreements_(ss);
+  setupInbox_(ss);
   setupAllGuests_(ss);
   setupTransport_(ss);
   setupGuide_(ss);
@@ -117,7 +118,7 @@ function setup() {
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   // Tab order: the ones used every day first, set-up tabs last.
   [TABS.dashboard, TABS.allGuests, TABS.bookings, TABS.newBooking, TABS.travellers, TABS.trip, TABS.guide, TABS.lunchReport, TABS.collect, TABS.transport,
-    TABS.arrange, TABS.accounts, TABS.agency, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.plans,
+    TABS.arrange, TABS.accounts, TABS.agency, TABS.receipt, TABS.receiptLog, TABS.agreements, TABS.inbox, TABS.inquiries, TABS.reviews, TABS.lunch, TABS.plans,
     TABS.content, TABS.settings, TABS.help]
     .forEach(function (n, i) { var t = ss.getSheetByName(n); if (t) { ss.setActiveSheet(t); ss.moveActiveSheet(i + 1); } });
   ss.setActiveSheet(ss.getSheetByName(TABS.dashboard));
@@ -1327,7 +1328,8 @@ function onOpen() {
   ui.createMenu('Transport').addItem('Refresh', 'refreshTransport').addToUi();
   ui.createMenu('Bookings').addItem('Sort by tour date', 'sortBookings').addItem('Recalculate amounts of the selected booking (today\'s prices)', 'recalcSelectedBookings')
     .addItem('Remove duplicate rows (saved twice)', 'removeDuplicateRows').addToUi();
-  var ss = SpreadsheetApp.getActive();
+  var ss = SpreadsheetApp.getActive(), lock = LockService.getScriptLock();
+  if (lock.tryLock(10000)) { try { drainInbox_(ss); } finally { lock.releaseLock(); } }   // a website booking still waiting in the inbox
   sortBookings_(ss);      // earliest tour date at the top
   buildTransport_(ss);    // the list is current whenever the sheet is opened
 }
@@ -1412,7 +1414,7 @@ function setupHelp_(ss) {
     [''],
     ['NEW BOOKING  (tab "New booking")'],
     ['A booking taken on WhatsApp, by phone or at the office: type the yellow cells (tour or "Transport only", dates, minivan, travellers) and tick "Save booking". It is saved like a website booking and shows in Transport, the Trip sheet, the Guide report and the Receipt.'],
-    ['A booking the guest sent from the website but that is not in Bookings (the receipt shows nothing): copy the guest\'s whole WhatsApp message, paste it into the yellow box at the bottom of New booking, and tick "Import". It is saved with the guest\'s own Booking ref, with the travellers, passports, transfer and lunch.'],
+    ['A booking the guest sent from the website but that is not in Bookings (the receipt shows nothing): first look in the tab "Website inbox" (every website booking is written there the moment it arrives; "saved" = it is in Bookings, "new" = it will be saved when the sheet is opened). If it is not there either, copy the guest\'s whole WhatsApp message, paste it into the yellow box at the bottom of New booking, and tick "Import". It is saved with the guest\'s own Booking ref, with the travellers, passports, transfer and lunch.'],
     ['Guests already in Nong Khiaw who only go back: Minivan transfer "One way to Luang Prabang", the date back and their place in Nong Khiaw.'],
     ['Booking ID: type the guest\'s own reference (from their WhatsApp message) to add a website booking that did not reach the sheet; empty = a new ID. Tour price USD per person and Transport amount kip: type them to use a price agreed with the guest instead of Settings (empty = the usual prices). Pickup place in Nong Khiaw empty = our office inside The Trio Bar & Cafe.'],
     ['Tick "Private tour" for a group that has the tour to itself; it shows in Bookings (column Private tour) and in the Guide report.'],
@@ -1583,27 +1585,33 @@ function setupDashboard_(ss) {
 function doPost(e) {
   var lock = LockService.getScriptLock();
   var d = JSON.parse(e.postData.contents);
+  if (d.website) return reply_('ok');  // honeypot field: only bots fill it
+  // A website booking is written to the Website inbox tab before anything else (an append needs no lock): whatever happens after
+  // this point (the sheet busy for too long, an error, a time-out), the booking is on the sheet, and drainInbox_ saves it into
+  // Bookings at the end of the next run or when the sheet is opened. NK261025-LN30 was lost before this existed.
+  if (d.type === 'booking') { try { inboxAdd_(d); } catch (err) { console.error('Website inbox not written: ' + err); } }
   // A booking or agreement waits up to 5 minutes for another run (a rebuild or self-test takes 2-4) instead of being lost; the
   // guest's WhatsApp message goes out anyway, so a booking that gave up after 20 seconds was simply missing from the sheet.
   // Maintenance runs (selftest, rebuild) only start when nothing else is running.
   if (d.type === 'selftest' || d.type === 'rebuild') { if (!lock.tryLock(1000)) return reply_('busy: try again in a few minutes'); }
   else lock.waitLock(300000);
   try {
-    if (d.website) return reply_('ok');  // honeypot field: only bots fill it
-    var ss = SpreadsheetApp.getActive();
+    var ss = SpreadsheetApp.getActive(), out = 'ok';
     if (ss.getSpreadsheetTimeZone() !== TIME_ZONE) ss.setSpreadsheetTimeZone(TIME_ZONE);
     if (d.type === 'booking') {
       saveBooking_(ss, d);
+      inboxMark_(ss, d.id, 'saved');
       // The booking is saved; a Transport redraw that fails is logged (Executions) and redone on open or by menu Transport > Refresh.
       try { sortBookings_(ss); buildTransport_(ss); } catch (err) { console.error('Bookings not sorted / Transport not redrawn after booking: ' + err); }
     }
     else if (d.type === 'inquiry') saveInquiry_(ss, d);
-    else if (d.type === 'agreement') return reply_(JSON.stringify({ saved: saveAgreement_(ss, d) }));
-    else if (d.type === 'lunch') return reply_(JSON.stringify({ saved: saveLunch_(ss, d) }));
-    else if (d.type === 'selftest') return reply_(selfTest_(ss));
-    else if (d.type === 'rebuild') { var stray = clearStrayPrivate_(ss); setup(); return reply_('rebuilt' + (stray ? ' (' + stray + ' stray private-tour marks cleared)' : '')); }  // idempotent; never touches data rows
-    else return reply_('unknown type');
-    return reply_('ok');
+    else if (d.type === 'agreement') out = JSON.stringify({ saved: saveAgreement_(ss, d) });
+    else if (d.type === 'lunch') out = JSON.stringify({ saved: saveLunch_(ss, d) });
+    else if (d.type === 'selftest') out = selfTest_(ss);
+    else if (d.type === 'rebuild') { var stray = clearStrayPrivate_(ss); setup(); out = 'rebuilt' + (stray ? ' (' + stray + ' stray private-tour marks cleared)' : ''); }  // idempotent; never touches data rows
+    else out = 'unknown type';
+    try { drainInbox_(ss); } catch (err) { console.error('Website inbox not drained: ' + err); }   // bookings that arrived while this run (or one that failed) held the sheet
+    return reply_(out);
   } catch (err) {
     console.error('doPost failed: ' + err + '\n' + (e && e.postData ? e.postData.contents : ''));
     throw err;  // shows as a failed run under Apps Script > Executions
@@ -1773,13 +1781,14 @@ function selfTest_(ss) {
   out.collectOk = collectSelfTest_(ss, id);
   out.newBookingOk = newBookingSelfTest_(ss);
   out.importOk = importSelfTest_(ss);
+  out.inboxOk = inboxSelfTest_(ss);
   out.receiptOk = receiptSelfTest_(ss, id);
   out.travellerLunchOk = travellerLunchSelfTest_(ss, id);
   out.reviewsOk = JSON.parse(reviewsJson_()).length > 0;
   out.contentOk = contentSelfTest_(ss);
   var cleaned = [];
   var testIds = {};  // booking IDs of test bookings (a site test has an NK... ID and SELFTEST- as lead name)
-  [TABS.bookings, TABS.travellers, TABS.inquiries].forEach(function (name) { withoutFilter_(ss.getSheetByName(name), function (sh) {
+  [TABS.bookings, TABS.travellers, TABS.inquiries, TABS.inbox].forEach(function (name) { withoutFilter_(ss.getSheetByName(name), function (sh) {
     var values = sh.getDataRange().getDisplayValues();
     for (var r = values.length - 1; r >= 1; r--) {
       var row = values[r].join('|');
@@ -2943,6 +2952,68 @@ function importWhatsAppBooking_(ss) {
     box.setValue(false); msg.setValue('Not imported: ' + (err.message || err)).setFontColor('#a33');
     throw err;
   } finally { lock.releaseLock(); }
+}
+
+// ---- Website inbox: every website booking lands here first, so none is lost ------------------------------------------------------
+var INBOX_COLS = ['Received', 'Booking ID', 'Status', 'Booking (as sent by the website)'];
+
+function setupInbox_(ss) {
+  var sh = sheet_(ss, TABS.inbox);
+  sh.getRange(1, 1, 1, INBOX_COLS.length).setValues([INBOX_COLS]).setFontWeight('bold').setBackground('#e8f0ea');
+  freezeRows_(sh, 1);
+  sh.getRange('A2:A').setNumberFormat('dd/mm/yyyy HH:mm:ss'); sh.getRange('B2:D').setNumberFormat('@');
+  sh.setColumnWidth(1, 140); sh.setColumnWidth(2, 130); sh.setColumnWidth(3, 120); sh.setColumnWidth(4, 600);
+  sh.getRange('A1').setNote('Every booking sent by the website is written here first, then saved into Bookings (Status "saved"). ' +
+    'One still "new" is saved by the next booking that arrives or when the sheet is opened. "failed: ..." says why one could not be ' +
+    'saved: fix the cause (or ask the developer), then type new in Status to try again. Nothing else needs typing here.');
+}
+
+// Written before the script lock: an append is safe next to other runs. The ID is fixed here so a retry saves the same booking once.
+function inboxAdd_(d) {
+  d.id = clean_(d.id, 20) || ('NK' + Utilities.formatDate(new Date(), TIME_ZONE, 'yyMMddHHmmss'));
+  var ss = SpreadsheetApp.getActive();
+  if (!ss.getSheetByName(TABS.inbox)) setupInbox_(ss);
+  ss.getSheetByName(TABS.inbox).appendRow([new Date(), d.id, 'new', JSON.stringify(d)]);
+}
+
+function inboxMark_(ss, id, status) {
+  var sh = ss.getSheetByName(TABS.inbox), n = sh ? sh.getLastRow() - 1 : 0;
+  if (n < 1 || !id) return;
+  var v = sh.getRange(2, 2, n, 2).getDisplayValues();
+  for (var i = 0; i < n; i++) if (v[i][0] === id && v[i][1] !== 'saved') sh.getRange(i + 2, 3).setValue(status);
+}
+
+// Saves every inbox row still "new" into Bookings (an ID already there counts as saved). Called with the script lock held.
+function drainInbox_(ss) {
+  var sh = ss.getSheetByName(TABS.inbox), n = sh ? sh.getLastRow() - 1 : 0, saved = 0;
+  if (n < 1) return 0;
+  var v = sh.getRange(2, 2, n, 3).getValues();
+  for (var i = 0; i < n; i++) {
+    if (String(v[i][1]).trim().toLowerCase() !== 'new') continue;
+    try {
+      var d = JSON.parse(v[i][2]);
+      d.id = String(v[i][0]).trim() || d.id;
+      saveBooking_(ss, d);
+      sh.getRange(i + 2, 3).setValue('saved'); saved++;
+    } catch (err) {
+      console.error('Website inbox row ' + (i + 2) + ' not saved: ' + err);
+      sh.getRange(i + 2, 3).setValue('failed: ' + String(err && err.message || err).slice(0, 200));
+    }
+  }
+  if (saved) { try { sortBookings_(ss); buildTransport_(ss); } catch (err) { console.error('Bookings not sorted / Transport not redrawn after the inbox: ' + err); } }
+  return saved;
+}
+
+// A booking left "new" in the inbox (the run that received it failed) is saved by the next run.
+function inboxSelfTest_(ss) {
+  var sh = ss.getSheetByName(TABS.inbox), id = ('SELFTEST-N' + new Date().getTime().toString(36).slice(-6)).toUpperCase();
+  var d = { type: 'booking', id: id, tour: '101', date: '2030-01-16', transfer: 'No', payment: 'Cash', source: 'Other',   // its own day: the other checks count 2030-01-15
+    travellers: [{ first: 'SELFTEST-Inbox', last: 'Person', gender: 'X', nat: 'german', food: 'Regular', pass: 'ef789', issued: '2020-01-01', expires: '2030-01-01', pickup: 'same' }] };
+  sh.appendRow([new Date(), id, 'new', JSON.stringify(d)]);
+  drainInbox_(ss);
+  var ids = ss.getSheetByName(TABS.bookings).getRange('A:A').getDisplayValues().map(function (r) { return r[0]; });
+  var st = sh.getRange(2, 2, sh.getLastRow() - 1, 2).getDisplayValues().filter(function (r) { return r[0] === id; }).map(function (r) { return r[1]; });
+  return ids.indexOf(id) !== -1 && st.length === 1 && st[0] === 'saved' ? true : 'inbox: status ' + st.join(',') + ', in Bookings ' + (ids.indexOf(id) !== -1);
 }
 
 // A message exactly as the website writes it (5 lines of travellers, lunch with a choice, round trip, Nong Khiaw office) is imported.

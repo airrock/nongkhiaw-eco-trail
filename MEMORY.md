@@ -62,7 +62,10 @@ it, the traps already hit, and what is still open. Keep it current: change it in
   a plain request goes out. `saveToSheet` uses `navigator.sendBeacon` (fallback `fetch` keepalive). Recovery: New booking tab →
   paste the guest's WhatsApp message → Import (`parseWhatsAppBooking_`). Not yet tested on real phones (see Open items).
 - **Bookings lost while the sheet was busy.** A booking used to give up after 20 s waiting for the lock; long self-test runs
-  during the day lost a booking. Now 5 minutes; maintenance runs only start when idle.
+  during the day lost a booking. Now 5 minutes; maintenance runs only start when idle. Even so, NK261025-LN30 was lost on 25/10
+  while a rebuild + self-test ran at 07:53-07:57 Lao time. Since then every website booking is appended to the **Website inbox**
+  tab before the lock (`inboxAdd_`) and saved from there by the next run or on open (`drainInbox_`); a row left `new` or
+  `failed:` there is the first place to look when a booking is missing. Run rebuild / self-test at night in Laos (UTC+7) when you can.
 - **Staff filters.** Noy keeps a filter on Bookings. Sorting through a filter that does not cover every column moves rows but
   leaves the other columns behind (`widenFilter_` fixes the range before sorting). `deleteRow` on a row hidden by a filter
   silently does nothing (`withoutFilter_` for any deleting). Re-read a row before deleting it; never delete by a stale index.

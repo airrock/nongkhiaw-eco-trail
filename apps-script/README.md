@@ -344,3 +344,14 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
   when typed, else the booker's). A single-stop booking keeps the full message.
 - **Load (85):** 6 bookings sent at the same moment all saved (they queue on the script lock; the last answered after 72 s, well
   inside the 5-minute wait). Guests do not wait: the site sends with a beacon and opens WhatsApp at once.
+
+## 2026-10-25: Website inbox (booking NK261025-LN30 lost)
+- A booking reached the guest's WhatsApp but not the sheet while a rebuild + self-test held the script lock at 07:53-07:57 Lao
+  time (a booking waits 5 minutes for the lock, then its run fails and nothing is kept). It was saved by hand through the endpoint.
+- New tab **Website inbox**: `doPost` appends every website booking there (`inboxAdd_`, no lock needed, the ID fixed at that
+  moment) before waiting for the lock. After `saveBooking_` the row is marked `saved`. `drainInbox_` saves every row still `new`
+  at the end of every run (booking, agreement, lunch, self-test, rebuild) and when the sheet is opened (`onOpen`, with `tryLock`);
+  a row that cannot be saved is marked `failed: <reason>` and is retried when Status is set back to `new`. Self-test `inboxOk`
+  leaves a `new` row and checks that the drain saves it; the cleanup also removes `SELFTEST-` rows from the inbox.
+- Rebuild and self-test still block bookings for 2-4 minutes, but a booking that arrives then is in the inbox and is saved when
+  the run ends. Prefer running them at night in Laos anyway.

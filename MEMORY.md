@@ -76,8 +76,14 @@ it, the traps already hit, and what is still open. Keep it current: change it in
   leaves the other columns behind (`widenFilter_` fixes the range before sorting). `deleteRow` on a row hidden by a filter
   silently does nothing (`withoutFilter_` for any deleting). Re-read a row before deleting it; never delete by a stale index.
 - **Receipt cells that change the booking vs. only the receipt.** Green cells (drop-off I12, return date/time I15:I16, transfer
-  I17) write Bookings, so Transport follows; yellow cells (I2:I11, I14) only change the printed receipt. Noy mixes them up (request
-  89: she typed the new transfer into yellow I14): point her to the green ones.
+  I17, tour date I18, pickup date I19) write Bookings, so Transport follows; yellow cells (I2:I11, I14) only change the printed
+  receipt. Noy mixes them up (request 89: she typed the new transfer into yellow I14; 27/10: the tour date into yellow I9): point
+  her to the green ones.
+- **Travellers has its own copy of Tour date**, and Transport, the Guide report and the Lunch report read that copy. Change a
+  tour date only through `setTourDate_` (Bookings edit, receipt I18), never one column alone.
+- **The self-test takes ~5 min; the limit is 6.** A cut-off run leaves `SELFTEST-` rows (the next run's counts fail until its
+  cleanup) and can leave its ID in Receipt B1. Sub-tests pass `noTransport` / `quiet` instead of redrawing Transport; never add a
+  `buildTransport_` call inside the self-test. If it grows, split it into two requests.
 - **Script-drawn tabs** (Transport, the receipt rows, Arrange tour) are rewritten from Bookings: typing there is lost unless that
   column is listed as editable and saved back (`TRANSPORT_EDIT`, `receiptTravellerEdit_`). When Noy says "I changed it but it
   doesn't change", this is usually why.
@@ -100,5 +106,6 @@ it, the traps already hit, and what is still open. Keep it current: change it in
   not yet saved). Check with `dig +short CNAME www.nongkhiawlaos.com @ns1.dns-parking.com`.
 - Proposed, not built: the site keeps a copy of a sent booking and resends it when the guest comes back to the page (the sheet
   ignores duplicates); then one test booking from Noy's phone with first name `SELFTEST-Noy`.
+- The self-test runs 5+ minutes against a 6-minute limit: split it (e.g. `selftest` and `selftest2`) before adding more checks.
 - Waiting for Noy: private tour details, private minivan and train details, transport manager contact (Settings F13), costs for
   tours 101-103 in Tour plans.

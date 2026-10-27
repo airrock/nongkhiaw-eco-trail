@@ -373,3 +373,24 @@ Seven cards in `index.html` (`#how`), each with an inline SVG drawing (no text i
 - Self-test `receiptReturnSelfTest_` now also switches the sample booking to one way (1 x one-way price) and back to round trip
   through a return date (round trip + train). The header check ignores trailing columns with no header (a note typed in a spare
   column of Travellers made it fail).
+
+## 2026-10-27: a date changed on the receipt or in Bookings never reached Transport; empty receipt for an ID in no booking
+- Transport, the Guide report and the Lunch report read the **Travellers** copy of the tour date; a date changed in Bookings
+  stayed in Bookings, and `Tour date` was not in `TRANSPORT_SOURCES`, so Transport was not even redrawn. `setTourDate_(ss, row,
+  date)` writes Bookings (`Tour date`, `Tour month`) and every traveller row of the booking; `bookingEdited_` calls it for an
+  edited Tour date (up to 200 rows) and `Tour date` is a Transport source now.
+- Receipt tab: green **I18 "Tour date (changes the booking)"** and **I19 "Pickup date (changes the booking)"** (`RECEIPT_TOURDATE`,
+  `RECEIPT_PICKUPDATE`, `receiptDate_`, `showDates_`). The yellow I9 is labelled "Tour date (this receipt only)".
+- NK261026-DN2F (27/10): receipt 000086 was issued for an ID that is in no booking row, so every line was empty.
+  `numberPickedReceipt_` now looks the ID up forgiving case and spaces (`findBookingId_`), retries a Website inbox row that is
+  `new` or `failed:` for that ID (`inboxRetry_`, then `drainInbox_`), and a red line in C4:F4 (outside the printed area A5:F41)
+  says when the ID is in no booking and what to do. A receipt typed by hand is still numbered.
+- Self-test: `receiptDateSelfTest_` (I18 → Bookings, Tour month, traveller rows, B11; I19 → Bookings, B13; both put back to
+  15/01/2030); the inbox test also leaves a `failed:` row and checks the retry and the forgiving lookup.
+- **The self-test is near the 6-minute limit** (312 s on 27/10, 245 s on 25/10 at night): the first run of this change hit
+  "Exceeded maximum execution time", left traveller rows of its sample booking behind (the next run's counts failed until its
+  own cleanup removed them) and could have left its ID in Receipt B1 (a `SELFTEST-` ID there is no longer put back). The receipt
+  sub-tests now pass `noTransport` / `quiet` so `receiptReturn_`, `receiptTransfer_`, `receiptDropoff_`, `receiptDate_` and
+  `drainInbox_` do not redraw Transport inside the self-test (`transportOk` checks Transport itself). Do not add `buildTransport_`
+  calls to the self-test; split it into two requests if it grows. `ret:` in `receiptSelfTest_` counted a failure string as a pass
+  (`=== true` now).

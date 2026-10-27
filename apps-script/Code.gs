@@ -315,6 +315,8 @@ var RECEIPT_TRAV = 'L16:N27';
 var DROPOFFS = ['City center', 'Train station'];   // Receipt I12
 var RECEIPT_TRANSPORT = 'I14';   // typed transport wording on the receipt (e.g. "Private minivan"); only this receipt
 var RECEIPT_TRANSFER = 'I17';    // the booking's Transfer (one way / round trip / no), green: changes the booking
+var RECEIPT_TOURDATE = 'I18';    // the booking's tour date, green: changes the booking and every traveller row (the reports read those)
+var RECEIPT_PICKUPDATE = 'I19';  // the booking's pickup date (minivan up), green: changes the booking
 var RETURN_TIMES = ['10:00-10:30 AM', '10:30 AM', '3:30-4:30 PM'];   // Receipt I16 (typing another time is fine)
 var RECEIPT_EDIT = 'I13';   // tick: the printed receipt becomes typed text (Booking ID and receipt number stay)
 var RECEIPT_TYPED = ['B10', 'B11', 'B12', 'B13', 'B14', 'F11', 'C30', 'C31', 'C32', 'D30', 'E31', 'E32'];   // lines that become typed text    // travellers typed by hand (name, passport, food) for a receipt whose booking has none
@@ -380,7 +382,7 @@ function setupReceipt_(ss) {
   // Manual changes for this receipt (empty = taken from the booking): for anything the booking does not say, or says differently.
   sh.getRange('H1').setValue('Change this receipt by hand (empty = from the booking)').setFontWeight('bold').setWrap(true);
   sh.getRange('H2:H11').setValues([['Pickup line (replaces the whole line)'], ['Return line (replaces the whole line)'], ['Tour amount USD'],
-    ['Transport amount kip'], ['Takeaway lunch (text)'], ['Takeaway lunch amount kip'], ['Name'], ['Tour date'], ['Tour (replaces the line)'], ['Payment method']])
+    ['Transport amount kip'], ['Takeaway lunch (text)'], ['Takeaway lunch amount kip'], ['Name'], ['Tour date (this receipt only)'], ['Tour (replaces the line)'], ['Payment method']])
     .setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange(RECEIPT_MANUAL).setBackground('#fff2a8').setValues(keepManual).setHorizontalAlignment('left');
   sh.getRange('I4').setNumberFormat('#,##0.00'); sh.getRange('I5').setNumberFormat('#,##0'); sh.getRange('I7').setNumberFormat('#,##0');
@@ -407,6 +409,15 @@ function setupReceipt_(ss) {
     .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(TRANSFERS, true).setAllowInvalid(false).build())
     .setNote('Changes the booking itself: one way, round trip or no minivan. The transport amount is worked out again at today\'s prices, ' +
       'and Transport follows. For a ride back, pick the Return date and time above too.');
+  sh.getRange('H18').setValue('Tour date (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange(RECEIPT_TOURDATE).setBackground('#cfe2a8').setFontWeight('bold').setNumberFormat('dd/mm/yyyy')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false).build())
+    .setNote('Changes the booking itself: the tour date in Bookings and for every traveller, so Transport, the Guide report and the Lunch report move to the new day. ' +
+      'The yellow "Tour date (this receipt only)" cell only changes the printed date.');
+  sh.getRange('H19').setValue('Pickup date (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange(RECEIPT_PICKUPDATE).setBackground('#cfe2a8').setFontWeight('bold').setNumberFormat('dd/mm/yyyy')
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false).build())
+    .setNote('Changes the booking itself: the day the minivan picks the guests up in Luang Prabang. Transport and the minivan message follow. Empty when the booking has no minivan up.');
   sh.getRange('H12').setValue('Drop-off in Luang Prabang (changes the booking)').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange('I12').setBackground('#cfe2a8').setFontWeight('bold')
     .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(DROPOFFS, true).setAllowInvalid(false).build())
@@ -429,6 +440,10 @@ function setupReceipt_(ss) {
   sh.getRange('K6').setFormula('=IF($D$2<>"",$D$2,"7:30 - 8:00 AM")');   // pickup time: typed, else the usual
   sh.getRange('J1:J6').setValues([['row'], ['lang'], ['logged'], ['rate'], ['return time'], ['pickup time']]);
   sh.hideColumns(10, 2);
+  // A Booking ID that is in no booking row (typed, or the booking never reached Bookings): say so where it is seen, outside the printed area.
+  sh.getRange('C4:F4').merge().setFormula('=IF(AND($B$1<>"",$K$1=0),"⚠ This Booking ID is not in Bookings, so the receipt shows nothing. Look in the tab \'Website inbox\', ' +
+    'or paste the guest\'s WhatsApp message into New booking > Import, then pick the ID again. (Or fill the yellow cells by hand.)","")')
+    .setFontColor('#c0392b').setFontWeight('bold').setWrap(true).setVerticalAlignment('top');
 
   // header
   sh.getRange('A5:A7').merge().setFormula('=IFERROR(IMAGE(' + S('$F$12') + '),"")');
@@ -691,6 +706,7 @@ function onEdit(e) {
   else if (a1r === 'I12') receiptDropoff_(e.source);
   else if (a1r === 'I15' || a1r === 'I16') receiptReturn_(e.source);
   else if (a1r === RECEIPT_TRANSFER) receiptTransfer_(e.source);
+  else if (a1r === RECEIPT_TOURDATE || a1r === RECEIPT_PICKUPDATE) receiptDate_(e.source, a1r);
   else if (a1r === RECEIPT_EDIT) { if (r.getValue() === true) receiptUnlock_(e.source); else { setupReceipt_(e.source); refreshReceiptAmounts_(e.source); } }
   else if (r.getNumRows() === 1 && r.getNumColumns() === 1 && r.getRow() >= 16 && r.getRow() <= 27 && (r.getColumn() === 4 || r.getColumn() === 5) &&
     r.getSheet().getRange(RECEIPT_EDIT).getValue() !== true) receiptTravellerEdit_(e.source, r);   // food / lunch typed on a traveller row
@@ -747,6 +763,51 @@ function showTransfer_(ss, id) {
   cell.setValue(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()) || 'No');
 }
 
+// I18 / I19 show the picked booking's tour date and pickup date (the pickup date only when a minivan brings the guests up).
+function showDates_(ss, id) {
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  var sh = ss.getSheetByName(TABS.receipt), td = sh.getRange(RECEIPT_TOURDATE), pd = sh.getRange(RECEIPT_PICKUPDATE);
+  if (at < 1) { td.clearContent(); pd.clearContent(); return; }
+  var d = bk.getRange(at + 1, BOOKING_COLS.indexOf('Tour date') + 1).getValue(), p = bk.getRange(at + 1, BOOKING_COLS.indexOf('Pickup date') + 1).getValue();
+  if (d instanceof Date) td.setValue(d); else td.clearContent();
+  if (p instanceof Date && goesUp_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) pd.setValue(p); else pd.clearContent();
+}
+
+// The booking's tour date: in Bookings (with Tour month) and on every one of its traveller rows. Transport, the Guide report
+// and the Lunch report read the travellers' copy, so a date changed in Bookings alone never reached them. Returns the rows changed.
+function setTourDate_(ss, row, date) {
+  var bk = ss.getSheetByName(TABS.bookings), id = String(bk.getRange(row, 1).getValue()).trim();
+  bk.getRange(row, BOOKING_COLS.indexOf('Tour date') + 1).setValue(date instanceof Date ? date : '');
+  bk.getRange(row, BOOKING_COLS.indexOf('Tour month') + 1).setValue(date instanceof Date ? text_(Utilities.formatDate(date, TIME_ZONE, 'yyyy-MM')) : '');
+  var tr = ss.getSheetByName(TABS.travellers), n = tr.getLastRow() - 1, changed = 0;
+  if (n < 1 || !id) return 0;
+  var ids = tr.getRange(2, 1, n, 1).getValues(), col = TRAVELLER_COLS.indexOf('Tour date') + 1;
+  for (var i = 0; i < n; i++) if (String(ids[i][0]).trim() === id) { tr.getRange(i + 2, col).setValue(date instanceof Date ? date : ''); changed++; }
+  return changed;
+}
+
+// Tour date / pickup date picked on the Receipt tab (green I18 / I19): saved in the booking (the tour date on its travellers
+// too), so the receipt, Transport, the Guide report and the Lunch report all show the new day.
+function receiptDate_(ss, a1, noTransport) {   // noTransport: the self-test, which checks Transport elsewhere
+  var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim(), cell = sh.getRange(a1), d = cell.getValue(), tour = a1 === RECEIPT_TOURDATE;
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  if (at < 1) { cell.clearContent(); ss.toast('Pick a booking from Bookings first.', tour ? 'Tour date' : 'Pickup date', 6); return; }
+  if (!(d instanceof Date)) { showDates_(ss, id); ss.toast('Pick the day from the calendar. To take a date out of the booking, change it in Bookings.', tour ? 'Tour date' : 'Pickup date', 8); return; }
+  var n = 0;
+  if (tour) n = setTourDate_(ss, at + 1, d);
+  else {
+    if (!goesUp_(String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1).getValue()))) {
+      cell.clearContent(); ss.toast('This booking has no minivan up to Nong Khiaw. Pick its Transfer in the green cell above first.', 'Pickup date', 8); return;
+    }
+    bk.getRange(at + 1, BOOKING_COLS.indexOf('Pickup date') + 1).setValue(d);
+  }
+  SpreadsheetApp.flush();
+  if (!noTransport) buildTransport_(ss);
+  var when = Utilities.formatDate(d, TIME_ZONE, 'dd/MM/yyyy');
+  ss.toast(tour ? 'Tour date changed to ' + when + ' in the booking and for its ' + n + ' traveller row(s). Transport, the Guide report and the Lunch report follow.' :
+    'Pickup date changed to ' + when + ' in the booking. Transport and the minivan message follow.', tour ? 'Tour date' : 'Pickup date', 8);
+}
+
 // After a booking's Transfer changed (row in Bookings): the way-back pickup defaults to the office, and the transport amount
 // is worked out again at today's prices for the riders.
 function setTransfer_(ss, row, transfer) {
@@ -757,7 +818,7 @@ function setTransfer_(ss, row, transfer) {
 
 // Transfer picked on the Receipt tab (green I17): saved in the booking, amounts and Transport follow. Request 89: a one-way
 // booking that now wants a ride back, changed from the receipt instead of the yellow text cell (which only changes the wording).
-function receiptTransfer_(ss) {
+function receiptTransfer_(ss, noTransport) {   // noTransport: the self-test, which checks Transport elsewhere
   var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim(), want = String(sh.getRange(RECEIPT_TRANSFER).getValue()).trim();
   var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
   if (at < 1) { sh.getRange(RECEIPT_TRANSFER).clearContent(); ss.toast('Pick a booking from Bookings first.', 'Transfer', 6); return; }
@@ -767,9 +828,9 @@ function receiptTransfer_(ss) {
   tc.setValue(want);
   setTransfer_(ss, at + 1, want);
   SpreadsheetApp.flush();
-  showDropoff_(ss, id); showReturn_(ss, id);
+  showDropoff_(ss, id); showReturn_(ss, id); showDates_(ss, id);
   refreshReceiptAmounts_(ss);
-  buildTransport_(ss);
+  if (!noTransport) buildTransport_(ss);
   var needDate = goesDown_(want) && !(bk.getRange(at + 1, BOOKING_COLS.indexOf('Return date') + 1).getValue() instanceof Date);
   ss.toast('Transfer changed to "' + want + '"; the transport amount was worked out again and Transport follows.' +
     (needDate ? ' Now pick the Return date (and time) above for the ride back.' : ''), 'Transfer', 10);
@@ -777,7 +838,7 @@ function receiptTransfer_(ss) {
 
 // Return date / time changed on the Receipt tab: saved in the booking (Return date; the time in Transport remark), so the
 // receipt, the Transport list and the minivan team message all show it.
-function receiptReturn_(ss) {
+function receiptReturn_(ss, noTransport) {
   var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim();
   var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
   if (at < 1) { ss.toast('Pick a booking from Bookings first.', 'Return', 6); return; }
@@ -796,14 +857,14 @@ function receiptReturn_(ss) {
   }
   sh.getRange('F2').clearContent();   // a typed return time at the top would hide the booking's
   SpreadsheetApp.flush();
-  buildTransport_(ss);
-  if (upgraded) { showTransfer_(ss, id); showDropoff_(ss, id); refreshReceiptAmounts_(ss); }
+  if (!noTransport) buildTransport_(ss);
+  if (upgraded) { showTransfer_(ss, id); showDropoff_(ss, id); showDates_(ss, id); refreshReceiptAmounts_(ss); }
   ss.toast((upgraded ? 'The booking is now a round trip (transport amount worked out again). ' : '') + 'Return saved in the booking' +
     (d instanceof Date ? ': ' + Utilities.formatDate(d, TIME_ZONE, 'dd/MM/yyyy') : '') + (time ? ' ' + time : '') + '. Transport and the minivan message follow.', 'Return', 8);
 }
 
 // Drop-off picked on the Receipt tab: saved in the booking, the transport amount worked out again, Transport redrawn.
-function receiptDropoff_(ss) {
+function receiptDropoff_(ss, noTransport) {
   var sh = ss.getSheetByName(TABS.receipt), id = String(sh.getRange('B1').getValue()).trim(), want = String(sh.getRange('I12').getValue());
   var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
   if (at < 1 || !want) { ss.toast('Pick a booking from Bookings first.', 'Drop-off', 6); return; }
@@ -814,7 +875,7 @@ function receiptDropoff_(ss) {
   fillAmounts_(ss, at + 1, true);   // transfer kip with or without the train extra
   SpreadsheetApp.flush();
   refreshReceiptAmounts_(ss);
-  buildTransport_(ss);
+  if (!noTransport) buildTransport_(ss);
   ss.toast(want === 'Train station' ? 'Drop-off: Luang Prabang train station. The extra was added to the transport amount.' : 'Drop-off: city center. The train station extra was removed.', 'Drop-off', 8);
 }
 
@@ -842,20 +903,39 @@ function refreshReceiptAmounts_(ss) {
 }
 
 function numberPickedReceipt_(ss) {
-  var id = String(ss.getSheetByName(TABS.receipt).getRange('B1').getValue()).trim();
+  var cell = ss.getSheetByName(TABS.receipt).getRange('B1'), id = String(cell.getValue()).trim();
   if (!id) return;
   var lock = ownLock_(20000);
   try {
+    // Typed by hand: small letters and spaces are forgiven, and a booking still waiting in the Website inbox is saved now.
+    var found = findBookingId_(ss, id);
+    if (found.id && found.id !== String(cell.getValue())) { cell.setValue(found.id); id = found.id; SpreadsheetApp.flush(); }
     fillMissingFor_(ss, id);
     if (ss.getSheetByName(TABS.receipt).getRange(RECEIPT_EDIT).getValue() === true) setupReceipt_(ss);   // a typed receipt goes back to the booking
     clearReceiptManual_(ss);   // typed changes belong to the receipt that was open before
-    showDropoff_(ss, id); showReturn_(ss, id); showTransfer_(ss, id);
+    showDropoff_(ss, id); showReturn_(ss, id); showTransfer_(ss, id); showDates_(ss, id);
     var r = issueReceipt_(ss, id);
-    if (r.isNew) buildTransport_(ss);   // the team message in Transport shows the new number
-    ss.toast(r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.', 'Receipts', 6);
+    if (r.isNew || found.fromInbox) buildTransport_(ss);   // the team message in Transport shows the new number
+    if (!found.id) ss.toast('"' + id + '" is not in Bookings and not waiting in the Website inbox, so the receipt shows nothing. Paste the guest\'s WhatsApp message into ' +
+      'New booking > Import, then pick the ID again: it keeps receipt ' + r.no + '. (Or fill the yellow cells by hand.)', 'Booking not found', 15);
+    else ss.toast((found.fromInbox ? 'This booking was waiting in the Website inbox and is saved in Bookings now. ' : '') +
+      (r.isNew ? 'Receipt ' + r.no + ' issued. Click "Download PDF" to send it.' : 'This booking has receipt ' + r.no + '.'), 'Receipts', found.fromInbox ? 10 : 6);
   } catch (err) {
     ss.toast(String(err.message || err), 'Receipt not numbered', 10);
   } finally { lock.release(); }
+}
+
+// The exact Booking ID in Bookings for what was typed or picked (case and spaces forgiven). A booking that reached only the
+// Website inbox (row "new" or "failed: ...") is saved first. { id: '' } when it is in neither.
+function findBookingId_(ss, typed) {
+  var want = String(typed).trim().toUpperCase(), fromInbox = false;
+  var look = function () {
+    var bk = ss.getSheetByName(TABS.bookings), ids = bk.getLastRow() < 2 ? [] : bk.getRange(2, 1, bk.getLastRow() - 1, 1).getDisplayValues();
+    return ids.map(function (r) { return String(r[0]).trim(); }).filter(function (x) { return x.toUpperCase() === want; })[0] || '';
+  };
+  var id = look();
+  if (!id && inboxRetry_(ss, want)) { id = look(); fromInbox = !!id; }
+  return { id: id, fromInbox: fromInbox };
 }
 
 function issueReceipt() {
@@ -944,7 +1024,7 @@ function receiptReturnSelfTest_(ss, sh, id) {
   var tc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Transfer') + 1), kc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Est. transfer kip') + 1), wasTr = tc.getValue(), wasK = kc.getValue();
   try {
     showReturn_(ss, id); if (dayKey_(sh.getRange('I15').getValue()) !== '2030-01-18' || sh.getRange('I16').getValue() !== '10:00-10:30 AM') return false;
-    sh.getRange('I15').setValue(new Date(2030, 0, 20, 12)); sh.getRange('I16').setValue('3:30-4:30 PM'); receiptReturn_(ss); SpreadsheetApp.flush();
+    sh.getRange('I15').setValue(new Date(2030, 0, 20, 12)); sh.getRange('I16').setValue('3:30-4:30 PM'); receiptReturn_(ss, true); SpreadsheetApp.flush();
     var ok = dayKey_(dc.getValue()) === '2030-01-20' && String(rc.getValue()).indexOf('3:30-4:30 PM') !== -1 &&
       sh.getRange('B14').getDisplayValue().indexOf('20/01/2030 3:30-4:30 PM') !== -1;
     sh.getRange(RECEIPT_TRANSPORT).setValue('Private minivan'); SpreadsheetApp.flush();
@@ -953,21 +1033,44 @@ function receiptReturnSelfTest_(ss, sh, id) {
     // on the receipt makes it a round trip again with the train extra.
     var k = kipPrices_(ss);
     showTransfer_(ss, id); if (sh.getRange(RECEIPT_TRANSFER).getValue() !== 'Round trip') return 'transfer shown ' + sh.getRange(RECEIPT_TRANSFER).getValue();
-    sh.getRange(RECEIPT_TRANSFER).setValue('One way to Nong Khiaw'); receiptTransfer_(ss); SpreadsheetApp.flush();
+    sh.getRange(RECEIPT_TRANSFER).setValue('One way to Nong Khiaw'); receiptTransfer_(ss, true); SpreadsheetApp.flush();
     if (tc.getValue() !== 'One way to Nong Khiaw' || Number(kc.getValue()) !== k.one || sh.getRange('I15').getValue() !== '') return 'one way: ' + tc.getValue() + ' ' + kc.getValue() + ' ' + sh.getRange('I15').getValue();
-    sh.getRange('I15').setValue(new Date(2030, 0, 21, 12)); receiptReturn_(ss); SpreadsheetApp.flush();
+    sh.getRange('I15').setValue(new Date(2030, 0, 21, 12)); receiptReturn_(ss, true); SpreadsheetApp.flush();
     if (tc.getValue() !== 'Round trip' || Number(kc.getValue()) !== k.round + k.train || dayKey_(dc.getValue()) !== '2030-01-21' || sh.getRange(RECEIPT_TRANSFER).getValue() !== 'Round trip') return 'back to round trip: ' + tc.getValue() + ' ' + kc.getValue() + ' ' + dayKey_(dc.getValue());
     return ok;
   } finally { tc.setValue(wasTr); kc.setValue(wasK); dc.setValue(wasD); rc.setValue(wasR); sh.getRange(RECEIPT_TRANSPORT).setValue(wasT); showReturn_(ss, id); showTransfer_(ss, id); showDropoff_(ss, id); }
+}
+
+// Green I18 / I19: a tour date picked on the receipt reaches Bookings (with Tour month), every traveller row and the printed
+// receipt; a pickup date reaches Bookings and the pickup line. Both go back to 15/01/2030, the day the other checks count.
+function receiptDateSelfTest_(ss, sh, id) {
+  var bk = ss.getSheetByName(TABS.bookings), at = bk.getRange(1, 1, bk.getLastRow(), 1).getValues().map(function (r) { return String(r[0]); }).indexOf(id);
+  var dc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Tour date') + 1), pc = bk.getRange(at + 1, BOOKING_COLS.indexOf('Pickup date') + 1), wasD = dc.getValue(), wasP = pc.getValue();
+  var tr = ss.getSheetByName(TABS.travellers), td = sh.getRange(RECEIPT_TOURDATE), pd = sh.getRange(RECEIPT_PICKUPDATE);
+  var travDays = function () {
+    return tr.getRange(2, 1, tr.getLastRow() - 1, TRAVELLER_COLS.length).getValues().filter(function (t) { return String(t[0]) === id; })
+      .map(function (t) { return dayKey_(t[TRAVELLER_COLS.indexOf('Tour date')]); });
+  };
+  try {
+    showDates_(ss, id);
+    if (dayKey_(td.getValue()) !== '2030-01-15' || dayKey_(pd.getValue()) !== '2030-01-15') return 'shown ' + dayKey_(td.getValue()) + ' ' + dayKey_(pd.getValue());
+    td.setValue(new Date(2030, 0, 17, 12)); receiptDate_(ss, RECEIPT_TOURDATE, true); SpreadsheetApp.flush();
+    var days = travDays(), month = String(bk.getRange(at + 1, BOOKING_COLS.indexOf('Tour month') + 1).getValue());
+    if (dayKey_(dc.getValue()) !== '2030-01-17' || month !== '2030-01' || days.length < 2 || days.some(function (k) { return k !== '2030-01-17'; }) ||
+      sh.getRange('B11').getDisplayValue() !== '17/01/2030') return 'tour date: ' + dayKey_(dc.getValue()) + ' ' + month + ' ' + days.join(',') + ' ' + sh.getRange('B11').getDisplayValue();
+    pd.setValue(new Date(2030, 0, 14, 12)); receiptDate_(ss, RECEIPT_PICKUPDATE, true); SpreadsheetApp.flush();
+    if (dayKey_(pc.getValue()) !== '2030-01-14' || sh.getRange('B13').getDisplayValue().indexOf('14/01/2030') === -1) return 'pickup date: ' + dayKey_(pc.getValue()) + ' ' + sh.getRange('B13').getDisplayValue();
+    return true;
+  } finally { setTourDate_(ss, at + 1, wasD); pc.setValue(wasP); SpreadsheetApp.flush(); showDates_(ss, id); }
 }
 
 function receiptDropoffSelfTest_(ss, sh, id) {
   var k = kipPrices_(ss), was = sh.getRange('I12').getValue();
   try {
     showDropoff_(ss, id); if (sh.getRange('I12').getValue() !== 'Train station') return false;
-    sh.getRange('I12').setValue('City center'); receiptDropoff_(ss); SpreadsheetApp.flush();
+    sh.getRange('I12').setValue('City center'); receiptDropoff_(ss, true); SpreadsheetApp.flush();
     var city = sh.getRange('E31').getValue() === k.round && sh.getRange('B14').getDisplayValue().indexOf('Bahnhof') === -1;
-    sh.getRange('I12').setValue('Train station'); receiptDropoff_(ss); SpreadsheetApp.flush();
+    sh.getRange('I12').setValue('Train station'); receiptDropoff_(ss, true); SpreadsheetApp.flush();
     return city && sh.getRange('E31').getValue() === k.round + k.train;
   } finally { sh.getRange('I12').setValue(was); }
 }
@@ -984,6 +1087,7 @@ function receiptNoBookingSelfTest_(sh) {
 
 function receiptSelfTest_(ss, id) {
   var sh = ss.getSheetByName(TABS.receipt), keep = sh.getRange('B1:B3').getValues(), log = ss.getSheetByName(TABS.receiptLog);
+  if (String(keep[0][0]).indexOf('SELFTEST-') === 0) keep[0][0] = '';   // left by a self-test that was cut off: not put back
   var keepTyped = sh.getRange(RECEIPT_MANUAL).getValues(), keepTrav = sh.getRange(RECEIPT_TRAV).getValues(), keepTimes = [sh.getRange('D2').getValue(), sh.getRange('F2').getValue()];   // what staff typed on the receipt is theirs
   try {
     sh.getRange(RECEIPT_MANUAL).clearContent(); sh.getRange(RECEIPT_TRAV).clearContent(); sh.getRange('D2').clearContent(); sh.getRange('F2').clearContent();
@@ -1004,7 +1108,7 @@ function receiptSelfTest_(ss, id) {
         sh.getRange('C31').getDisplayValue().indexOf('Bahnhof Luang Prabang') !== -1,
       all: allGuestsSelfTest_(ss, id),
       trav: trav.indexOf('Test Person') !== -1, lookup: lookup[BOOKING_COLS.indexOf('Receipt No')] === r1.no,
-      dropoff: receiptDropoffSelfTest_(ss, sh, id), ret: receiptReturnSelfTest_(ss, sh, id), travEdit: receiptTravellerEditSelfTest_(ss, sh, id), edit: receiptEditSelfTest_(ss, sh), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
+      dropoff: receiptDropoffSelfTest_(ss, sh, id), ret: receiptReturnSelfTest_(ss, sh, id) === true, dates: receiptDateSelfTest_(ss, sh, id) === true, travEdit: receiptTravellerEditSelfTest_(ss, sh, id), edit: receiptEditSelfTest_(ss, sh), manual: receiptManualSelfTest_(ss, sh), nobooking: receiptNoBookingSelfTest_(sh), paid: receiptPaidSelfTest_(ss, sh, id), file: receiptFileName_('000002', 'Adam D/E: "X"') === 'No 000002 Adam D E X.pdf' };
     var failed = Object.keys(c).filter(function (k) { return !c[k]; });
     return failed.length ? 'failed: ' + failed.join(',') + ' | draft=' + draft + ' title=' + title + ' kip=' + kip + '/' + wantKip + ' lines=' + [sh.getRange('E30').getValue(), sh.getRange('E31').getValue(), sh.getRange('E32').getValue()].join('/') +
       ' prices=' + [k.one, k.round, k.train, rate].join('/') + ' stored=' + [lookup[BOOKING_COLS.indexOf('Est. tour USD')], lookup[BOOKING_COLS.indexOf('Est. transfer kip')], lookup[BOOKING_COLS.indexOf('Lunch kip')]].join('/') + ' bal=' + bal + ' trav=' + trav : true;
@@ -1439,6 +1543,7 @@ function setupHelp_(ss) {
     ['   Or tick the green "Edit on the receipt" box (I13): every line of the receipt (name, date, tour, pickup, return, payment, travellers and food, transport details and the amounts) becomes text you can type over, with dropdowns for the tour, payment method, transport and food. Totals still add up; the Booking ID and receipt number stay. Untick it, or pick another booking, to go back to the booking. To change the booking itself (Transport, reports), change it in Bookings / Travellers.'],
     ['   Return date and time (green, I15:I16): pick the date from the calendar and the time from the list (or type one, e.g. 2 PM). It changes the booking, so Transport and the minivan message show the new day and time. (The yellow "Return line" only changes the wording on this receipt.)'],
     ['   Transfer (green, I17): one way, round trip or no minivan. It changes the booking: the transport amount is worked out again at today\'s prices and Transport follows. A guest who booked one way and now wants the ride back: pick "Round trip" here (or simply pick a Return date above), then the Return date and time. (The yellow "Transport (text)" cell only changes the wording on this receipt.)'],
+    ['   Tour date and Pickup date (green, I18:I19): pick the new day from the calendar. They change the booking (the tour date for every traveller too), so the receipt, Transport, the Guide report and the Lunch report show the new day. The yellow "Tour date (this receipt only)" cell only changes the printed date.'],
     ['   Transport (text, I14): type or pick the wording for the transport line, e.g. "Private minivan". Only this receipt changes; type the price in "Transport amount kip".'],
     ['   The same yellow cells also replace the Name, Tour date, Tour line and Payment method. A booking that is not in Bookings at all (lost, or never sent): type its Booking ID in B1 anyway, fill the yellow cells and the travellers in "Travellers by hand" (columns L:N); it gets a receipt number like any other. Better: add it in the New booking tab with the same Booking ID, so it also reaches Transport and the reports.'],
     ['   Transport amount empty in the booking or an old price? It is worked out at today\'s prices. To change a booking\'s amounts for good: select its row in Bookings and use menu "Bookings" > "Recalculate amounts" (today\'s prices), or type the amount in Bookings (Est. transfer kip).'],
@@ -1472,7 +1577,7 @@ function setupHelp_(ss) {
     [''],
     ['NEW BOOKING  (tab "New booking")'],
     ['A booking taken on WhatsApp, by phone or at the office: type the yellow cells (tour or "Transport only", dates, minivan, travellers) and tick "Save booking". It is saved like a website booking and shows in Transport, the Trip sheet, the Guide report and the Receipt.'],
-    ['A booking the guest sent from the website but that is not in Bookings (the receipt shows nothing): first look in the tab "Website inbox" (every website booking is written there the moment it arrives; "saved" = it is in Bookings, "new" = it will be saved when the sheet is opened). If it is not there either, copy the guest\'s whole WhatsApp message, paste it into the yellow box at the bottom of New booking, and tick "Import". It is saved with the guest\'s own Booking ref, with the travellers, passports, transfer and lunch.'],
+    ['A booking the guest sent from the website but that is not in Bookings (the receipt shows nothing): first look in the tab "Website inbox" (every website booking is written there the moment it arrives; "saved" = it is in Bookings, "new" = it will be saved when the sheet is opened, "failed: ..." = it could not be saved; picking its ID on the Receipt tab tries again at once, and the receipt says in red when the ID is in no booking). If it is not there either, copy the guest\'s whole WhatsApp message, paste it into the yellow box at the bottom of New booking, and tick "Import". It is saved with the guest\'s own Booking ref, with the travellers, passports, transfer and lunch.'],
     ['Guests already in Nong Khiaw who only go back: Minivan transfer "One way to Luang Prabang", the date back and their place in Nong Khiaw.'],
     ['Booking ID: type the guest\'s own reference (from their WhatsApp message) to add a website booking that did not reach the sheet; empty = a new ID. Tour price USD per person and Transport amount kip: type them to use a price agreed with the guest instead of Settings (empty = the usual prices). Pickup place in Nong Khiaw empty = our office inside The Trio Bar & Cafe.'],
     ['Tick "Private tour" for a group that has the tour to itself; it shows in Bookings (column Private tour) and in the Guide report.'],
@@ -1486,6 +1591,7 @@ function setupHelp_(ss) {
     ['In Bookings set Status to "Cancelled". The date is added to Staff notes, the row turns grey and struck through, and the guests leave the Trip sheet, Guide report, Transport and Dashboard totals. Write the reason (e.g. "sick") in Staff notes. Nothing is deleted.'],
     [''],
     ['BOOKINGS  (tabs "Bookings", "Travellers", "Inquiries", "Dashboard")'],
+    ['A tour date changed in Bookings (or in the green cell on the Receipt tab) is copied to the booking\'s travellers, so Transport, the Guide report and the Lunch report show the new day; typing it in Travellers alone changes nothing else.'],
     ['Set Status, Receipt No and Amount paid in "Bookings". The Dashboard updates by itself. Bookings are sorted by tour date (earliest at the top) when the sheet opens and after each website booking; menu "Bookings" > "Sort by tour date" does it any time.'],
     [''],
     ['AGENCY SHARE  (tab "Agency share")'],
@@ -3047,7 +3153,7 @@ function inboxMark_(ss, id, status) {
 }
 
 // Saves every inbox row still "new" into Bookings (an ID already there counts as saved). Called with the script lock held.
-function drainInbox_(ss) {
+function drainInbox_(ss, quiet) {   // quiet: the self-test, which sorts and checks Transport elsewhere
   var sh = ss.getSheetByName(TABS.inbox), n = sh ? sh.getLastRow() - 1 : 0, saved = 0;
   if (n < 1) return 0;
   var v = sh.getRange(2, 2, n, 3).getValues();
@@ -3063,8 +3169,21 @@ function drainInbox_(ss) {
       sh.getRange(i + 2, 3).setValue('failed: ' + String(err && err.message || err).slice(0, 200));
     }
   }
-  if (saved) { try { sortBookings_(ss); buildTransport_(ss); } catch (err) { console.error('Bookings not sorted / Transport not redrawn after the inbox: ' + err); } }
+  if (saved && !quiet) { try { sortBookings_(ss); buildTransport_(ss); } catch (err) { console.error('Bookings not sorted / Transport not redrawn after the inbox: ' + err); } }
   return saved;
+}
+
+// A booking that reached the Website inbox but not Bookings (its row says "new" or "failed: ..."): try once more, now.
+// True when a row was saved. Case and spaces of the ID are forgiven.
+function inboxRetry_(ss, id, quiet) {
+  var sh = ss.getSheetByName(TABS.inbox), n = sh ? sh.getLastRow() - 1 : 0, want = String(id).trim().toUpperCase(), any = false;
+  if (n < 1) return false;
+  var v = sh.getRange(2, 2, n, 2).getValues();
+  for (var i = 0; i < n; i++) {
+    if (String(v[i][0]).trim().toUpperCase() !== want || String(v[i][1]).trim().toLowerCase() === 'saved') continue;
+    sh.getRange(i + 2, 3).setValue('new'); any = true;
+  }
+  return any && drainInbox_(ss, quiet) > 0;
 }
 
 // A booking left "new" in the inbox (the run that received it failed) is saved by the next run.
@@ -3073,10 +3192,17 @@ function inboxSelfTest_(ss) {
   var d = { type: 'booking', id: id, tour: '101', date: '2030-01-16', transfer: 'No', payment: 'Cash', source: 'Other',   // its own day: the other checks count 2030-01-15
     travellers: [{ first: 'SELFTEST-Inbox', last: 'Person', gender: 'X', nat: 'german', food: 'Regular', pass: 'ef789', issued: '2020-01-01', expires: '2030-01-01', pickup: 'same' }] };
   sh.appendRow([new Date(), id, 'new', JSON.stringify(d)]);
-  drainInbox_(ss);
+  drainInbox_(ss, true);
   var ids = ss.getSheetByName(TABS.bookings).getRange('A:A').getDisplayValues().map(function (r) { return r[0]; });
   var st = sh.getRange(2, 2, sh.getLastRow() - 1, 2).getDisplayValues().filter(function (r) { return r[0] === id; }).map(function (r) { return r[1]; });
-  return ids.indexOf(id) !== -1 && st.length === 1 && st[0] === 'saved' ? true : 'inbox: status ' + st.join(',') + ', in Bookings ' + (ids.indexOf(id) !== -1);
+  if (!(ids.indexOf(id) !== -1 && st.length === 1 && st[0] === 'saved')) return 'inbox: status ' + st.join(',') + ', in Bookings ' + (ids.indexOf(id) !== -1);
+  // A row left "failed" is saved when its ID is picked on the Receipt tab (typed in small letters with a space, even).
+  var id2 = id.replace('SELFTEST-N', 'SELFTEST-F'), d2 = JSON.parse(JSON.stringify(d));
+  d2.id = id2; d2.travellers[0].first = 'SELFTEST-Failed';
+  sh.appendRow([new Date(), id2, 'failed: self-test', JSON.stringify(d2)]);
+  var retried = inboxRetry_(ss, ' ' + id2.toLowerCase(), true), found = findBookingId_(ss, ' ' + id.toLowerCase());   // the lookup forgives case and spaces
+  var st2 = sh.getRange(2, 2, sh.getLastRow() - 1, 2).getDisplayValues().filter(function (r) { return r[0] === id2; }).map(function (r) { return r[1]; });
+  return retried && st2.length === 1 && st2[0] === 'saved' && found.id === id && !found.fromInbox ? true : 'inbox retry: ' + retried + ', status ' + st2.join(',') + ', found ' + found.id + ' ' + found.fromInbox;
 }
 
 // A message exactly as the website writes it (5 lines of travellers, lunch with a choice, round trip, Nong Khiaw office) is imported.
@@ -3219,7 +3345,7 @@ function recalcSelectedBookings() {
 }
 
 // Bookings columns the Transport list shows: typing in one of them redraws the list at once.
-var TRANSPORT_SOURCES = ['Booking ID', 'Lead name', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
+var TRANSPORT_SOURCES = ['Booking ID', 'Lead name', 'Tour date', 'Transfer', 'Pickup date', 'Return date', 'Train station drop-off', 'Accommodation',
   'Maps link', 'Status', 'Receipt No', 'WhatsApp no', 'Pickup in Nong Khiaw', 'Vehicle to Nong Khiaw', 'Vehicle to Luang Prabang', 'Transport remark'];
 
 // A typed cell in Bookings. A return date added to a one-way booking makes it a round trip (the transfer estimate follows),
@@ -3256,6 +3382,14 @@ function bookingEdited_(ss, range) {
       if (was.indexOf('Cancelled ') === -1) notes.setValue((was ? was + ' | ' : '') + 'Cancelled ' + Utilities.formatDate(new Date(), TIME_ZONE, 'dd/MM/yyyy'));
       ss.toast('Booking cancelled (date saved in Staff notes). It is left out of the Trip sheet, Guide report, Transport and Dashboard totals.', 'Bookings', 8);
     }
+  }
+  if (hit('Tour date')) {   // the reports and Transport read the travellers' copy of the date: keep it the same as the booking's
+    var moved = 0, top = range.getRow();
+    for (var rr = top; rr < top + Math.min(range.getNumRows(), 200); rr++) {
+      var nd = bk.getRange(rr, at('Tour date')).getValue();
+      if (nd instanceof Date || nd === '') moved += setTourDate_(ss, rr, nd);
+    }
+    ss.toast('Tour date saved for the travellers too (' + moved + ' row(s)). Transport, the Guide report and the Lunch report follow.', 'Bookings', 8);
   }
   if (TRANSPORT_SOURCES.some(hit)) buildTransport_(ss);
 }

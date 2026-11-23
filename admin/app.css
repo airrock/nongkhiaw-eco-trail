@@ -1,0 +1,60 @@
+/* Nong Khiaw Eco-Trail staff dashboard. Phone first. */
+:root{--forest:#0b3d2e;--moss:#2f6b4f;--cream:#f6f1e7;--sand:#e9dfc9;--ink:#16231d;--muted:#5a665f;--sun:#e8833a;--line:rgba(11,61,46,.16);--red:#a32222;--ok:#1e7a3c}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans Lao",sans-serif;color:var(--ink);background:var(--cream);font-size:16px;line-height:1.45}
+h1,h2,h3{margin:0;line-height:1.2}
+h1{font-size:1.3rem}h2{font-size:1.1rem;margin:18px 0 8px}h3{font-size:1rem}
+a{color:var(--forest)}
+button,input,select,textarea{font:inherit;color:inherit}
+.top{background:var(--forest);color:#fff;position:sticky;top:0;z-index:10}
+.top .row{display:flex;align-items:center;gap:10px;padding:10px 14px;max-width:1100px;margin:auto}
+.top .who{margin-left:auto;font-size:.85rem;opacity:.9;text-align:right}
+.tabs{display:flex;gap:4px;overflow-x:auto;padding:0 10px 8px;max-width:1100px;margin:auto}
+.tabs button{background:transparent;border:0;color:#fff;padding:8px 12px;border-radius:999px;white-space:nowrap;cursor:pointer;opacity:.85}
+.tabs button.on{background:#fff;color:var(--forest);opacity:1;font-weight:700}
+main{max-width:1100px;margin:auto;padding:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:8px 16px;border-radius:999px;border:1px solid var(--forest);background:var(--forest);color:#fff;font-weight:700;cursor:pointer;text-decoration:none}
+.btn.ghost{background:#fff;color:var(--forest)}
+.btn.warn{background:#fff;color:var(--red);border-color:var(--red)}
+.btn.small{min-height:34px;padding:4px 12px;font-size:.9rem}
+.btn:disabled{opacity:.5;cursor:default}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-bottom:12px}
+label.f{display:block;font-size:.82rem;color:var(--muted);font-weight:600}
+label.f input,label.f select,label.f textarea{display:block;width:100%;margin-top:3px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font-weight:400;font-size:1rem;min-height:42px}
+label.f textarea{min-height:70px}
+label.f input:disabled,label.f select:disabled{background:#f3f1ec;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.list{list-style:none;margin:0;padding:0}
+.list li{border-bottom:1px solid var(--line)}
+.list li:last-child{border-bottom:0}
+.item{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:11px 4px;width:100%;text-align:left;background:none;border:0;cursor:pointer}
+.item:hover{background:#faf7f0}
+.item .sub{grid-column:1/-1;color:var(--muted);font-size:.86rem}
+.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:.78rem;font-weight:700;background:var(--sand);color:var(--forest);white-space:nowrap}
+.pill.Paid{background:#d9ead3;color:var(--ok)}.pill.Cancelled,.pill.No-show{background:#f4cccc;color:var(--red)}.pill.Confirmed{background:#dbe9f6;color:#1d4f7a}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-size:.94rem}
+th{font-size:.8rem;color:var(--muted)}
+td.num,th.num{text-align:right;white-space:nowrap}
+.scroll{overflow-x:auto}
+.muted{color:var(--muted)}.err{color:var(--red);font-weight:600}.right{text-align:right}
+.totals{display:grid;grid-template-columns:1fr auto auto;gap:4px 16px;max-width:460px}
+.totals .b{font-weight:800}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:92vw;z-index:50}
+#toast.show{opacity:1}#toast.bad{background:var(--red)}
+.login{max-width:380px;margin:8vh auto;padding:0 14px}
+.trav{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
+.trav summary{cursor:pointer;font-weight:700}
+[hidden]{display:none !important}
+/* printed receipt */
+.receipt{background:#fff;padding:14px;border:1px solid var(--line);border-radius:6px;max-width:760px}
+.receipt h2{margin:0 0 2px;font-size:1.3rem}
+.receipt .head{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid var(--forest);padding-bottom:10px;margin-bottom:12px}
+.receipt .paid{color:var(--ok);font-weight:800;font-size:1.1rem}
+@media print{
+  .scroll{overflow:visible}
+  .top,.noprint,#toast{display:none !important}
+  body{background:#fff}main{padding:0;max-width:none}
+  .card{border:0;padding:0}.receipt{border:0;padding:0;max-width:none}
+}

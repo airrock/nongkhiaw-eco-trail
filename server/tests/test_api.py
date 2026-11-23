@@ -74,6 +74,8 @@ eq(sqlval("SELECT COUNT(*) FROM travellers WHERE booking_id='SELFTEST-A1'"), '3'
 refused(User().call('bookings'), 'bookings without login', 401)
 refused(User().call('login', email='admin@test.local', password='wrong'), 'wrong password')
 admin = User(); eq(admin.ok('login', email='admin@test.local', password='admin-pass-1')['user']['role'], 'admin', 'admin login')
+refused(admin.call('bookings'), 'temporary password must be changed first', 403)
+admin.ok('change_password', old='admin-pass-1', new='admin-pass-2')
 admin.ok('user_add', name='Test Office', email='office@test.local', role='staff', password='office-pass-1')
 office = User(); eq(office.ok('login', email='office@test.local', password='office-pass-1')['user']['must_change_password'], True, 'new user must change password')
 office.ok('change_password', old='office-pass-1', new='office-pass-2')

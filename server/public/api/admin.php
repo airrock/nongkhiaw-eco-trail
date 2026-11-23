@@ -69,6 +69,7 @@ try {
     q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash($in['new'], PASSWORD_DEFAULT), $user['id']]);
     out(['ok' => true]);
   }
+  if ($user['must_change_password']) out(['error' => 'Choose your own password first.'], 403);   // signed in with a temporary password
   $admin = $user['role'] === 'admin';
   $adminOnly = ['booking_delete', 'booking_restore', 'payment_edit', 'payment_delete', 'settings_save', 'tour_save', 'tour_delete',
     'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'history_all'];

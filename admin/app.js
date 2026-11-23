@@ -3,7 +3,7 @@
   'use strict';
   var API = '../api/admin.php';
   var app = document.getElementById('app');
-  var state = { user: null, tab: 'bookings', filters: { from: '', to: '', q: '', status: '' }, cfg: null };
+  var state = { user: null, tab: 'bookings', filters: { from: new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10), to: '', q: '', status: '' }, cfg: null };   // from today in Laos
   var STATUSES = ['Requested', 'Confirmed', 'Paid', 'Cancelled', 'No-show'];
   var TRANSFERS = ['No', 'One way to Nong Khiaw', 'One way to Luang Prabang', 'Round trip'];
   var PAYS = ['USD cash', 'Kip cash', 'Card (USD only, 3% bank fee)', 'BCEL QR'];
@@ -105,8 +105,8 @@
     app.textContent = '';
     if (!state.user) { app.appendChild(viewLogin()); return; }
     if (state.user.must_change_password) { app.appendChild(viewPassword(true)); return; }
-    var tabs = [['bookings', 'Bookings'], ['transport', 'Pickups'], ['new', 'New booking']];
-    if (isAdmin()) tabs.push(['settings', 'Prices and settings'], ['users', 'Users']);
+    var tabs = [['bookings', 'Bookings'], ['transport', 'Pickups'], ['new', 'New booking'], ['reports', 'Daily lists'], ['agreements', 'Agreements'], ['inquiries', 'Inquiries']];
+    if (isAdmin()) tabs.push(['money', 'Tour costs'], ['settings', 'Prices and settings'], ['users', 'Users']);
     tabs.push(['account', 'My account']);
     var main = h('main', {});
     app.appendChild(h('div', { class: 'top' },
@@ -116,7 +116,7 @@
         return h('button', { class: state.tab === t[0] || (state.tab === 'booking' && t[0] === 'bookings') ? 'on' : '', onclick: function () { state.tab = t[0]; render(); } }, t[1]);
       }))));
     app.appendChild(main);
-    ({ bookings: viewBookings, transport: viewTransport, booking: viewBooking, 'new': viewNew, settings: viewSettings, users: viewUsers, account: viewAccount })[state.tab](main);
+    ({ bookings: viewBookings, transport: viewTransport, reports: viewReports, agreements: viewAgreements, inquiries: viewInquiries, money: viewMoney, booking: viewBooking, 'new': viewNew, settings: viewSettings, users: viewUsers, account: viewAccount })[state.tab](main);
   }
 
   /* ---------- bookings list ---------- */
@@ -128,7 +128,8 @@
     var deleted = h('input', { type: 'checkbox' });
     function load() {
       state.filters = { q: q.value, from: from.value, to: to.value, status: status.value };
-      api('bookings', Object.assign({ deleted: deleted.checked }, state.filters)).then(function (d) {
+      // a search looks through every booking, whatever the dates say
+      api('bookings', Object.assign({ deleted: deleted.checked }, state.filters, q.value.trim() ? { from: '', to: '' } : {})).then(function (d) {
         list.textContent = '';
         count.textContent = d.bookings.length + (d.bookings.length === 500 ? '+ (first 500 shown: narrow the dates)' : '') + ' booking' + (d.bookings.length === 1 ? '' : 's');
         d.bookings.forEach(function (b) {
@@ -144,6 +145,7 @@
         h('div', { style: 'flex:2 1 240px' }, field('Search', q)), field('Tour date from', from), field('to', to), field('Status', status),
         isAdmin() ? h('label', { class: 'f' }, 'Deleted', h('br'), deleted) : null,
         h('button', { class: 'btn', type: 'submit' }, 'Show')),
+      h('p', { class: 'muted', style: 'margin:0 0 6px' }, 'The list starts from today. A search looks through all bookings, old ones too. Old bookings without a tour date only show in a search or with the date emptied.'),
       count, list));
     load();
   }
@@ -347,29 +349,31 @@
   // The printed receipt (labels in English for now; the other languages come with the receipt texts).
   function receiptPaper(d) {
     var b = d.booking, t = d.totals, r = d.receipt, s = (state.cfg && state.cfg.settings) || {};
+    var L = (window.RECEIPT_TEXT && (window.RECEIPT_TEXT[r.language] || window.RECEIPT_TEXT.en)) || {};
     var paid = t.total_usd > 0 && t.balance_usd <= 0.005;
     return h('div', { class: 'receipt' },
       h('div', { class: 'head' }, h('div', {}, h('h2', {}, s.business_name || 'Nong Khiaw Eco-Trail'), h('div', { class: 'muted' }, s.business_address || ''), h('div', { class: 'muted' }, s.business_contact || '')),
-        h('div', { class: 'right' }, h('strong', {}, 'RECEIPT No ' + r.no), h('div', {}, 'Date: ' + day(r.issued_on)), h('div', {}, 'Booking: ' + b.id))),
-      h('p', {}, h('strong', {}, b.tour_name), b.tour_date ? ' · ' + day(b.tour_date) : '', b.private_tour ? ' · Private tour' : ''),
-      b.transfer !== 'No' ? h('p', {}, 'Minivan: ' + b.transfer + (b.train_dropoff ? ' + train station drop-off' : '') +
-        (b.pickup_date ? ' · pickup ' + day(b.pickup_date) + (b.pickup_time ? ' ' + b.pickup_time : '') + (b.accommodation ? ' at ' + b.accommodation : '') : '') +
-        (b.return_date ? ' · back ' + day(b.return_date) + (b.return_time ? ' ' + b.return_time : '') : '')) : null,
-      h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, 'No'), h('th', {}, 'Name'), h('th', {}, 'Passport'), h('th', {}, 'Food'), h('th', {}, 'Takeaway lunch')),
+        h('div', { class: 'right' }, h('strong', {}, L.receipt + ' ' + L.no + ' ' + r.no), h('div', {}, L.issued + ': ' + day(r.issued_on)), h('div', {}, L.bookingid + ': ' + b.id))),
+      h('p', {}, h('strong', {}, b.tour_name), b.tour_date ? ' · ' + L.tourdate + ': ' + day(b.tour_date) : '', Number(b.private_tour) ? ' · Private tour' : '', b.payment_method ? ' · ' + L.payment + ': ' + b.payment_method : ''),
+      b.transfer !== 'No' ? h('p', {}, L.transport + ': ' + b.transfer + (Number(b.train_dropoff) ? ' + ' + L.train : '') +
+        (b.pickup_date ? ' · ' + L.pickup + ' ' + day(b.pickup_date) + (b.pickup_time ? ' ' + b.pickup_time : '') + (b.accommodation ? ' at ' + b.accommodation : '') : '') +
+        (b.return_date ? ' · ' + L['return'] + ' ' + day(b.return_date) + (b.return_time ? ' ' + b.return_time : '') : '')) : null,
+      h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, L.no), h('th', {}, L.name), h('th', {}, L.passport), h('th', {}, L.food), h('th', {}, L.lunch)),
         d.travellers.filter(function (x) { return x.status !== 'Cancelled'; }).map(function (x) {
           return h('tr', {}, h('td', {}, x.n), h('td', {}, x.full_name), h('td', {}, x.passport_no), h('td', {}, x.food || 'Regular'),
             h('td', {}, x.lunch_dish + (x.lunch_choice ? ' (' + x.lunch_choice + ')' : '')));
         }))),
-      h('div', { class: 'scroll' }, h('table', { style: 'margin-top:12px' }, h('tr', {}, h('th', {}, ''), h('th', { class: 'num' }, 'USD'), h('th', { class: 'num' }, 'Kip')),
-        h('tr', {}, h('td', {}, 'Tour, ' + d.summary.people + ' people'), h('td', { class: 'num' }, money(t.tour_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.tour_usd * t.rate)))),
-        t.transfer_kip ? h('tr', {}, h('td', {}, 'Transport'), h('td', { class: 'num' }, money(t.transfer_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.transfer_kip))) : null,
-        t.lunch_kip ? h('tr', {}, h('td', {}, 'Takeaway lunch'), h('td', { class: 'num' }, money(t.lunch_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.lunch_kip))) : null,
-        h('tr', {}, h('td', {}, h('strong', {}, 'Total')), h('td', { class: 'num' }, h('strong', {}, money(t.total_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(t.total_kip)))),
-        h('tr', {}, h('td', {}, paid ? 'Paid' : 'Deposit'), h('td', { class: 'num' }, money(t.paid_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.paid_usd * t.rate)))),
-        h('tr', {}, h('td', {}, h('strong', {}, 'Balance')), h('td', { class: 'num' }, h('strong', {}, money(t.balance_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(Math.round(t.balance_usd * t.rate))))))),
-      h('p', { class: 'muted' }, 'Exchange rate: 1 USD = ' + money(t.rate) + ' kip'),
-      paid ? h('p', { class: 'paid' }, '✓ PAID') : null,
-      h('p', { style: 'margin-top:28px' }, 'Customer signature: ______________________      Issued by: ' + (r.issued_by || '______________')));
+      h('div', { class: 'scroll' }, h('table', { style: 'margin-top:12px' }, h('tr', {}, h('th', {}, L.item), h('th', { class: 'num' }, 'USD'), h('th', { class: 'num' }, L.kip)),
+        h('tr', {}, h('td', {}, L.tour + ', ' + d.summary.people + ' ' + L.people), h('td', { class: 'num' }, money(t.tour_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.tour_usd * t.rate)))),
+        t.transfer_kip ? h('tr', {}, h('td', {}, L.transport), h('td', { class: 'num' }, money(t.transfer_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.transfer_kip))) : null,
+        t.lunch_kip ? h('tr', {}, h('td', {}, L.lunch), h('td', { class: 'num' }, money(t.lunch_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.lunch_kip))) : null,
+        h('tr', {}, h('td', {}, h('strong', {}, L.total)), h('td', { class: 'num' }, h('strong', {}, money(t.total_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(t.total_kip)))),
+        h('tr', {}, h('td', {}, paid ? L.paid : L.deposit), h('td', { class: 'num' }, money(t.paid_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.paid_usd * t.rate)))),
+        h('tr', {}, h('td', {}, h('strong', {}, L.balance)), h('td', { class: 'num' }, h('strong', {}, money(t.balance_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(Math.round(t.balance_usd * t.rate))))))),
+      h('p', { class: 'muted' }, L.rate + ': 1 USD = ' + money(t.rate) + ' kip'),
+      paid ? h('p', { class: 'paid' }, '✓ ' + String(L.paid).toUpperCase()) : null,
+      h('p', { style: 'margin-top:28px' }, L.custsig + ': ______________________      ' + L.issuedby + ': ' + (r.issued_by || '______________')),
+      h('p', { style: 'text-align:center;color:#2f6b4f;font-weight:700' }, L.thanks));
   }
 
   /* ---------- new booking ---------- */
@@ -393,6 +397,15 @@
         field('Food', select('food', FOODS, 'Regular')), field('Passport no', input('pass', '')))));
     }
     addPerson();
+    var pasted = h('textarea', { rows: 6, placeholder: 'Hello! I would like to book: …' });
+    main.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'A website booking that did not arrive'),
+      h('p', { class: 'muted' }, 'Paste the whole WhatsApp message the guest sent, from "Hello! I would like to book". It is saved with the guest\'s own booking ID, travellers, passports, transfer and lunch.'),
+      field('WhatsApp message', pasted), h('p'),
+      h('button', { class: 'btn', onclick: function () {
+        var x = window.parseWhatsAppBooking(pasted.value);
+        if (x.error) { toast(x.error, true); return; }
+        api('booking_new', { booking: x.d }).then(function (d) { toast('Booking ' + d.booking.id + ' saved'); state.tab = 'booking'; state.id = d.booking.id; render(); }, function () {});
+      } }, 'Import this message')));
     main.appendChild(h('div', { class: 'card' }, h('h1', {}, 'New booking'), h('p', { class: 'muted' }, 'For a guest at the office or on WhatsApp. Website bookings arrive by themselves.'),
       g, h('p'), note, h('h2', {}, 'Travellers'), people,
       h('div', { class: 'bar' }, h('button', { class: 'btn ghost small', onclick: addPerson }, '+ Add a traveller'),
@@ -496,6 +509,180 @@
     main.appendChild(h('div', { class: 'card' }, h('h1', {}, state.user.name), h('p', { class: 'muted' }, state.user.email + ' · ' + (isAdmin() ? 'Admin' : 'Office staff')),
       h('button', { class: 'btn ghost', onclick: function () { api('logout').then(function () { state.user = null; render(); }, function () {}); } }, 'Sign out')));
     main.appendChild(viewPassword(false));
+  }
+
+  /* ---------- tables and spreadsheet download ---------- */
+  // cols: [[header, key or function(row), 'num'?], ...]
+  function table(cols, rows, name) {
+    var cell = function (c, r) { var v = typeof c[1] === 'function' ? c[1](r) : r[c[1]]; return v === null || v === undefined ? '' : v; };
+    var wrap = h('div', {});
+    if (!rows.length) { wrap.appendChild(h('p', { class: 'muted' }, 'Nothing for this date.')); return wrap; }
+    wrap.appendChild(h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, cols.map(function (c) { return h('th', { class: c[2] || '' }, c[0]); })),
+      rows.map(function (r) { return h('tr', {}, cols.map(function (c) { var v = cell(c, r); return h('td', { class: c[2] || '' }, c[2] === 'num' && v !== '' ? money(v, c[3] || 0) : v); })); }))));
+    wrap.appendChild(h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
+      var q = function (v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+      var csv = [cols.map(function (c) { return q(c[0]); }).join(',')].concat(rows.map(function (r) { return cols.map(function (c) { return q(cell(c, r)); }).join(','); })).join('\r\n');
+      var a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })), download: name + '.csv' });
+      document.body.appendChild(a); a.click(); a.remove();
+    } }, 'Download as a spreadsheet')));
+    return wrap;
+  }
+  function tomorrow() { return new Date(Date.now() + 31 * 3600 * 1000).toISOString().slice(0, 10); }   // tomorrow in Laos (UTC+7)
+  function openBooking(id) { return h('button', { class: 'btn ghost small', onclick: function () { state.tab = 'booking'; state.id = id; render(); } }, id); }
+
+  /* ---------- daily lists: guide, lunch, collect on arrival ---------- */
+  function viewReports(main) {
+    var date = input('date', state.reportDate || tomorrow(), { type: 'date' }), body = h('div', {});
+    var run = 0;
+    function load() {
+      var mine = ++run, stale = function () { if (mine !== run) throw new Error('stale'); };
+      state.reportDate = date.value; body.textContent = '';
+      api('guide_report', { date: date.value }).then(function (g) {
+        stale();
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Guide report · ' + day(g.date) + ' (' + g.pax + ' guests on tour)'),
+          table([['Receipt', 'receipt_no'], ['Booking', 'booking_id'], ['Contact', 'contact'], ['Guests', 'names'], ['Pax', 'pax', 'num'], ['Package', 'package'], ['Day', 'day'],
+            ['Plan for the day', 'plan'], ['Viewpoint', 'viewpoint'], ['Additional package', 'addon'], ['Add. package date', function (r) { return day(r.addon_date); }], ['Food', 'food'],
+            ['Pickup date', function (r) { return day(r.pickup_date); }], ['Tour starts', function (r) { return day(r.tour_date); }], ['Pick-up location', 'pickups'],
+            ['Departure', function (r) { return day(r.return_date); }], ['WhatsApp', 'whatsapp'], ['Notes', 'notes']], g.rows, 'guide-report-' + g.date)));
+        return api('lunch_report', { date: date.value });
+      }).then(function (l) {
+        stale();
+        var dishes = Object.keys(l.dishes).map(function (k) { return k + ' x' + l.dishes[k]; }).join(' · ');
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Lunch report · ' + day(l.date)),
+          l.rows.length ? h('p', {}, h('strong', {}, dishes), ' · ' + money(l.total_kip) + ' kip') : null,
+          table([['Booking', 'booking_id'], ['Tour', 'tour'], ['Customer', 'name'], ['Pax', 'pax', 'num'], ['Food item', 'item'], ['Qty', 'qty', 'num'], ['Ready by', 'ready_by'],
+            ['Special requests', 'special'], ['Price kip', 'kip', 'num']], l.rows, 'lunch-report-' + l.date),
+          l.message ? h('div', {}, h('h3', {}, 'Message for the kitchen'), h('pre', { style: 'white-space:pre-wrap;font:inherit' }, l.message),
+            h('button', { class: 'btn ghost small', onclick: function () { copyText(l.message, 'Kitchen message copied'); } }, 'Copy message')) : null));
+        return api('collect_report', { from: date.value, to: date.value });
+      }).then(function (c) {
+        stale();
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Collect on arrival · ' + day(c.from)),
+          c.rows.length ? h('p', {}, h('strong', {}, 'To collect: $' + money(c.total.due_usd, 2) + ' = ' + money(c.total.due_kip) + ' kip'), ' from ' + c.total.pax + ' guests') : null,
+          table([['Booking', 'booking_id'], ['Receipt', 'receipt_no'], ['Tour', 'tour'], ['Name', 'name'], ['Pax', 'pax', 'num'], ['Tour USD', 'tour_usd', 'num', 2],
+            ['Lunch kip', 'lunch_kip', 'num'], ['Transport kip', 'transfer_kip', 'num'], ['Total USD', 'total_usd', 'num', 2], ['Paid USD', 'paid_usd', 'num', 2],
+            ['To collect USD', 'due_usd', 'num', 2], ['To collect kip', 'due_kip', 'num'], ['Status', 'status']], c.rows, 'collect-' + c.from)));
+      }, function () {});
+    }
+    date.addEventListener('change', load);
+    main.appendChild(h('div', { class: 'card noprint' }, h('div', { class: 'bar' }, h('h1', {}, 'Daily lists'), field('Date', date),
+      h('button', { class: 'btn ghost', onclick: function () { window.print(); } }, 'Print'))));
+    main.appendChild(body); load();
+  }
+
+  /* ---------- agreements ---------- */
+  function viewAgreements(main) {
+    var from = input('from', state.agFrom || tomorrow(), { type: 'date' }), to = input('to', state.agTo || '', { type: 'date' }), body = h('div', {});
+    function load() {
+      state.agFrom = from.value; state.agTo = to.value;
+      api('agreements', { from: from.value, to: to.value || from.value }).then(function (d) {
+        body.textContent = '';
+        var signed = d.rows.filter(function (r) { return r.agreement_id; }).length, site = location.origin + location.pathname.replace(/admin\/.*$/, '');
+        var card = h('div', { class: 'card' }, h('p', {}, h('strong', {}, signed + ' of ' + d.rows.length + ' travellers have signed')));
+        if (!d.rows.length) card.appendChild(h('p', { class: 'muted' }, 'No tours start in these dates.'));
+        d.rows.forEach(function (r) {
+          var ok = h('input', { type: 'checkbox' }); ok.checked = !!Number(r.staff_checked);
+          ok.addEventListener('change', function () { api('agreement_check', { id: r.agreement_id, checked: ok.checked }).then(function () { toast('Saved'); }, function () { ok.checked = !ok.checked; }); });
+          card.appendChild(h('div', { class: 'trav' }, h('div', { class: 'bar', style: 'margin:0' }, h('strong', {}, r.full_name || 'Traveller ' + r.n),
+            h('span', { class: 'pill ' + (r.agreement_id ? 'Paid' : 'Cancelled') }, r.agreement_id ? 'Signed' : 'Not signed'),
+            r.agreement_id ? h('span', { class: 'pill ' + (Number(r.photo_permission) ? 'Paid' : 'Cancelled') }, Number(r.photo_permission) ? 'Photos allowed' : 'NO photos') : null,
+            h('span', { class: 'muted' }, day(r.tour_date) + ' · tour ' + r.tour), openBooking(r.booking_id)),
+            r.agreement_id ? h('p', { style: 'margin:8px 0 0' }, 'Medical / allergies: ' + (r.medical || 'none') + ' · Emergency contact: ' + r.ec_name + ' ' + r.ec_phone +
+              (r.insurance ? ' · Insurance: ' + r.insurance : '') + ' · Signed as: ' + r.signed_name + ' ', h('label', {}, ok, ' checked by staff'))
+              : (r.form_key ? h('p', { style: 'margin:8px 0 0' }, h('a', { href: site + 'agreement/?k=' + r.form_key + '&lang=' + (r.language || 'en') + '&n=' + r.n, target: '_blank', rel: 'noopener' }, 'Agreement link for this guest'))
+                : h('p', { class: 'muted', style: 'margin:8px 0 0' }, 'Issue the receipt first: the agreement link comes with it.'))));
+        });
+        body.appendChild(card);
+      }, function () {});
+    }
+    main.appendChild(h('div', { class: 'card' }, h('form', { class: 'bar', onsubmit: function (e) { e.preventDefault(); load(); } }, h('h1', {}, 'Agreements'),
+      field('Tour date from', from), field('to (empty = same day)', to), h('button', { class: 'btn', type: 'submit' }, 'Show'))));
+    main.appendChild(body); load();
+  }
+
+  /* ---------- inquiries from the website ---------- */
+  function viewInquiries(main) {
+    var all = h('input', { type: 'checkbox' }), body = h('div', {});
+    function load() {
+      api('inquiries', { all: all.checked }).then(function (d) {
+        body.textContent = '';
+        if (!d.rows.length) body.appendChild(h('div', { class: 'card' }, h('p', { class: 'muted' }, 'No open inquiries.')));
+        d.rows.forEach(function (r) {
+          var st = select('status', ['New', 'Replied', 'Booked', 'Closed'], r.status), notes = input('staff_notes', r.staff_notes);
+          body.appendChild(h('div', { class: 'card' }, h('div', { class: 'bar', style: 'margin-bottom:4px' }, h('strong', {}, r.name || '(no name)'), h('span', { class: 'pill' }, r.status),
+            h('span', { class: 'muted' }, r.submitted_at.slice(0, 16) + ' UTC · ' + r.contact + (r.tour ? ' · tour ' + r.tour : '') + ' · ' + r.site_language)),
+            h('p', { style: 'white-space:pre-wrap' }, r.question),
+            h('div', { class: 'bar' }, field('Status', st), h('div', { style: 'flex:1 1 200px' }, field('Staff notes', notes)),
+              h('button', { class: 'btn small', onclick: function () { api('inquiry_save', { id: r.id, fields: { status: st.value, staff_notes: notes.value } }).then(function () { toast('Saved'); load(); }, function () {}); } }, 'Save'))));
+        });
+      }, function () {});
+    }
+    all.addEventListener('change', load);
+    main.appendChild(h('div', { class: 'card' }, h('div', { class: 'bar' }, h('h1', {}, 'Inquiries'), h('label', {}, all, ' also show Booked and Closed'))));
+    main.appendChild(body); load();
+  }
+
+  /* ---------- tour costs, tour accounts, agency share (admin) ---------- */
+  function viewMoney(main) {
+    var tours = ((state.cfg && state.cfg.tours) || []).map(function (t) { return t.code; });
+    var date = input('date', state.moneyDate || tomorrow(), { type: 'date' }), tour = select('tour', tours, state.moneyTour || tours[0]), body = h('div', {});
+    var run = 0;
+    function load() {
+      var mine = ++run, stale = function () { if (mine !== run) throw new Error('stale'); };
+      state.moneyDate = date.value; state.moneyTour = tour.value;
+      api('arrange', { date: date.value, tour: tour.value }).then(function (a) {
+        stale();
+        body.textContent = '';
+        var lines = a.saved ? JSON.parse(a.saved.costs) : a.lines, rowsEl = h('div', {});
+        var guests = input('guests', a.saved ? a.saved.guests : a.guests, { type: 'number', style: 'width:110px' }), income = input('income_kip', a.saved ? a.saved.income_kip : a.income_kip, { type: 'number' });
+        var sum = h('p', {});
+        function total() {
+          var e = 0; rowsEl.querySelectorAll('.bar').forEach(function (r) { e += Number(r.querySelector('[name=qty]').value || 0) * Number(r.querySelector('[name=unit_kip]').value || 0); });
+          sum.textContent = 'Income ' + money(income.value) + ' kip − expense ' + money(e) + ' kip = profit ' + money(Number(income.value || 0) - e) + ' kip';
+        }
+        function addLine(l) {
+          var r = h('div', { class: 'bar', style: 'margin-bottom:6px' }, h('div', { style: 'flex:1 1 160px' }, field('Item', input('item', l.item))), field('Counted per', input('counted_per', l.counted_per, { style: 'width:110px' })),
+            field('Qty', input('qty', l.qty, { type: 'number', step: '0.01', style: 'width:90px' })), field('Unit kip', input('unit_kip', l.unit_kip, { type: 'number', style: 'width:130px' })));
+          r.addEventListener('input', total); rowsEl.appendChild(r);
+        }
+        lines.forEach(addLine); income.addEventListener('input', total);
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tour ' + a.tour + ' on ' + day(a.date) + (a.saved ? ' (saved)' : '')),
+          h('p', { class: 'muted' }, a.guests + ' guests booked' + (a.receipt_nos ? ' · receipts ' + a.receipt_nos : '') + (a.booking_ids ? ' · ' + a.booking_ids : '')),
+          h('div', { class: 'bar' }, field('Guests counted', guests), field('Income kip', income)), rowsEl,
+          h('button', { class: 'btn ghost small', onclick: function () { addLine({ item: '', counted_per: 'group', qty: 1, unit_kip: 0 }); } }, '+ Add a cost line'), sum,
+          h('button', { class: 'btn', onclick: function () {
+            var ls = []; rowsEl.querySelectorAll('.bar').forEach(function (r) { var l = {}; r.querySelectorAll('[name]').forEach(function (i) { l[i.name] = i.value; }); ls.push(l); });
+            api('account_save', { date: a.date, tour: a.tour, guests: guests.value, income_kip: income.value, lines: ls }).then(function (x) { toast('Saved. Profit ' + money(x.profit_kip) + ' kip'); load(); }, function () {});
+          } }, 'Save in tour accounts')));
+        total();
+        return api('accounts');
+      }).then(function (x) {
+        stale();
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tour accounts'),
+          table([['Tour date', function (r) { return day(r.tour_date); }], ['Tour', 'tour'], ['Guests', 'guests', 'num'], ['Income kip', 'income_kip', 'num'], ['Expense kip', 'expense_kip', 'num'],
+            ['Profit kip', 'profit_kip', 'num'], ['Receipts', 'receipt_nos'], ['Bookings', 'booking_ids']], x.rows, 'tour-accounts')));
+        return api('agency');
+      }).then(function (x) {
+        stale();
+        var f = {}; ['tour_date', 'booking_id', 'tour', 'guests', 'sending_agency', 'receiving_agency', 'price_usd', 'sender_usd', 'guide_name', 'guide_whatsapp', 'notes'].forEach(function (k) {
+          f[k] = input(k, '', k === 'tour_date' ? { type: 'date' } : {}); });
+        var label = { tour_date: 'Tour date', booking_id: 'Booking ID', tour: 'Tour code', guests: 'Guests', sending_agency: 'Sending agency', receiving_agency: 'Receiving agency',
+          price_usd: 'Price per person USD (empty = price list)', sender_usd: 'Sender gets per person USD', guide_name: 'Guide name', guide_whatsapp: 'Guide WhatsApp', notes: 'Notes' };
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Agency share'),
+          table([['Tour date', function (r) { return day(r.tour_date); }], ['Booking', 'booking_id'], ['Tour', 'tour'], ['Guests', 'guests'], ['Sending agency', 'sending_agency'],
+            ['Receiving agency', 'receiving_agency'], ['Total USD', 'total_usd', 'num', 2], ['Sender gets USD', 'sender_gets_usd', 'num', 2], ['Receiver keeps USD', 'receiver_keeps_usd', 'num', 2],
+            ['Guide', 'guide_name'], ['Notes', 'notes']], x.rows, 'agency-share'),
+          h('h3', { style: 'margin-top:14px' }, 'Add a group passed between agencies'), h('div', { class: 'grid' }, Object.keys(f).map(function (k) { return field(label[k], f[k]); })), h('p'),
+          h('button', { class: 'btn', onclick: function () {
+            var v = {}; Object.keys(f).forEach(function (k) { v[k] = f[k].value; });
+            api('agency_save', v).then(function () { toast('Saved'); load(); }, function () {});
+          } }, 'Add row')));
+      }, function () {});
+    }
+    date.addEventListener('change', load); tour.addEventListener('change', load);
+    main.appendChild(h('div', { class: 'card' }, h('div', { class: 'bar' }, h('h1', {}, 'Tour costs'), field('Tour date', date), field('Tour', tour)),
+      h('p', { class: 'muted', style: 'margin:0' }, 'Cost lines come from the tour\'s cost list (Prices and settings). Admins only.')));
+    main.appendChild(body); load();
   }
 
   /* ---------- start ---------- */

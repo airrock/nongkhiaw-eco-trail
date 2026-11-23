@@ -2,7 +2,7 @@
    what the guest fills in to the Agreements tab of the report (Apps Script). Nothing is stored in the browser except the language. */
 (function () {
   'use strict';
-  var SHEET_URL = 'https://script.google.com/macros/s/AKfycbxq9ET0sZ-Vbdy5VMLahGd_qS71e-mVIeDFgBc-wJCVUYRUNQDGth4ddnQ6j24rYpPf/exec';
+  var SHEET_URL = 'https://app.nongkhiawlaos.com/api/exec.php';
   var NAMES = { en: 'English', lo: 'ລາວ', th: 'ไทย', zh: '中文', ko: '한국어', ja: '日本語', fr: 'Français', de: 'Deutsch' };
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var key = '', lang = 'en', data = null, who = 'all';   // who: 'all' (everyone on this phone) or one traveller's number

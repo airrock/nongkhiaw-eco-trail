@@ -272,7 +272,7 @@
   /* ---------- booking form -> WhatsApp ---------- */
   var WA = '8562058975057';
   // Google Apps Script web app that saves submissions to the bookings sheet (apps-script/Code.gs); '' = off
-  var SHEET_URL = 'https://script.google.com/macros/s/AKfycbxq9ET0sZ-Vbdy5VMLahGd_qS71e-mVIeDFgBc-wJCVUYRUNQDGth4ddnQ6j24rYpPf/exec';
+  var SHEET_URL = 'https://app.nongkhiawlaos.com/api/exec.php';
   function saveToSheet(data) {
     if (!SHEET_URL) return;
     data.lang = current;

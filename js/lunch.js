@@ -3,7 +3,7 @@
    Text comes from the site's js/i18n*.js (keys lunch_*, lunch_none, lbl_lunch_choice, hint_lunch, unit_kip). */
 (function () {
   'use strict';
-  var SHEET_URL = 'https://script.google.com/macros/s/AKfycbxq9ET0sZ-Vbdy5VMLahGd_qS71e-mVIeDFgBc-wJCVUYRUNQDGth4ddnQ6j24rYpPf/exec';
+  var SHEET_URL = 'https://app.nongkhiawlaos.com/api/exec.php';
   var NAMES = { en: 'English', lo: 'ລາວ', th: 'ไทย', zh: '中文', ko: '한국어', ja: '日本語', fr: 'Français', de: 'Deutsch' };
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var key = '', lang = 'en', data = null;

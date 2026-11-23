@@ -1,0 +1,6 @@
+# The page itself is always fetched fresh; its scripts and styles carry a ?v= number that changes with each update.
+<IfModule mod_headers.c>
+<FilesMatch "\.html$">
+Header set Cache-Control "no-cache"
+</FilesMatch>
+</IfModule>

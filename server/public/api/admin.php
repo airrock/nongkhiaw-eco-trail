@@ -5,6 +5,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../../lib/rules.php';
 require_once __DIR__ . '/../../lib/auth.php';
+require_once __DIR__ . '/../../lib/transport.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -273,6 +274,9 @@ try {
       log_change('users', (string) (int) $in['id'], 'password', null, null, $user);
       out(['ok' => true]);
     }
+
+    /* ----- pickups and minivan lists for one day ----- */
+    case 'transport': out(transport_day(date_or_null($in['date'] ?? null) ?? lao_today()));
 
     /* ----- history of one booking ----- */
     case 'history': {

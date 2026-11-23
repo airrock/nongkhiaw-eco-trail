@@ -54,7 +54,7 @@ make_admin('Test Admin', 'admin@test.local', 'admin-pass-1')
 # ---------- the website ----------
 A1 = {"type": "booking", "id": "SELFTEST-A1", "tour": "102", "date": "2030-02-01", "transfer": "Round trip", "pickupDate": "2030-02-01",
       "returnDate": "2030-02-03", "returnPlan": "end", "hotel": "Sunset Hostel", "map": "https://m/1", "train": True, "payment": "USD cash",
-      "phone": "+1 555", "lang": "en", "private": True, "travellers": [
+      "phone": "+1 555 0100", "lang": "en", "private": True, "travellers": [
         {"first": "SELFTEST-Ann", "last": "One", "nat": "the netherlands", "pass": "ab123", "food": "Vegan", "lunch": "Fried rice", "lunchChoice": "Tofu"},
         {"first": "SELFTEST-Bo", "last": "Two", "pickup": "other", "pkPlace": "Villa Maly", "pkMap": "https://m/2", "lunch": "Hidden"},
         {"name": "SELFTEST-Cy Three", "pickup": "none", "lunch": "Fried rice", "lunchChoice": "Beef"}]}
@@ -149,6 +149,19 @@ admin.ok('user_save', id=users['office@test.local']['id'], active=False)
 refused(office.call('bookings'), 'deactivated user is signed out at once', 401)
 refused(User().call('login', email='office@test.local', password='office-pass-2'), 'deactivated user cannot sign in')
 admin.ok('user_save', id=users['office@test.local']['id'], active=True)
+office.ok('login', email='office@test.local', password='office-pass-2')
+
+# ---------- pickups and minivan lists ----------
+admin.ok('booking_save', id='SELFTEST-A1', fields={'vehicle_to_nk': 'AB 1234'})
+tr = office.ok('transport', date='2030-02-01')
+eq((tr['up_pax'], tr['down_pax'], [(u['place'], u['pax'], u['stop']) for u in tr['up']]), (2, 0, [('Sunset Hostel', 1, '1/2'), ('Villa Maly', 1, '2/2')]), 'two pickup stops on the way up')
+eq(tr['up'][0]['team'].split('\n')[:4], ['Booking id: SELFTEST-A1', 'Receipt no: 001', 'ຈຸດຮັບ 1/2: 1pax', '- SELFTEST-Ann One  WhatsApp: +1 555 0100 https://wa.me/15550100'], 'team message per stop')
+eq('booked by SELFTEST-Ann One' in tr['up'][1]['team'], True, 'second stop names who booked')
+eq(tr['up'][0]['guest'].split('\n')[:3], ['Hello SELFTEST-Ann! Your minivan to Nong Khiaw is booked for on 01/02/2030.', 'Pickup at Sunset Hostel between 7:30 and 8:00 AM.', 'The plate number is AB 1234.'], 'guest message')
+tr = office.ok('transport', date='2030-02-03')
+eq((tr['up_pax'], tr['down_pax'], tr['down'][0]['drop'], tr['down'][0]['place']), (0, 2, 'Luang Prabang train station', 'Office (The Trio Bar & Cafe)'), 'way back')
+eq('ລົງ: 03/02 3:30-4:30 PM ສົ່ງສະຖານີລົດໄຟ' in tr['down'][0]['team'], True, 'team message: time from the remark, train station')
+eq(office.ok('transport', date='2030-02-07')['down'], [], 'a deleted booking is not on the list')
 
 # ---------- agreement and lunch links ----------
 k1 = sqlval("SELECT form_key FROM receipts WHERE no='000001'"); k2 = sqlval("SELECT form_key FROM receipts WHERE no='000002'")

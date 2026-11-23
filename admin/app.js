@@ -105,7 +105,7 @@
     app.textContent = '';
     if (!state.user) { app.appendChild(viewLogin()); return; }
     if (state.user.must_change_password) { app.appendChild(viewPassword(true)); return; }
-    var tabs = [['bookings', 'Bookings'], ['new', 'New booking']];
+    var tabs = [['bookings', 'Bookings'], ['transport', 'Pickups'], ['new', 'New booking']];
     if (isAdmin()) tabs.push(['settings', 'Prices and settings'], ['users', 'Users']);
     tabs.push(['account', 'My account']);
     var main = h('main', {});
@@ -116,7 +116,7 @@
         return h('button', { class: state.tab === t[0] || (state.tab === 'booking' && t[0] === 'bookings') ? 'on' : '', onclick: function () { state.tab = t[0]; render(); } }, t[1]);
       }))));
     app.appendChild(main);
-    ({ bookings: viewBookings, booking: viewBooking, 'new': viewNew, settings: viewSettings, users: viewUsers, account: viewAccount })[state.tab](main);
+    ({ bookings: viewBookings, transport: viewTransport, booking: viewBooking, 'new': viewNew, settings: viewSettings, users: viewUsers, account: viewAccount })[state.tab](main);
   }
 
   /* ---------- bookings list ---------- */
@@ -145,6 +145,56 @@
         isAdmin() ? h('label', { class: 'f' }, 'Deleted', h('br'), deleted) : null,
         h('button', { class: 'btn', type: 'submit' }, 'Show')),
       count, list));
+    load();
+  }
+
+  /* ---------- pickups and minivan lists for one day ---------- */
+  function copyText(text, done) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { toast(done); }, function () { toast('Could not copy. Select the text and copy it by hand.', true); });
+    else toast('Could not copy. Select the text and copy it by hand.', true);
+  }
+  function viewTransport(main) {
+    var t = new Date(Date.now() + 7 * 3600 * 1000 + 24 * 3600 * 1000);   // tomorrow in Laos (UTC+7)
+    var date = input('date', state.transportDate || t.toISOString().slice(0, 10), { type: 'date' });
+    var body = h('div', {});
+    function section(title, list, pax, up) {
+      var card = h('div', { class: 'card' }, h('div', { class: 'bar' }, h('h2', { style: 'margin:0' }, title + ' (' + pax + ' pax)'),
+        list.length ? h('button', { class: 'btn ghost small', onclick: function () { copyText(list.map(function (x) { return x.team; }).join('\n\n'), 'All team messages copied'); } }, 'Copy all team messages') : null));
+      if (!list.length) card.appendChild(h('p', { class: 'muted' }, 'Nobody on this date.'));
+      list.forEach(function (x) {
+        var vehicle = input(up ? 'vehicle_to_nk' : 'vehicle_to_lpb', x.vehicle), remark = input('transport_remark', x.remark), time = input(up ? 'pickup_time' : 'return_time', x.time);
+        var phone = input('whatsapp', x.whatsapp);
+        var msg = h('details', {}, h('summary', {}, 'Message for the minivan team'), h('pre', { style: 'white-space:pre-wrap;font:inherit;margin:8px 0' }, x.team));
+        card.appendChild(h('div', { class: 'trav' },
+          h('div', { class: 'bar', style: 'margin-bottom:6px' }, h('strong', {}, x.names.join(', ')), h('span', { class: 'pill' }, x.pax + ' pax'), x.stop ? h('span', { class: 'pill' }, 'stop ' + x.stop) : null),
+          h('p', { style: 'margin:0 0 8px' }, (up ? 'Pickup: ' : 'Pickup in Nong Khiaw: ') + (x.place || '(no place)') + (x.drop ? ' · drop-off: ' + x.drop : ''),
+            x.map ? [' · ', h('a', { href: x.map, target: '_blank', rel: 'noopener' }, 'Map')] : null,
+            h('br'), h('button', { class: 'btn ghost small', style: 'margin-top:6px', onclick: function () { state.tab = 'booking'; state.id = x.booking_id; render(); } }, x.booking_id + (x.receipt_no ? ' · receipt ' + x.receipt_no : ''))),
+          h('div', { class: 'grid' }, field('Vehicle / plate no', vehicle), field(up ? 'Pickup time' : 'Time back', time), field('WhatsApp', phone), field('Remark', remark)),
+          h('div', { class: 'bar', style: 'margin-top:10px' },
+            h('button', { class: 'btn small', onclick: function () {
+              var f = {}; [vehicle, time, phone, remark].forEach(function (i) { f[i.name] = i.value; });
+              api('booking_save', { id: x.booking_id, fields: f }).then(function () { toast('Saved'); load(); }, function () {});
+            } }, 'Save'),
+            x.wa.length >= 7 ? h('a', { class: 'btn ghost small', target: '_blank', rel: 'noopener', href: 'https://wa.me/' + x.wa + '?text=' + encodeURIComponent(x.guest) }, 'Message guest on WhatsApp')
+              : h('span', { class: 'muted' }, 'No WhatsApp number for the guest'),
+            h('button', { class: 'btn ghost small', onclick: function () { copyText(x.team, 'Team message copied'); } }, 'Copy team message')),
+          msg));
+      });
+      return card;
+    }
+    function load() {
+      state.transportDate = date.value;
+      api('transport', { date: date.value }).then(function (d) {
+        body.textContent = '';
+        body.appendChild(section('↑ ຂຶ້ນ ' + day(d.date) + ' · Luang Prabang → Nong Khiaw', d.up, d.up_pax, true));
+        body.appendChild(section('↓ ລົງ ' + day(d.date) + ' · Nong Khiaw → Luang Prabang', d.down, d.down_pax, false));
+      }, function () {});
+    }
+    date.addEventListener('change', load);
+    main.appendChild(h('div', { class: 'card' }, h('div', { class: 'bar' }, h('h1', {}, 'Pickups and minivan'), field('Date', date)),
+      h('p', { class: 'muted', style: 'margin:0' }, 'Everyone riding the minivan on this day. Plate numbers, times and remarks typed here are saved on the booking.')));
+    main.appendChild(body);
     load();
   }
 

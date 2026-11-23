@@ -229,12 +229,15 @@ function key_receipt($key): ?array {
 }
 function lao_day(?string $ymd): string { return $ymd ? substr($ymd, 8, 2) . '/' . substr($ymd, 5, 2) . '/' . substr($ymd, 0, 4) : ''; }
 
+// A date stored as yyyy-mm-dd is shown as dd/mm/yyyy; anything else (partial dates guests typed) as it is.
+function show_date(string $s): string { return date_or_null($s) ? lao_day($s) : $s; }
+
 function agreement_json($key): array {
   $r = key_receipt($key);
   if (!$r) return ['error' => 'invalid'];
   $b = one('SELECT tour_date, tour, tour_name FROM bookings WHERE id = ?', [$r['booking_id']]);
   $trav = array_map(fn ($t) => ['n' => (int) $t['n'], 'first' => $t['first_name'], 'last' => $t['last_name'], 'full' => $t['full_name'],
-      'gender' => $t['gender'], 'nat' => $t['country'], 'pass' => $t['passport_no'], 'issued' => $t['passport_issued'], 'expires' => $t['passport_expires']],
+      'gender' => $t['gender'], 'nat' => $t['country'], 'pass' => $t['passport_no'], 'issued' => show_date($t['passport_issued']), 'expires' => show_date($t['passport_expires'])],
     all('SELECT * FROM travellers WHERE booking_id = ? ORDER BY n', [$r['booking_id']]));
   $signed = array_map('intval', array_column(all('SELECT n FROM agreements WHERE booking_id = ? ORDER BY n', [$r['booking_id']]), 'n'));
   return ['receipt' => $r['no'], 'date' => lao_day($b['tour_date']), 'tour' => $b['tour'], 'tourName' => $b['tour_name'], 'travellers' => $trav, 'signed' => $signed];

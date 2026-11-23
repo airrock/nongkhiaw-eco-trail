@@ -3,6 +3,7 @@
 //   POST (JSON sent as text/plain): { type: booking | inquiry | agreement | lunch, ... }
 //   GET ?config=1 | ?reviews=1 | ?agreement=<key> | ?lunch=<key>
 declare(strict_types=1);
+ini_set('display_errors', '0');   // errors go to the server log, never to the page
 require_once __DIR__ . '/../../lib/rules.php';
 
 header('Access-Control-Allow-Origin: *');

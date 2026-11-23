@@ -3,6 +3,7 @@
 // What each role may do is decided here, on the server; the pages only hide what a role cannot use.
 //   admin : everything.   staff (office staff): bookings, travellers, payments in, receipts, daily lists.
 declare(strict_types=1);
+ini_set('display_errors', '0');   // errors go to the server log, never to the page
 require_once __DIR__ . '/../../lib/rules.php';
 require_once __DIR__ . '/../../lib/auth.php';
 require_once __DIR__ . '/../../lib/transport.php';
@@ -88,11 +89,11 @@ try {
       if (in_array($in['status'] ?? '', STATUSES, true)) { $w[] = 'b.status = ?'; $a[] = $in['status']; }
       $s = clean($in['q'] ?? '', 60);
       if ($s !== '') {
-        $w[] = '(b.id LIKE ? OR b.whatsapp LIKE ? OR r.no LIKE ? OR EXISTS (SELECT 1 FROM travellers t WHERE t.booking_id = b.id AND (t.full_name LIKE ? OR t.passport_no LIKE ?)))';
-        array_push($a, "%$s%", "%$s%", "%$s%", "%$s%", "%$s%");
+        $w[] = '(b.id LIKE ? OR b.whatsapp LIKE ? OR r.no LIKE ? OR b.receipt_ref LIKE ? OR EXISTS (SELECT 1 FROM travellers t WHERE t.booking_id = b.id AND (t.full_name LIKE ? OR t.passport_no LIKE ?)))';
+        array_push($a, "%$s%", "%$s%", "%$s%", "%$s%", "%$s%", "%$s%");
       }
       $rows = all('SELECT b.id, b.tour_date, b.tour, b.tour_name, b.transfer, b.status, b.whatsapp, b.est_tour_usd, b.est_transfer_kip, b.private_tour,
-          b.submitted_at, r.no AS receipt_no,
+          b.submitted_at, COALESCE(r.no, NULLIF(b.receipt_ref, \'\')) AS receipt_no,
           (SELECT COUNT(*) FROM travellers t WHERE t.booking_id = b.id) AS people,
           (SELECT t.full_name FROM travellers t WHERE t.booking_id = b.id ORDER BY t.n LIMIT 1) AS lead_name,
           (SELECT COALESCE(SUM(p.amount_usd), 0) FROM payments p WHERE p.booking_id = b.id) AS paid_usd

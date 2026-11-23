@@ -61,7 +61,7 @@ CREATE TABLE bookings (
   tour_date DATE NULL,
   tour VARCHAR(5) NOT NULL DEFAULT '',                       -- 'T00' = transport only
   tour_name VARCHAR(120) NOT NULL DEFAULT '',
-  transfer VARCHAR(40) NOT NULL DEFAULT 'No',
+  transfer VARCHAR(400) NOT NULL DEFAULT 'No',                -- long only for old rows typed by hand
   pickup_date DATE NULL,                                     -- from Luang Prabang
   return_date DATE NULL,
   train_dropoff TINYINT(1) NOT NULL DEFAULT 0,
@@ -86,6 +86,7 @@ CREATE TABLE bookings (
   viewpoint VARCHAR(120) NOT NULL DEFAULT '',
   addon_package VARCHAR(200) NOT NULL DEFAULT '',
   private_tour TINYINT(1) NOT NULL DEFAULT 0,
+  receipt_ref VARCHAR(10) NOT NULL DEFAULT '',               -- old bookings that share another booking's receipt: that number
   deleted_at DATETIME NULL,                                  -- set by an admin: hidden, not erased
   deleted_by INT NULL,
   KEY (tour_date), KEY (pickup_date), KEY (return_date)
@@ -95,22 +96,22 @@ CREATE TABLE travellers (
   id INT AUTO_INCREMENT PRIMARY KEY,
   booking_id VARCHAR(20) NOT NULL,
   n INT NOT NULL,
-  first_name VARCHAR(60) NOT NULL DEFAULT '',
-  last_name VARCHAR(60) NOT NULL DEFAULT '',
-  full_name VARCHAR(120) NOT NULL DEFAULT '',
+  first_name VARCHAR(200) NOT NULL DEFAULT '',
+  last_name VARCHAR(200) NOT NULL DEFAULT '',
+  full_name VARCHAR(200) NOT NULL DEFAULT '',
   country VARCHAR(60) NOT NULL DEFAULT '',
   gender VARCHAR(10) NOT NULL DEFAULT '',
   passport_no VARCHAR(40) NOT NULL DEFAULT '',
   passport_issued VARCHAR(20) NOT NULL DEFAULT '',
   passport_expires VARCHAR(20) NOT NULL DEFAULT '',
-  food VARCHAR(40) NOT NULL DEFAULT '',
-  pickup_place VARCHAR(120) NOT NULL DEFAULT '',             -- 'No transfer' = does not ride
+  food VARCHAR(200) NOT NULL DEFAULT '',
+  pickup_place VARCHAR(200) NOT NULL DEFAULT '',             -- 'No transfer' = does not ride
   pickup_map VARCHAR(300) NOT NULL DEFAULT '',
   lunch_dish VARCHAR(80) NOT NULL DEFAULT '',
   lunch_choice VARCHAR(40) NOT NULL DEFAULT '',
   lunch_kip DECIMAL(14,0) NOT NULL DEFAULT 0,
   status ENUM('','Cancelled','No-show') NOT NULL DEFAULT '',
-  whatsapp VARCHAR(40) NOT NULL DEFAULT '',
+  whatsapp VARCHAR(100) NOT NULL DEFAULT '',
   UNIQUE KEY (booking_id, n),
   CONSTRAINT fk_trav_booking FOREIGN KEY (booking_id) REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -137,7 +138,7 @@ CREATE TABLE receipts (
   no VARCHAR(10) PRIMARY KEY,                                -- '000086'
   issued_on DATE NOT NULL,
   booking_id VARCHAR(20) NULL UNIQUE,
-  legacy_booking_id VARCHAR(40) NOT NULL DEFAULT '',         -- the ID in the Sheet's log when it is in no booking
+  legacy_booking_id VARCHAR(400) NOT NULL DEFAULT '',         -- the ID in the Sheet's log when it is in no booking
   language VARCHAR(5) NOT NULL DEFAULT 'en',
   total_usd DECIMAL(12,2) NOT NULL DEFAULT 0,
   total_kip DECIMAL(14,0) NOT NULL DEFAULT 0,
@@ -155,7 +156,7 @@ CREATE TABLE agreements (
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   booking_id VARCHAR(20) NOT NULL,
   n INT NOT NULL,
-  full_name VARCHAR(120) NOT NULL DEFAULT '',                -- as signed for: a copy on purpose
+  full_name VARCHAR(200) NOT NULL DEFAULT '',                -- as signed for: a copy on purpose
   gender VARCHAR(10) NOT NULL DEFAULT '',
   nationality VARCHAR(60) NOT NULL DEFAULT '',
   passport_no VARCHAR(40) NOT NULL DEFAULT '',

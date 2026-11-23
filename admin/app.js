@@ -327,7 +327,8 @@
         h('a', { href: site + 'agreement/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'agreement form'), ' · ',
         h('a', { href: site + 'lunch/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'takeaway lunch')));
       rc.appendChild(receiptPaper(d));
-    } else rc.appendChild(h('p', { class: 'muted noprint' }, 'No receipt number yet. Issuing gives this booking the next number; it keeps that number for good.'));
+    } else if (b.receipt_ref) rc.appendChild(h('p', { class: 'noprint' }, 'This booking is on receipt ' + b.receipt_ref + ', which belongs to another booking (one paper receipt for several bookings). Search for ' + b.receipt_ref + ' to find it.'));
+    else rc.appendChild(h('p', { class: 'muted noprint' }, 'No receipt number yet. Issuing gives this booking the next number; it keeps that number for good.'));
     main.appendChild(rc);
 
     // history

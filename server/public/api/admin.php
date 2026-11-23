@@ -78,7 +78,7 @@ try {
   $admin = $user['role'] === 'admin';
   $adminOnly = ['booking_delete', 'booking_restore', 'payment_edit', 'payment_delete', 'settings_save', 'tour_save', 'tour_delete',
     'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'arrange', 'account_save', 'accounts', 'agency', 'agency_save', 'agency_delete',
-    'agreement_delete', 'inquiry_delete', 'reviews', 'review_save', 'review_delete', 'plans', 'plan_save'];
+    'agreement_delete', 'inquiry_delete', 'reviews', 'review_save', 'review_delete', 'plans', 'plan_save', 'overview', 'content', 'content_save'];
   if (in_array($action, $adminOnly, true) && !$admin) out(['error' => 'Only an admin can do this.'], 403);
 
   switch ($action) {
@@ -206,7 +206,11 @@ try {
     case 'receipt_save': {
       $f = [];
       if (isset($in['language'])) $f['language'] = clean($in['language'], 5);
-      if (isset($in['overrides']) && is_array($in['overrides'])) $f['overrides'] = json_encode((object) $in['overrides'], JSON_UNESCAPED_UNICODE);
+      if (isset($in['overrides']) && is_array($in['overrides'])) {   // wording of this one receipt; an empty field goes back to the automatic text
+        $o = [];
+        foreach (['tour', 'transport', 'note', 'issued_by', 'thanks'] as $k) if (($v = clean($in['overrides'][$k] ?? '', 400)) !== '') $o[$k] = $v;
+        $f['overrides'] = json_encode((object) $o, JSON_UNESCAPED_UNICODE);
+      }
       update_row('receipts', 'no = ?', [(string) $in['no']], ['language', 'overrides'], $f, (string) $in['no'], $user);
       out(['receipt' => one('SELECT * FROM receipts WHERE no = ?', [(string) $in['no']])]);
     }
@@ -373,6 +377,30 @@ try {
           q('INSERT INTO tour_costs (tour, item, unit_kip, counted_per, qty) VALUES (?,?,?,?,?)', [$tour, clean($c['item'], 200), (float) ($c['unit_kip'] ?? 0), clean($c['counted_per'] ?? 'group', 20) ?: 'group', (float) ($c['qty'] ?? 1) ?: 1]);
         log_change('tour_days', $tour, 'update', null, null, $user);
       });
+      out(['ok' => true]);
+    }
+
+    /* ----- trip sheet (everyone), overview and website text (admin) ----- */
+    case 'trip_sheet': out(trip_sheet(date_or_null($in['date'] ?? null) ?? lao_today()));
+    case 'overview': out(overview());
+    // The website's built-in text per key and language, and what staff changed. Only a text that differs from the built-in one is stored.
+    case 'content': {
+      $seed = json_decode(file_get_contents($lib . '/content_seed.json'), true) ?: [];
+      $over = [];
+      foreach (all('SELECT `key`, lang, value FROM content') as $r) $over[$r['key']][$r['lang']] = $r['value'];
+      out(['langs' => CONTENT_LANGS, 'seed' => $seed, 'changed' => (object) $over]);
+    }
+    case 'content_save': {
+      $key = clean($in['key'] ?? '', 80); $lang = clean($in['lang'] ?? '', 5); $value = trim((string) ($in['value'] ?? ''));
+      $col = array_search($lang, CONTENT_LANGS, true);
+      $row = null;
+      foreach (json_decode(file_get_contents($lib . '/content_seed.json'), true) ?: [] as $r) if ($r[0] === $key) $row = $r;
+      if ($col === false || !$row) throw new Refused('Unknown text or language.');
+      if (mb_strlen($value) > 6000) throw new Refused('That text is too long.');
+      $old = val('SELECT value FROM content WHERE `key` = ? AND lang = ?', [$key, $lang]);
+      if ($value === '' || $value === trim((string) $row[2 + $col])) q('DELETE FROM content WHERE `key` = ? AND lang = ?', [$key, $lang]);   // back to the built-in text
+      else q('INSERT INTO content (`key`, lang, value) VALUES (?,?,?) ON DUPLICATE KEY UPDATE value = VALUES(value)', [$key, $lang, $value]);
+      log_change('content', "$key $lang", 'update', ['value' => $old], ['value' => $value], $user);
       out(['ok' => true]);
     }
 

@@ -92,3 +92,57 @@ function arrange_tour(string $date, string $tour): array {
   return ['date' => $date, 'tour' => $tour, 'guests' => $guests, 'receipt_nos' => implode(', ', array_filter(array_column($bk, 'receipt_no'))),
     'booking_ids' => implode(', ', array_column($bk, 'id')), 'income_kip' => round($income), 'lines' => $lines, 'saved' => $saved];
 }
+
+/* ---------- trip sheet: everyone on a tour that starts on one day ---------- */
+function trip_sheet(string $date): array {
+  $rows = all("SELECT b.tour, b.tour_name, t.full_name, t.country, t.gender, t.food, t.lunch_dish, t.lunch_choice, t.pickup_place, t.pickup_map, t.booking_id,
+      COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no
+    FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id
+    WHERE b.deleted_at IS NULL AND b.status <> 'Cancelled' AND t.status <> 'Cancelled' AND b.tour_date = ?
+    ORDER BY (COALESCE(r.no, NULLIF(b.receipt_ref, '')) IS NULL), receipt_no, t.full_name", [$date]);
+  $food = []; $riders = 0;
+  foreach ($rows as &$r) {
+    $f = $r['food'] !== '' ? $r['food'] : 'Regular'; $food[$f] = ($food[$f] ?? 0) + 1;
+    if ($r['pickup_place'] !== '' && $r['pickup_place'] !== 'No transfer') $riders++;
+    else $r['pickup_place'] = 'Staying in Nong Khiaw';
+    $r['lunch'] = $r['lunch_dish'] . ($r['lunch_choice'] !== '' ? ' (' . $r['lunch_choice'] . ')' : '');
+    $r['tour'] = trim($r['tour'] . ' ' . $r['tour_name']);
+  }
+  unset($r);
+  $ids = array_column(all("SELECT id FROM bookings WHERE deleted_at IS NULL AND status <> 'Cancelled' AND tour_date = ?", [$date]), 'id');
+  $due = 0; $transfer = 0; $lunch = 0;
+  foreach ($ids as $id) { $t = booking_totals($id); $due += max(0, $t['tour_usd'] - $t['paid_usd']); $transfer += $t['transfer_kip']; $lunch += $t['lunch_kip']; }
+  arsort($food);
+  return ['date' => $date, 'bookings' => count($ids), 'travellers' => count($rows), 'riders' => $riders, 'food' => (object) $food,
+    'tour_due_usd' => round($due, 2), 'transfer_kip' => $transfer, 'lunch_kip' => $lunch, 'rows' => $rows];
+}
+
+/* ---------- overview: the Sheet's Dashboard tab ---------- */
+function overview(): array {
+  $live = "b.deleted_at IS NULL"; $counted = "$live AND b.status NOT IN ('Cancelled','No-show')";
+  $paidBy = "(SELECT booking_id, SUM(amount_usd) paid FROM payments GROUP BY booking_id) p";
+  $num = fn ($rows) => array_map(fn ($r) => array_map(fn ($v) => is_numeric($v) ? $v + 0 : $v, $r), $rows);
+  return [
+    'cards' => [
+      'Booking requests' => (int) val("SELECT COUNT(*) FROM bookings b WHERE $live"),
+      'Confirmed or paid' => (int) val("SELECT COUNT(*) FROM bookings b WHERE $live AND b.status IN ('Confirmed','Paid')"),
+      'Travellers' => (int) val("SELECT COUNT(*) FROM travellers t JOIN bookings b ON b.id = t.booking_id WHERE $counted AND t.status = ''"),
+      'Received (USD)' => round((float) val("SELECT COALESCE(SUM(p.amount_usd), 0) FROM payments p JOIN bookings b ON b.id = p.booking_id WHERE $live"), 2),
+      'Confirmed, not yet paid (tour USD)' => round((float) val("SELECT COALESCE(SUM(b.est_tour_usd), 0) FROM bookings b WHERE $live AND b.status = 'Confirmed'"), 2),
+      'Inquiries' => (int) val('SELECT COUNT(*) FROM inquiries'),
+    ],
+    'by_month' => $num(all("SELECT DATE_FORMAT(b.tour_date, '%Y-%m') month, COUNT(*) bookings,
+        (SELECT COUNT(*) FROM travellers t JOIN bookings x ON x.id = t.booking_id WHERE x.deleted_at IS NULL AND x.status NOT IN ('Cancelled','No-show') AND t.status = '' AND DATE_FORMAT(x.tour_date, '%Y-%m') = DATE_FORMAT(b.tour_date, '%Y-%m')) travellers,
+        SUM(b.est_tour_usd) tour_usd, COALESCE(SUM(p.paid), 0) paid_usd
+      FROM bookings b LEFT JOIN $paidBy ON p.booking_id = b.id WHERE $counted AND b.tour_date IS NOT NULL GROUP BY month ORDER BY month DESC LIMIT 24")),
+    'by_tour' => $num(all("SELECT TRIM(CONCAT(b.tour, ' ', b.tour_name)) tour, COUNT(*) bookings,
+        (SELECT COUNT(*) FROM travellers t JOIN bookings x ON x.id = t.booking_id WHERE x.deleted_at IS NULL AND x.status NOT IN ('Cancelled','No-show') AND t.status = '' AND x.tour = b.tour AND x.tour_name = b.tour_name) travellers,
+        COALESCE(SUM(p.paid), 0) paid_usd
+      FROM bookings b LEFT JOIN $paidBy ON p.booking_id = b.id WHERE $counted GROUP BY b.tour, b.tour_name ORDER BY bookings DESC LIMIT 20")),
+    'by_country' => $num(all("SELECT IF(t.country = '', '(not given)', t.country) country, COUNT(*) travellers FROM travellers t JOIN bookings b ON b.id = t.booking_id
+      WHERE $counted AND t.status = '' GROUP BY country ORDER BY travellers DESC LIMIT 20")),
+    'by_source' => $num(all("SELECT IF(b.source = '', '(not given)', b.source) source, COUNT(*) bookings FROM bookings b WHERE $live GROUP BY source ORDER BY bookings DESC")),
+    'by_status' => $num(all("SELECT b.status, COUNT(*) bookings FROM bookings b WHERE $live GROUP BY b.status ORDER BY bookings DESC")),
+    'inquiries' => $num(all("SELECT DATE_FORMAT(submitted_at, '%Y-%m') month, COUNT(*) inquiries, SUM(status = 'Booked') booked FROM inquiries GROUP BY month ORDER BY month DESC LIMIT 24")),
+  ];
+}

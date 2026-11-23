@@ -219,4 +219,29 @@ refused(office.call('agreement_delete', id=rows[0]['agreement_id']), 'staff dele
 hist = admin.ok('history', id='SELFTEST-A1')['history']
 eq(any(h['user_name'] == 'Test Office' and h['new_values'] and 'staff_notes' in h['new_values'] for h in hist), True, 'log names the user')
 eq(any(h['row_id'] == 'SELFTEST-A1 #2' and h['new_values'] == '{"food":"Halal"}' for h in hist), True, 'log keeps only what changed')
+
+# ---------- trip sheet, overview, website text, receipt wording ----------
+ts = office.ok('trip_sheet', date='2030-02-01')
+eq((ts['travellers'] >= 1, len(ts['rows']) == ts['travellers'], all(r['pickup_place'] for r in ts['rows'])), (True, True, True), 'trip sheet lists the travellers of the day')
+eq(office.ok('trip_sheet', date='2031-01-01')['rows'], [], 'trip sheet of an empty day')
+refused(office.call('overview'), 'office cannot see the overview', 403)
+ov = admin.ok('overview')
+eq((ov['cards']['Booking requests'] >= 1, isinstance(ov['by_status'], list), isinstance(ov['by_month'], list)), (True, True, True), 'overview totals')
+refused(office.call('content'), 'office cannot read the website text editor', 403)
+refused(office.call('content_save', key='nav_tour', lang='en', value='x'), 'office cannot change website text', 403)
+ct = admin.ok('content')
+eq((len(ct['seed']) > 300, ct['langs'][0], ct['seed'][0][0]), (True, 'en', 'nav_tour'), 'website text list')
+sql("DELETE FROM content")
+admin.ok('content_save', key='nav_tour', lang='en', value='Our tours')
+eq(site(query='?config=1')[1]['content']['en']['nav_tour'], 'Our tours', 'changed text reaches the website')
+admin.ok('content_save', key='nav_tour', lang='en', value=ct['seed'][0][2])
+eq(sqlval('SELECT COUNT(*) FROM content'), '0', 'the built-in text again stores nothing')
+admin.ok('content_save', key='nav_tour', lang='fr', value='Nos excursions'); admin.ok('content_save', key='nav_tour', lang='fr', value='')
+eq(sqlval('SELECT COUNT(*) FROM content'), '0', 'emptying a text goes back to the built-in one')
+refused(admin.call('content_save', key='no_such_key', lang='en', value='x'), 'unknown text key')
+refused(admin.call('content_save', key='nav_tour', lang='xx', value='x'), 'unknown language')
+rno = admin.ok('booking', id='SELFTEST-A1')['receipt']['no']
+rs = office.ok('receipt_save', no=rno, overrides={'tour': 'Camping, private', 'note': 'Paid by friend', 'hack': 'x', 'thanks': ''})['receipt']
+eq(json.loads(rs['overrides']), {'tour': 'Camping, private', 'note': 'Paid by friend'}, 'receipt wording keeps only the known, filled fields')
+eq(admin.ok('booking', id='SELFTEST-A1')['receipt']['no'], rno, 'wording does not change the receipt number')
 print(f'all {n} checks passed')

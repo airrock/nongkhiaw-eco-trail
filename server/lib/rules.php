@@ -5,6 +5,7 @@ require_once __DIR__ . '/db.php';
 
 const TRANSPORT_ONLY = 'T00';
 const STATUSES = ['Requested', 'Confirmed', 'Paid', 'Cancelled', 'No-show'];
+const CONTENT_LANGS = ['en', 'lo', 'th', 'zh', 'ko', 'ja', 'fr', 'de'];   // column order of lib/content_seed.json after key and place
 
 function clean($v, int $max): string { return mb_substr(trim(is_scalar($v) ? (string) $v : ''), 0, $max); }
 function date_or_null($s): ?string {

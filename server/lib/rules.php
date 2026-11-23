@@ -169,8 +169,13 @@ function booking_totals(string $id): array {
   $paid = (float) val('SELECT COALESCE(SUM(amount_usd), 0) FROM payments WHERE booking_id = ?', [$id]);
   $tour = (float) $b['est_tour_usd']; $transfer = (float) $b['est_transfer_kip'];
   $totalUsd = round($tour + ($transfer + $lunch) / $rate, 2);
+  $totalKip = round($tour * $rate) + $transfer + $lunch; $balanceUsd = round($totalUsd - $paid, 2);
+  // Kip side: money taken in kip counts as typed, money taken in USD at today's rate. The kip balance is the kip total minus
+  // that, never the rounded USD balance converted back (that drifted by a few kip), and it is 0 once the USD balance is.
+  $paidKip = (float) val("SELECT COALESCE(SUM(CASE WHEN currency = 'LAK' THEN amount ELSE ROUND(amount_usd * ?) END), 0) FROM payments WHERE booking_id = ?", [$rate, $id]);
+  if ($totalUsd > 0 && $balanceUsd <= 0.005) $paidKip = $totalKip;
   return ['tour_usd' => $tour, 'transfer_kip' => $transfer, 'lunch_kip' => $lunch, 'rate' => $rate, 'total_usd' => $totalUsd,
-    'total_kip' => round($tour * $rate) + $transfer + $lunch, 'paid_usd' => round($paid, 2), 'balance_usd' => round($totalUsd - $paid, 2)];
+    'total_kip' => $totalKip, 'paid_usd' => round($paid, 2), 'balance_usd' => $balanceUsd, 'paid_kip' => $paidKip, 'balance_kip' => $totalKip - $paidKip];
 }
 
 /* ---------- receipts and payments ---------- */

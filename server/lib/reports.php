@@ -66,7 +66,7 @@ function collect_report(string $from, string $to): array {
       'name' => (string) val('SELECT full_name FROM travellers WHERE booking_id = ? ORDER BY n LIMIT 1', [$b['id']]),
       'pax' => (int) val("SELECT COUNT(*) FROM travellers WHERE booking_id = ? AND status <> 'Cancelled'", [$b['id']]),
       'tour_usd' => $t['tour_usd'], 'lunch_kip' => $t['lunch_kip'], 'transfer_kip' => $t['transfer_kip'], 'total_usd' => $t['total_usd'], 'total_kip' => $t['total_kip'],
-      'paid_usd' => $t['paid_usd'], 'due_usd' => max(0, $t['balance_usd']), 'due_kip' => max(0, round($t['balance_usd'] * $rate)), 'status' => $b['status']];
+      'paid_usd' => $t['paid_usd'], 'due_usd' => max(0, $t['balance_usd']), 'due_kip' => max(0, $t['balance_kip']), 'status' => $b['status']];
   }
   $sum = fn ($k) => array_sum(array_column($rows, $k));
   return ['from' => $from, 'to' => $to, 'rate' => $rate, 'rows' => $rows,

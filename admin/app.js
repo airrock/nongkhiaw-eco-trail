@@ -299,7 +299,7 @@
         h('span', {}, 'Takeaway lunch'), h('span', {}), h('span', { class: 'right' }, money(t.lunch_kip) + ' kip'),
         h('span', { class: 'b' }, 'Total'), h('span', { class: 'right b' }, '$' + money(t.total_usd, 2)), h('span', { class: 'right b' }, money(t.total_kip) + ' kip'),
         h('span', {}, 'Paid'), h('span', { class: 'right' }, '$' + money(t.paid_usd, 2)), h('span', {}),
-        h('span', { class: 'b' }, 'Still to pay'), h('span', { class: 'right b' }, '$' + money(t.balance_usd, 2)), h('span', { class: 'right b' }, money(Math.round(t.balance_usd * t.rate)) + ' kip')),
+        h('span', { class: 'b' }, 'Still to pay'), h('span', { class: 'right b' }, '$' + money(t.balance_usd, 2)), h('span', { class: 'right b' }, money(t.balance_kip) + ' kip')),
       h('p', { class: 'muted' }, '1 USD = ' + money(t.rate) + ' kip'),
       d.payments.length ? h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, 'Date'), h('th', { class: 'num' }, 'Amount'), h('th', {}, 'Method'), h('th', {}, 'Taken by'), h('th', {}, 'Note'), h('th', {})),
         d.payments.map(function (p) {
@@ -324,7 +324,7 @@
         r ? 'Update receipt amounts' : 'Issue receipt'),
       r ? h('button', { class: 'btn ghost', onclick: function () { window.print(); } }, 'Print / save as PDF') : null));
     if (r) {
-      var site = location.origin + location.pathname.replace(/admin\/.*$/, '');
+      var site = guestSite();
       rc.appendChild(h('p', { class: 'noprint muted' }, 'Links for the guest: ',
         h('a', { href: site + 'agreement/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'agreement form'), ' · ',
         h('a', { href: site + 'lunch/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'takeaway lunch')));
@@ -368,8 +368,8 @@
         t.transfer_kip ? h('tr', {}, h('td', {}, L.transport), h('td', { class: 'num' }, money(t.transfer_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.transfer_kip))) : null,
         t.lunch_kip ? h('tr', {}, h('td', {}, L.lunch), h('td', { class: 'num' }, money(t.lunch_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.lunch_kip))) : null,
         h('tr', {}, h('td', {}, h('strong', {}, L.total)), h('td', { class: 'num' }, h('strong', {}, money(t.total_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(t.total_kip)))),
-        h('tr', {}, h('td', {}, paid ? L.paid : L.deposit), h('td', { class: 'num' }, money(t.paid_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.paid_usd * t.rate)))),
-        h('tr', {}, h('td', {}, h('strong', {}, L.balance)), h('td', { class: 'num' }, h('strong', {}, money(t.balance_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(Math.round(t.balance_usd * t.rate))))))),
+        h('tr', {}, h('td', {}, paid ? L.paid : L.deposit), h('td', { class: 'num' }, money(t.paid_usd, 2)), h('td', { class: 'num' }, money(t.paid_kip))),
+        h('tr', {}, h('td', {}, h('strong', {}, L.balance)), h('td', { class: 'num' }, h('strong', {}, money(t.balance_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(t.balance_kip)))))),
       h('p', { class: 'muted' }, L.rate + ': 1 USD = ' + money(t.rate) + ' kip'),
       paid ? h('p', { class: 'paid' }, '✓ ' + String(L.paid).toUpperCase()) : null,
       h('p', { style: 'margin-top:28px' }, L.custsig + ': ______________________      ' + L.issuedby + ': ' + (r.issued_by || '______________')),
@@ -511,6 +511,12 @@
     main.appendChild(viewPassword(false));
   }
 
+  // Where the guest pages (agreement, lunch) live. The dashboard runs on app.<domain>; the website is on <domain>.
+  function guestSite() {
+    if (/^app\./.test(location.hostname)) return 'https://' + location.hostname.slice(4) + '/';
+    return location.origin + location.pathname.replace(/admin\/.*$/, '');
+  }
+
   /* ---------- tables and spreadsheet download ---------- */
   // cols: [[header, key or function(row), 'num'?], ...]
   function table(cols, rows, name) {
@@ -577,7 +583,7 @@
       state.agFrom = from.value; state.agTo = to.value;
       api('agreements', { from: from.value, to: to.value || from.value }).then(function (d) {
         body.textContent = '';
-        var signed = d.rows.filter(function (r) { return r.agreement_id; }).length, site = location.origin + location.pathname.replace(/admin\/.*$/, '');
+        var signed = d.rows.filter(function (r) { return r.agreement_id; }).length, site = guestSite();
         var card = h('div', { class: 'card' }, h('p', {}, h('strong', {}, signed + ' of ' + d.rows.length + ' travellers have signed')));
         if (!d.rows.length) card.appendChild(h('p', { class: 'muted' }, 'No tours start in these dates.'));
         d.rows.forEach(function (r) {

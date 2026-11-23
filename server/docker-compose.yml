@@ -1,0 +1,27 @@
+# Local copy of what runs on Hostinger: PHP 8.2 + Apache and MariaDB. Not used in production.
+#   docker compose -f server/docker-compose.yml up -d      -> http://localhost:8787/
+services:
+  web:
+    image: php:8.2-apache
+    command: bash -c "docker-php-ext-install pdo_mysql >/dev/null && apache2-foreground"
+    ports: ["8787:80"]
+    environment:
+      NK_DB_HOST: db
+      NK_DB_NAME: nongkhiaw
+      NK_DB_USER: nongkhiaw
+      NK_DB_PASS: localonly
+    volumes:
+      - ./public:/var/www/html
+      - ./lib:/var/www/lib
+      - ../admin:/var/www/html/admin
+    depends_on: [db]
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_DATABASE: nongkhiaw
+      MARIADB_USER: nongkhiaw
+      MARIADB_PASSWORD: localonly
+      MARIADB_ROOT_PASSWORD: localonly
+    ports: ["33307:3306"]
+    volumes:
+      - ./schema:/docker-entrypoint-initdb.d:ro

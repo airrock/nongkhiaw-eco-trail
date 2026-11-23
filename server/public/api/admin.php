@@ -4,10 +4,12 @@
 //   admin : everything.   staff (office staff): bookings, travellers, payments in, receipts, daily lists.
 declare(strict_types=1);
 ini_set('display_errors', '0');   // errors go to the server log, never to the page
-require_once __DIR__ . '/../../lib/rules.php';
-require_once __DIR__ . '/../../lib/auth.php';
-require_once __DIR__ . '/../../lib/transport.php';
-require_once __DIR__ . '/../../lib/reports.php';
+// lib/ sits two folders up locally; on the hosting it is kept outside the web folder, in nk/lib
+$lib = is_dir(__DIR__ . '/../../lib') ? __DIR__ . '/../../lib' : __DIR__ . '/../../../nk/lib';
+require_once $lib . '/rules.php';
+require_once $lib . '/auth.php';
+require_once $lib . '/transport.php';
+require_once $lib . '/reports.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');

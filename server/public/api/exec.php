@@ -4,7 +4,9 @@
 //   GET ?config=1 | ?reviews=1 | ?agreement=<key> | ?lunch=<key>
 declare(strict_types=1);
 ini_set('display_errors', '0');   // errors go to the server log, never to the page
-require_once __DIR__ . '/../../lib/rules.php';
+// lib/ sits two folders up locally; on the hosting it is kept outside the web folder, in nk/lib
+$lib = is_dir(__DIR__ . '/../../lib') ? __DIR__ . '/../../lib' : __DIR__ . '/../../../nk/lib';
+require_once $lib . '/rules.php';
 
 header('Access-Control-Allow-Origin: *');
 header('Cache-Control: no-store');

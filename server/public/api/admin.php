@@ -6,6 +6,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../lib/rules.php';
 require_once __DIR__ . '/../../lib/auth.php';
 require_once __DIR__ . '/../../lib/transport.php';
+require_once __DIR__ . '/../../lib/reports.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -73,7 +74,8 @@ try {
   if ($user['must_change_password']) out(['error' => 'Choose your own password first.'], 403);   // signed in with a temporary password
   $admin = $user['role'] === 'admin';
   $adminOnly = ['booking_delete', 'booking_restore', 'payment_edit', 'payment_delete', 'settings_save', 'tour_save', 'tour_delete',
-    'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'history_all'];
+    'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'arrange', 'account_save', 'accounts', 'agency', 'agency_save', 'agency_delete',
+    'agreement_delete', 'inquiry_delete', 'reviews', 'review_save', 'review_delete', 'plans', 'plan_save'];
   if (in_array($action, $adminOnly, true) && !$admin) out(['error' => 'Only an admin can do this.'], 403);
 
   switch ($action) {
@@ -277,6 +279,99 @@ try {
 
     /* ----- pickups and minivan lists for one day ----- */
     case 'transport': out(transport_day(date_or_null($in['date'] ?? null) ?? lao_today()));
+
+    /* ----- daily lists (everyone) ----- */
+    case 'guide_report': out(guide_report(date_or_null($in['date'] ?? null) ?? lao_today()));
+    case 'lunch_report': out(lunch_report(date_or_null($in['date'] ?? null) ?? lao_today()));
+    case 'collect_report': {
+      $from = date_or_null($in['from'] ?? null) ?? lao_today();
+      out(collect_report($from, max($from, date_or_null($in['to'] ?? null) ?? $from)));
+    }
+
+    /* ----- agreements and inquiries ----- */
+    case 'agreements': {
+      $from = date_or_null($in['from'] ?? null) ?? lao_today(); $to = max($from, date_or_null($in['to'] ?? null) ?? $from);
+      out(['rows' => all("SELECT t.booking_id, t.n, t.full_name, b.tour_date, b.tour, r.no AS receipt_no, r.form_key, r.language, a.id AS agreement_id, a.submitted_at,
+          a.photo_permission, a.medical, a.ec_name, a.ec_phone, a.insurance, a.signed_name, a.staff_checked
+        FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id LEFT JOIN agreements a ON a.booking_id = t.booking_id AND a.n = t.n
+        WHERE b.deleted_at IS NULL AND b.status <> 'Cancelled' AND t.status <> 'Cancelled' AND b.tour <> ? AND b.tour_date BETWEEN ? AND ? ORDER BY b.tour_date, t.booking_id, t.n",
+        [TRANSPORT_ONLY, $from, $to])]);
+    }
+    case 'agreement_check':
+      update_row('agreements', 'id = ?', [(int) $in['id']], ['staff_checked'], ['staff_checked' => !empty($in['checked'])], (string) (int) $in['id'], $user); out(['ok' => true]);
+    case 'agreement_delete':
+      q('DELETE FROM agreements WHERE id = ?', [(int) $in['id']]); log_change('agreements', (string) (int) $in['id'], 'delete', null, null, $user); out(['ok' => true]);
+    case 'inquiries': out(['rows' => all("SELECT * FROM inquiries " . (empty($in['all']) ? "WHERE status IN ('New','Replied')" : '') . ' ORDER BY submitted_at DESC LIMIT 300')]);
+    case 'inquiry_save': {
+      $f = (array) ($in['fields'] ?? []);
+      if (isset($f['status']) && !in_array($f['status'], ['New', 'Replied', 'Booked', 'Closed'], true)) throw new Refused('Unknown status.');
+      update_row('inquiries', 'id = ?', [(int) $in['id']], ['status', 'staff_notes'], $f, (string) (int) $in['id'], $user); out(['ok' => true]);
+    }
+    case 'inquiry_delete': q('DELETE FROM inquiries WHERE id = ?', [(int) $in['id']]); out(['ok' => true]);
+
+    /* ----- money reports and website reviews (admin) ----- */
+    case 'arrange': out(arrange_tour(date_or_null($in['date'] ?? null) ?? lao_today(), clean($in['tour'] ?? '', 5)));
+    case 'account_save': {
+      $date = date_or_null($in['date'] ?? null); $tour = clean($in['tour'] ?? '', 5);
+      if (!$date || $tour === '') throw new Refused('Pick the date and the tour first.');
+      $lines = array_values(array_filter(array_map(fn ($l) => ['item' => clean($l['item'] ?? '', 200), 'counted_per' => clean($l['counted_per'] ?? '', 20),
+        'qty' => (float) ($l['qty'] ?? 0), 'unit_kip' => (float) ($l['unit_kip'] ?? 0), 'total_kip' => round((float) ($l['qty'] ?? 0) * (float) ($l['unit_kip'] ?? 0))],
+        (array) ($in['lines'] ?? [])), fn ($l) => $l['item'] !== ''));
+      $a = arrange_tour($date, $tour);
+      $guests = is_numeric($in['guests'] ?? null) ? (int) $in['guests'] : $a['guests'];
+      $income = is_numeric($in['income_kip'] ?? null) ? (float) $in['income_kip'] : $a['income_kip'];
+      $expense = array_sum(array_column($lines, 'total_kip'));
+      q('INSERT INTO tour_accounts (tour_date, tour, guests, receipt_nos, booking_ids, expense_kip, income_kip, profit_kip, costs, saved_at) VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())
+         ON DUPLICATE KEY UPDATE guests = VALUES(guests), receipt_nos = VALUES(receipt_nos), booking_ids = VALUES(booking_ids), expense_kip = VALUES(expense_kip),
+           income_kip = VALUES(income_kip), profit_kip = VALUES(profit_kip), costs = VALUES(costs), saved_at = VALUES(saved_at)',
+        [$date, $tour, $guests, $a['receipt_nos'], $a['booking_ids'], $expense, $income, $income - $expense, json_encode($lines, JSON_UNESCAPED_UNICODE)]);
+      log_change('tour_accounts', "$date $tour", 'update', null, ['expense_kip' => $expense, 'income_kip' => $income], $user);
+      out(['ok' => true, 'profit_kip' => $income - $expense]);
+    }
+    case 'accounts': out(['rows' => all('SELECT * FROM tour_accounts ORDER BY tour_date DESC, tour LIMIT 400')]);
+    case 'agency': {
+      $prices = []; foreach (all('SELECT code, price_usd FROM tours') as $t) $prices[$t['code']] = (float) $t['price_usd'];
+      $rows = array_map(function ($r) use ($prices) {
+        $d = json_decode($r['data'], true) ?: [];
+        $guests = (float) ($d['guests'] ?? 0);
+        $price = is_numeric($d['price_usd'] ?? null) ? (float) $d['price_usd'] : ($prices[$d['tour'] ?? ''] ?? 0);
+        $sender = (float) ($d['sender_usd'] ?? 0) * $guests;
+        return ['id' => (int) $r['id'], 'tour_date' => $r['tour_date'], 'booking_id' => $r['booking_id']] + $d + ['total_usd' => $price * $guests, 'sender_gets_usd' => $sender, 'receiver_keeps_usd' => $price * $guests - $sender];
+      }, all('SELECT * FROM agency_share ORDER BY tour_date DESC, id DESC LIMIT 400'));
+      out(['rows' => $rows]);
+    }
+    case 'agency_save': {
+      $d = [];
+      foreach (['tour', 'guests', 'sending_agency', 'receiving_agency', 'price_usd', 'sender_usd', 'guide_name', 'guide_whatsapp', 'notes', 'accommodation', 'remark'] as $k) $d[$k] = clean($in[$k] ?? '', 300);
+      $row = [date_or_null($in['tour_date'] ?? null), clean($in['booking_id'] ?? '', 40), json_encode($d, JSON_UNESCAPED_UNICODE)];
+      if (!empty($in['id'])) q('UPDATE agency_share SET tour_date = ?, booking_id = ?, data = ? WHERE id = ?', array_merge($row, [(int) $in['id']]));
+      else q('INSERT INTO agency_share (tour_date, booking_id, data) VALUES (?,?,?)', $row);
+      out(['ok' => true]);
+    }
+    case 'agency_delete': q('DELETE FROM agency_share WHERE id = ?', [(int) $in['id']]); out(['ok' => true]);
+    case 'reviews': out(['rows' => all('SELECT * FROM reviews ORDER BY review_date IS NULL, review_date DESC, id')]);
+    case 'review_save': {
+      $row = [(int) !empty($in['show']), date_or_null($in['review_date'] ?? null), clean($in['name'] ?? '', 120), clean($in['review'] ?? '', 3000)];
+      if (!empty($in['id'])) q('UPDATE reviews SET `show` = ?, review_date = ?, name = ?, review = ? WHERE id = ?', array_merge($row, [(int) $in['id']]));
+      else q('INSERT INTO reviews (`show`, review_date, name, review) VALUES (?,?,?,?)', $row);
+      out(['ok' => true]);
+    }
+    case 'review_delete': q('DELETE FROM reviews WHERE id = ?', [(int) $in['id']]); out(['ok' => true]);
+    // tour plans: the days, the add-on and the cost lines of one tour, saved together
+    case 'plans': out(['days' => all('SELECT * FROM tour_days ORDER BY tour, day'), 'addons' => all('SELECT * FROM tour_addons ORDER BY tour'), 'costs' => all('SELECT * FROM tour_costs ORDER BY tour, id')]);
+    case 'plan_save': {
+      $tour = clean($in['tour'] ?? '', 5);
+      if (!val('SELECT 1 FROM tours WHERE code = ?', [$tour])) throw new Refused('Unknown tour.');
+      tx(function () use ($tour, $in, $user) {
+        q('DELETE FROM tour_days WHERE tour = ?', [$tour]); q('DELETE FROM tour_addons WHERE tour = ?', [$tour]); q('DELETE FROM tour_costs WHERE tour = ?', [$tour]);
+        foreach (array_values((array) ($in['days'] ?? [])) as $i => $plan) if (clean($plan, 2000) !== '') q('INSERT INTO tour_days (tour, day, plan) VALUES (?,?,?)', [$tour, $i + 1, clean($plan, 2000)]);
+        if (clean($in['addon'] ?? '', 200) !== '') q('INSERT INTO tour_addons (tour, addon, starts_day) VALUES (?,?,?)', [$tour, clean($in['addon'], 200), is_numeric($in['addon_day'] ?? null) ? (int) $in['addon_day'] : null]);
+        foreach ((array) ($in['costs'] ?? []) as $c) if (clean($c['item'] ?? '', 200) !== '')
+          q('INSERT INTO tour_costs (tour, item, unit_kip, counted_per, qty) VALUES (?,?,?,?,?)', [$tour, clean($c['item'], 200), (float) ($c['unit_kip'] ?? 0), clean($c['counted_per'] ?? 'group', 20) ?: 'group', (float) ($c['qty'] ?? 1) ?: 1]);
+        log_change('tour_days', $tour, 'update', null, null, $user);
+      });
+      out(['ok' => true]);
+    }
 
     /* ----- history of one booking ----- */
     case 'history': {

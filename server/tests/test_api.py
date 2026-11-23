@@ -163,6 +163,32 @@ eq((tr['up_pax'], tr['down_pax'], tr['down'][0]['drop'], tr['down'][0]['place'])
 eq('ລົງ: 03/02 3:30-4:30 PM ສົ່ງສະຖານີລົດໄຟ' in tr['down'][0]['team'], True, 'team message: time from the remark, train station')
 eq(office.ok('transport', date='2030-02-07')['down'], [], 'a deleted booking is not on the list')
 
+# ---------- daily lists and money reports ----------
+admin.ok('plan_save', tour='102', days=['Hike up', 'Hike down'], addon='Kayak', addon_day=2, costs=[{'item': 'Guide', 'unit_kip': 300000, 'counted_per': 'group', 'qty': 1},
+    {'item': 'Food', 'unit_kip': 50000, 'counted_per': 'person'}, {'item': 'Tent', 'unit_kip': 80000, 'counted_per': '2 people'}])
+refused(office.call('plan_save', tour='102', days=[]), 'staff changes tour plans', 403)
+g = office.ok('guide_report', date='2030-02-02')
+eq((g['pax'], g['rows'][0]['day'], g['rows'][0]['plan'], g['rows'][0]['addon_date'], g['rows'][0]['food']), (3, 'Day 2 of 2', 'Hike down', '2030-02-02', 'Vegan 1, Halal 1, Regular 1'), 'guide report: day 2 of the tour')
+eq(office.ok('guide_report', date='2030-02-03')['rows'], [], 'guide report: tour is over on day 3')
+l = office.ok('lunch_report', date='2030-02-01')
+eq((len(l['rows']), l['dishes'], l['total_kip'], l['message'].split('\n')[:2]), (2, {'Fried rice': 1, 'Fried rice Tofu': 1}, 80000, ['01/02', '1.) Fried rice Tofu x1 : SELFTEST-Ann One']), 'lunch report and kitchen message')
+c = office.ok('collect_report', **{'from': '2030-02-01', 'to': '2030-02-01'})
+eq((len(c['rows']), c['rows'][0]['total_usd'], c['rows'][0]['paid_usd'], c['rows'][0]['due_usd'], c['total']['due_kip']), (1, 234.22, 100, 134.22, 3019950), 'collect on arrival')
+refused(office.call('arrange', date='2030-02-01', tour='102'), 'staff opens tour costs', 403)
+refused(office.call('agency'), 'staff opens agency share', 403)
+a = admin.ok('arrange', date='2030-02-01', tour='102')
+eq((a['guests'], a['income_kip'], [(x['item'], x['qty'], x['total_kip']) for x in a['lines']]), (3, 4050000, [('Guide', 1, 300000), ('Food', 3, 150000), ('Tent', 2, 160000)]), 'tour costs counted per group, person and 2 people')
+eq(admin.ok('account_save', date='2030-02-01', tour='102', lines=a['lines'])['profit_kip'], 3440000, 'tour account saved')
+admin.ok('account_save', date='2030-02-01', tour='102', lines=a['lines'])
+eq(len(admin.ok('accounts')['rows']), 1, 'saving again replaces the row')
+admin.ok('agency_save', tour_date='2030-02-01', tour='102', guests='3', sending_agency='A', receiving_agency='B', sender_usd='10')
+ag0 = admin.ok('agency')['rows'][0]
+eq((ag0['total_usd'], ag0['sender_gets_usd'], ag0['receiver_keeps_usd']), (180, 30, 150), 'agency share')
+iq = office.ok('inquiries')['rows']
+office.ok('inquiry_save', id=iq[0]['id'], fields={'status': 'Replied', 'staff_notes': 'answered'})
+eq(office.ok('inquiries')['rows'][0]['status'], 'Replied', 'inquiry updated')
+refused(office.call('inquiry_delete', id=iq[0]['id']), 'staff deletes an inquiry', 403)
+
 # ---------- agreement and lunch links ----------
 k1 = sqlval("SELECT form_key FROM receipts WHERE no='000001'"); k2 = sqlval("SELECT form_key FROM receipts WHERE no='000002'")
 eq(site(query='?agreement=0123456789abcdef')[1], {'error': 'invalid'}, 'bad key')
@@ -178,6 +204,11 @@ eq(site(query='?agreement=' + k1)[1]['signed'], [1], 'signed list')
 refused(site({"type": "agreement", "key": "0123456789abcdef", "people": []}), 'agreement with a bad key')
 eq(site({"type": "lunch", "key": k1, "people": [{"n": 2, "lunch": "Fried rice", "choice": "Chicken"}, {"n": 3, "lunch": ""}, {"n": 9, "lunch": "Fried rice"}]})[1], {'saved': 2}, 'lunch saved for 2 and 3')
 eq(site(query='?lunch=' + k1)[1]['travellers'][1]['choice'], 'Chicken', 'lunch read back')
+rows = office.ok('agreements', **{'from': '2030-02-01', 'to': '2030-02-01'})['rows']
+eq([(r['n'], bool(r['agreement_id'])) for r in rows], [(1, True), (2, False), (3, False)], 'agreements list: who signed')
+office.ok('agreement_check', id=rows[0]['agreement_id'], checked=True)
+eq(office.ok('agreements', **{'from': '2030-02-01', 'to': '2030-02-01'})['rows'][0]['staff_checked'], 1, 'agreement marked checked')
+refused(office.call('agreement_delete', id=rows[0]['agreement_id']), 'staff deletes an agreement', 403)
 
 # ---------- change log ----------
 hist = admin.ok('history', id='SELFTEST-A1')['history']

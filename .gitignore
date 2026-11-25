@@ -1,0 +1,2 @@
+# photos staff upload live on the server, not in the code
+server/public/uploads/*.jpg

@@ -13,6 +13,26 @@ function date_or_null($s): ?string {
 }
 function goes_up(string $t): bool { return (bool) preg_match('/round/i', $t) || (preg_match('/one way/i', $t) && !preg_match('/luang prabang/i', $t)); }
 function goes_down(string $t): bool { return (bool) preg_match('/round/i', $t) || (bool) preg_match('/to luang prabang/i', $t); }
+function tour_length(string $tour): int { return max(1, (int) val('SELECT COALESCE(MAX(day), 1) FROM tour_days WHERE tour = ?', [$tour])); }
+
+// The minivan times of a booking: [pickup in Luang Prabang, back from Nong Khiaw]. A time typed on the booking wins.
+// Otherwise the pickup is 7:30 - 8:00 AM; the way back is 3:30 - 4:30 PM on the day the tour ends, else 10:00 - 10:30 AM.
+const PICKUP_TIME = '7:30 - 8:00 AM';
+const RETURN_MORNING = '10:00 - 10:30 AM';
+const RETURN_AFTER_TOUR = '3:30 - 4:30 PM';
+function transfer_times(array $b): array {
+  $up = trim((string) ($b['pickup_time'] ?? '')); $down = trim((string) ($b['return_time'] ?? ''));
+  if ($up === '' && goes_up((string) $b['transfer']) && !empty($b['pickup_date'])) $up = PICKUP_TIME;
+  if ($down === '' && !empty($b['return_date'])) {
+    $remark = (string) ($b['transport_remark'] ?? '');
+    if (!preg_match('/another day/i', $remark) && preg_match('/\d{1,2}(?::\d{2})?\s*(?:-\s*\d{1,2}(?::\d{2})?\s*)?(?:AM|PM)/i', $remark, $m)) $down = preg_replace('/\s*-\s*/', ' - ', $m[0]);
+    else {
+      $ends = !empty($b['tour_date']) && $b['tour'] !== TRANSPORT_ONLY ? (new DateTime($b['tour_date']))->modify('+' . (tour_length((string) $b['tour']) - 1) . ' day')->format('Y-m-d') : null;
+      $down = $ends !== null && $ends === $b['return_date'] ? RETURN_AFTER_TOUR : RETURN_MORNING;
+    }
+  }
+  return [$up, $down];
+}
 
 function country_name($raw): string {
   $s = clean($raw, 60);
@@ -126,11 +146,24 @@ function config_json(): array {
   $content = [];
   foreach (all("SELECT `key`, lang, value FROM content WHERE TRIM(value) <> ''") as $r) $content[$r['lang']][$r['key']] = $r['value'];
   $prices = [];
-  foreach (all('SELECT code, price_usd FROM tours WHERE price_usd > 0') as $r) $prices[$r['code']] = (float) $r['price_usd'];
+  // prices the website shows: the four built-in tours and the tours staff ticked "Show on the website"
+  foreach (all("SELECT code, price_usd FROM tours WHERE price_usd > 0 AND (web_show = 1 OR code IN ('101','102','103','001'))") as $r) $prices[$r['code']] = (float) $r['price_usd'];
   $one = setting_num('transfer_one_kip', 250000);
-  return ['content' => (object) $content, 'prices' => (object) $prices,
+  $tours = [];
+  foreach (all("SELECT * FROM tours WHERE web_show = 1 AND price_usd > 0 AND code NOT IN ('101','102','103','001') ORDER BY sort, code") as $r) {
+    $tours[] = ['code' => $r['code'], 'name' => $r['name'], 'title' => $r['web_title'] ?: $r['name'], 'summary' => $r['web_summary'], 'duration' => $r['web_duration'],
+      'level' => $r['web_level'], 'included' => $r['web_included'], 'photo' => $r['web_photo'] !== '' ? upload_url($r['web_photo']) : '', 'price' => (float) $r['price_usd'],
+      'days' => array_column(all('SELECT plan FROM tour_days WHERE tour = ? ORDER BY day', [$r['code']]), 'plan')];
+  }
+  return ['content' => (object) $content, 'prices' => (object) $prices, 'tours' => $tours,
     'kip' => ['one' => $one, 'round' => setting_num('transfer_round_kip', $one * 2), 'train' => setting_num('train_extra_kip', 70000)],
     'menu' => lunch_menu_json()];
+}
+// Address of a file in the uploads folder (next to api/), as the website on the other domain needs it.
+function upload_url(string $file): string {
+  $https = ($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+  $base = rtrim(str_replace('\\', '/', dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/x'))), '/');
+  return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $base . '/uploads/' . rawurlencode($file);
 }
 function reviews_json(): array {
   return array_map(fn ($r) => ['name' => trim($r['name']), 'text' => trim($r['review'])],

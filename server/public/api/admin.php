@@ -50,7 +50,17 @@ function booking_full(string $id, array $user): array {
   $b = one('SELECT * FROM bookings WHERE id = ?', [$id]);
   if (!$b || ($b['deleted_at'] && $user['role'] !== 'admin')) throw new Refused('Booking not found.');
   $trav = all('SELECT * FROM travellers WHERE booking_id = ? ORDER BY n', [$id]);
-  return ['booking' => $b, 'travellers' => $trav, 'summary' => booking_summary($id, $trav), 'totals' => booking_totals($id),
+  // times nobody typed show the usual ones (they are stored only when staff change them)
+  [$upTime, $downTime] = transfer_times($b);
+  if (trim($b['pickup_time']) === '') $b['pickup_time'] = $upTime;
+  if (trim($b['return_time']) === '') $b['return_time'] = $downTime;
+  // the WhatsApp messages for the guest about the minivan, the same ones as on the Pickups tab
+  $minivan = [];
+  if (!$b['deleted_at']) foreach (['up' => $b['pickup_date'], 'down' => $b['return_date']] as $dir => $day) {
+    if (!$day) continue;
+    foreach (transport_day($day, $id)[$dir] as $x) $minivan[] = ['dir' => $dir, 'date' => $day, 'wa' => $x['wa'], 'guest' => $x['guest'], 'place' => $x['place'], 'stop' => $x['stop'], 'vehicle' => $x['vehicle']];
+  }
+  return ['booking' => $b, 'minivan' => $minivan, 'tour_days' => tour_length((string) $b['tour']), 'travellers' => $trav, 'summary' => booking_summary($id, $trav), 'totals' => booking_totals($id),
     'payments' => all('SELECT * FROM payments WHERE booking_id = ? ORDER BY paid_on, id', [$id]),
     'receipt' => one('SELECT * FROM receipts WHERE booking_id = ?', [$id]),
     'agreements' => all('SELECT * FROM agreements WHERE booking_id = ? ORDER BY n', [$id])];
@@ -77,7 +87,7 @@ try {
   if ($user['must_change_password']) out(['error' => 'Choose your own password first.'], 403);   // signed in with a temporary password
   $admin = $user['role'] === 'admin';
   $adminOnly = ['booking_delete', 'booking_restore', 'payment_edit', 'payment_delete', 'settings_save', 'tour_save', 'tour_delete',
-    'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'arrange', 'account_save', 'accounts', 'agency', 'agency_save', 'agency_delete',
+    'tour_web', 'tour_photo', 'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'arrange', 'account_save', 'accounts', 'agency', 'agency_save', 'agency_delete',
     'agreement_delete', 'inquiry_delete', 'reviews', 'review_save', 'review_delete', 'plans', 'plan_save', 'overview', 'content', 'content_save'];
   if (in_array($action, $adminOnly, true) && !$admin) out(['error' => 'Only an admin can do this.'], 403);
 
@@ -115,6 +125,23 @@ try {
         if (array_intersect($changed, ['transfer', 'train_dropoff']) && !in_array('est_transfer_kip', $changed, true)) {
           $b = one('SELECT transfer, train_dropoff FROM bookings WHERE id = ?', [$id]);
           q('UPDATE bookings SET est_transfer_kip = ? WHERE id = ?', [transfer_kip($b['transfer'], (bool) $b['train_dropoff'], riders($id)), $id]);
+        }
+        // A pickup place or map changed on the booking is the group's place: the travellers who had the old one (or none) follow,
+        // so the Pickups tab, the minivan messages and the receipt all show it. A traveller with their own place keeps it.
+        $now = one('SELECT * FROM bookings WHERE id = ?', [$id]);
+        $same = fn ($a, $b) => mb_strtolower(trim((string) $a)) === mb_strtolower(trim((string) $b));
+        $place = goes_up($now['transfer']) ? 'accommodation' : 'nk_pickup';
+        if (array_intersect($changed, [$place, 'maps_link', 'transfer'])) {
+          $moved = false;
+          foreach (all("SELECT n, pickup_place, pickup_map FROM travellers WHERE booking_id = ? AND pickup_place <> 'No transfer'", [$id]) as $t) {
+            if (in_array($place, $changed, true) && ($same($t['pickup_place'], $old[$place]) || trim($t['pickup_place']) === '') && $now[$place] !== '') {
+              q('UPDATE travellers SET pickup_place = ? WHERE booking_id = ? AND n = ?', [$now[$place], $id, $t['n']]); $moved = true; $t['pickup_place'] = $now[$place];
+            }
+            if ($place === 'accommodation' && in_array('maps_link', $changed, true) && $same($t['pickup_place'], $now['accommodation']) && !$same($t['pickup_map'], $now['maps_link'])) {
+              q('UPDATE travellers SET pickup_map = ? WHERE booking_id = ? AND n = ?', [$now['maps_link'], $id, $t['n']]); $moved = true;
+            }
+          }
+          if ($moved) log_change('travellers', "$id #all", 'update', null, ['pickup_place' => $now[$place]], $user);
         }
         if (in_array('status', $changed, true) && $f['status'] === 'Cancelled') {
           q("UPDATE bookings SET staff_notes = TRIM(CONCAT(staff_notes, ' Cancelled ', ?)) WHERE id = ?", [lao_day(lao_today()), $id]);
@@ -219,7 +246,8 @@ try {
     case 'settings': {
       $s = [];
       foreach (all('SELECT `key`, value FROM settings') as $r) if (in_array($r['key'], SETTING_KEYS, true)) $s[$r['key']] = $r['value'];
-      out(['settings' => $s, 'tours' => all('SELECT * FROM tours ORDER BY sort, code'), 'menu' => all('SELECT * FROM lunch_menu ORDER BY sort, id')]);
+      $tours = array_map(fn ($t) => $t + ['photo_url' => $t['web_photo'] !== '' ? upload_url($t['web_photo']) : ''], all('SELECT * FROM tours ORDER BY sort, code'));
+      out(['settings' => $s, 'tours' => $tours, 'menu' => all('SELECT * FROM lunch_menu ORDER BY sort, id')]);
     }
     case 'settings_save':
       foreach ((array) ($in['settings'] ?? []) as $k => $v) {
@@ -238,6 +266,34 @@ try {
       log_change('tours', $code, $old ? 'update' : 'insert', $old ? ['name' => $old['name'], 'price_usd' => $old['price_usd']] : null,
         ['name' => clean($in['name'] ?? '', 120), 'price_usd' => $in['price_usd']], $user);
       out(['ok' => true]);
+    }
+    // How a tour that staff added shows on the website (the four built-in tours are edited under Website text instead).
+    case 'tour_web': {
+      $code = clean($in['code'] ?? '', 5);
+      if (!val('SELECT 1 FROM tours WHERE code = ?', [$code])) throw new Refused('Unknown tour.');
+      if (!in_array($in['level'] ?? '', ['', 'Easy', 'Moderate', 'Hard'], true)) throw new Refused('Unknown level.');
+      update_row('tours', 'code = ?', [$code], ['web_show', 'web_title', 'web_summary', 'web_duration', 'web_level', 'web_included'],
+        ['web_show' => !empty($in['show']), 'web_title' => clean($in['title'] ?? '', 160), 'web_summary' => clean($in['summary'] ?? '', 1000),
+         'web_duration' => clean($in['duration'] ?? '', 60), 'web_level' => (string) ($in['level'] ?? ''), 'web_included' => clean($in['included'] ?? '', 1000)], $code, $user);
+      out(['ok' => true]);
+    }
+    // The tour's photo: the dashboard sends a JPEG it has already made smaller. Only a real JPEG is kept, under a name made here.
+    case 'tour_photo': {
+      $code = clean($in['code'] ?? '', 5);
+      if (!preg_match('/^[A-Za-z0-9]{1,5}$/', $code) || !val('SELECT 1 FROM tours WHERE code = ?', [$code])) throw new Refused('Unknown tour.');
+      $raw = base64_decode(preg_replace('/^data:image\/jpeg;base64,/', '', (string) ($in['data'] ?? '')), true);
+      if ($raw === false || strlen($raw) < 100 || strlen($raw) > 3000000) throw new Refused('The photo is missing or too large (3 MB at most).');
+      $info = @getimagesizefromstring($raw);
+      if (!$info || $info[2] !== IMAGETYPE_JPEG || $info[0] > 4000 || $info[1] > 4000) throw new Refused('That file is not a JPEG photo.');
+      $dir = dirname(__DIR__) . '/uploads';
+      if (!is_dir($dir) && !mkdir($dir, 0755, true)) throw new RuntimeException('cannot create the uploads folder');
+      $file = 'tour-' . strtolower($code) . '-' . bin2hex(random_bytes(6)) . '.jpg';
+      if (file_put_contents("$dir/$file", $raw) === false) throw new RuntimeException('cannot write the photo');
+      $old = (string) val('SELECT web_photo FROM tours WHERE code = ?', [$code]);
+      q('UPDATE tours SET web_photo = ? WHERE code = ?', [$file, $code]);
+      if (preg_match('/^tour-[a-z0-9]+-[a-f0-9]{12}\.jpg$/', $old) && is_file("$dir/$old")) unlink("$dir/$old");
+      log_change('tours', $code, 'update', null, ['web_photo' => $file], $user);
+      out(['ok' => true, 'photo' => upload_url($file)]);
     }
     case 'tour_delete':
       q('DELETE FROM tours WHERE code = ?', [(string) $in['code']]); log_change('tours', (string) $in['code'], 'delete', null, null, $user); out(['ok' => true]);
@@ -286,8 +342,21 @@ try {
 
     /* ----- pickups and minivan lists for one day ----- */
     case 'transport': out(transport_day(date_or_null($in['date'] ?? null) ?? lao_today()));
+    case 'transport_plate': {
+      $dir = ($in['dir'] ?? '') === 'up' ? 'up' : 'down';
+      $n = set_day_plate(date_or_null($in['date'] ?? null) ?? lao_today(), $dir, clean($in['plate'] ?? '', 60), $user);
+      out(['ok' => true, 'bookings' => $n]);
+    }
 
     /* ----- daily lists (everyone) ----- */
+    case 'tour_report': out(tour_report(date_or_null($in['date'] ?? null) ?? lao_today()));
+    case 'guide_save': {
+      $date = date_or_null($in['date'] ?? null); $tour = clean($in['tour'] ?? '', 5); $guide = clean($in['guide'] ?? '', 120);
+      if (!$date || $tour === '') throw new Refused('Pick the date first.');
+      if ($guide === '') q('DELETE FROM day_guides WHERE day = ? AND tour = ?', [$date, $tour]);
+      else q('INSERT INTO day_guides (day, tour, guide) VALUES (?,?,?) ON DUPLICATE KEY UPDATE guide = VALUES(guide)', [$date, $tour, $guide]);
+      out(['ok' => true]);
+    }
     case 'guide_report': out(guide_report(date_or_null($in['date'] ?? null) ?? lao_today()));
     case 'lunch_report': out(lunch_report(date_or_null($in['date'] ?? null) ?? lao_today()));
     case 'collect_report': {
@@ -301,7 +370,7 @@ try {
       out(['rows' => all("SELECT t.booking_id, t.n, t.full_name, b.tour_date, b.tour, r.no AS receipt_no, r.form_key, r.language, a.id AS agreement_id, a.submitted_at,
           a.photo_permission, a.medical, a.ec_name, a.ec_phone, a.insurance, a.signed_name, a.staff_checked
         FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id LEFT JOIN agreements a ON a.booking_id = t.booking_id AND a.n = t.n
-        WHERE b.deleted_at IS NULL AND b.status <> 'Cancelled' AND t.status <> 'Cancelled' AND b.tour <> ? AND b.tour_date BETWEEN ? AND ? ORDER BY b.tour_date, t.booking_id, t.n",
+        WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND b.tour <> ? AND b.tour_date BETWEEN ? AND ? ORDER BY b.tour_date, t.booking_id, t.n",
         [TRANSPORT_ONLY, $from, $to])]);
     }
     case 'agreement_check':

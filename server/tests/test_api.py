@@ -165,7 +165,7 @@ eq('booked by SELFTEST-Ann One' in tr['up'][1]['team'], True, 'second stop names
 eq(tr['up'][0]['guest'].split('\n')[:3], ['Hello SELFTEST-Ann! Your minivan to Nong Khiaw is booked for on 01/02/2030.', 'Pickup at Sunset Hostel between 7:30 and 8:00 AM.', 'The plate number is AB 1234.'], 'guest message')
 tr = office.ok('transport', date='2030-02-03')
 eq((tr['up_pax'], tr['down_pax'], tr['down'][0]['drop'], tr['down'][0]['place']), (0, 2, 'Luang Prabang train station', 'Office (The Trio Bar & Cafe)'), 'way back')
-eq('ລົງ: 03/02 3:30-4:30 PM ສົ່ງສະຖານີລົດໄຟ' in tr['down'][0]['team'], True, 'team message: time from the remark, train station')
+eq('ລົງ: 03/02 3:30 - 4:30 PM ສົ່ງສະຖານີລົດໄຟ' in tr['down'][0]['team'], True, 'team message: time from the remark, train station')
 eq(office.ok('transport', date='2030-02-07')['down'], [], 'a deleted booking is not on the list')
 
 # ---------- daily lists and money reports ----------
@@ -244,4 +244,69 @@ rno = admin.ok('booking', id='SELFTEST-A1')['receipt']['no']
 rs = office.ok('receipt_save', no=rno, overrides={'tour': 'Camping, private', 'note': 'Paid by friend', 'hack': 'x', 'thanks': ''})['receipt']
 eq(json.loads(rs['overrides']), {'tour': 'Camping, private', 'note': 'Paid by friend'}, 'receipt wording keeps only the known, filled fields')
 eq(admin.ok('booking', id='SELFTEST-A1')['receipt']['no'], rno, 'wording does not change the receipt number')
+
+# ---------- feedback round 2026-11-25: times, no-show, pickup place, team and minivan lists, Excel, tours on the website ----------
+bk = admin.ok('booking', id='SELFTEST-A1')
+eq((bk['booking']['pickup_time'], bk['booking']['return_time']), ('7:30 - 8:00 AM', '3:30 - 4:30 PM'), 'minivan times are filled in when nobody typed them')
+eq(sqlval("SELECT CONCAT(pickup_time, '|', return_time) FROM bookings WHERE id='SELFTEST-A1'"), '|', 'the usual times are not stored')
+admin.ok('booking_save', id='SELFTEST-A1', fields={'return_time': '2 PM', 'transport_remark': ''})
+eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '2 PM', 'a typed time wins')
+admin.ok('booking_save', id='SELFTEST-A1', fields={'return_time': ''})
+eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '10:00 - 10:30 AM', 'back on a later day: morning minivan')
+admin.ok('booking_save', id='SELFTEST-A1', fields={'return_date': '2030-02-02'})
+eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '3:30 - 4:30 PM', 'back on the day the tour ends: afternoon minivan')
+admin.ok('booking_save', id='SELFTEST-A1', fields={'return_date': '2030-02-03', 'transport_remark': 'Back after the tour, about 3:30-4:30 PM'})
+eq([m['dir'] for m in bk['minivan']], ['up', 'up', 'down'], 'booking carries the minivan messages for the guest')
+eq('Pickup at Sunset Hostel between 7:30 and 8:00 AM.' in bk['minivan'][0]['guest'], True, 'minivan message names place and time')
+
+tr = office.ok('transport', date='2030-02-01')
+eq(([(r['no'], r['name'], r['pax'], r['place'], r['time']) for r in tr['up_rows']]), [(1, 'SELFTEST-Ann One', 2, 'Sunset Hostel', '7:30 - 8:00 AM'), (2, 'SELFTEST-Bo Two', '', 'Villa Maly', '7:30 - 8:00 AM')], 'list for the minivan manager, one row per guest')
+eq((tr['up_rows'][0]['lunch'], tr['up_rows'][0]['lunch_qty'], tr['up_rows'][0]['food']), ('Fried rice (Tofu)', 1, 'Vegan'), 'pickup list keeps food and lunch')
+old_place = sqlval("SELECT accommodation FROM bookings WHERE id='SELFTEST-A1'")
+admin.ok('booking_save', id='SELFTEST-A1', fields={'accommodation': 'Jam Hostel', 'maps_link': 'https://maps.example/jam'})
+tr = office.ok('transport', date='2030-02-01')
+eq([(u['place'], u['map']) for u in tr['up']], [('Jam Hostel', 'https://maps.example/jam'), ('Villa Maly', tr['up'][1]['map'])], 'a pickup place changed on the booking reaches the pickups list; a guest with their own place keeps it')
+admin.ok('booking_save', id='SELFTEST-A1', fields={'accommodation': old_place})
+eq(office.ok('transport', date='2030-02-01')['up'][0]['place'], old_place, 'and back again')
+eq(office.ok('transport_plate', date='2030-02-01', dir='up', plate='ກກ 7519')['bookings'], 1, 'one plate number for the whole list')
+eq(sqlval("SELECT vehicle_to_nk FROM bookings WHERE id='SELFTEST-A1'"), 'ກກ 7519', 'plate saved on the booking')
+dn = office.ok('transport', date='2030-02-03')
+eq((dn['down_rows'][0]['notes'], dn['down_slots']), ('Leave at 3:30 - 4:30 PM, drop off at the train station', [{'time': '3:30 - 4:30 PM', 'pax': 2, 'train': 2}]), 'way back: note and head count per leaving time')
+
+rep = office.ok('tour_report', date='2030-02-01')
+eq((rep['pax'], [(r['no'], r['tour'], r['receipt_no'], r['pax']) for r in rep['rows']], [(x['tour'], x['pax']) for x in rep['lines']]),
+   (3, [(1, '102', '000001', 3), (2, '102', '000001', ''), (3, '102', '000001', '')], [('101', 3), ('102', 3)]), 'tour report: the group line counts everyone, each package its own')
+office.ok('guide_save', date='2030-02-01', tour='101', guide='Mr Boun Mee')
+eq(office.ok('tour_report', date='2030-02-01')['lines'][0]['guide'], 'Mr Boun Mee', 'guide of the day saved')
+office.ok('guide_save', date='2030-02-01', tour='101', guide='')
+eq(sqlval('SELECT COUNT(*) FROM day_guides'), '0', 'an emptied guide is removed')
+l = office.ok('lunch_report', date='2030-02-01')
+eq((l['rows'][0]['no'], l['rows'][0]['receipt_no'], l['rows'][0]['food'], l['rows'][0]['day']), (1, '000001', 'Vegan', '2030-02-01'), 'kitchen report: receipt number, food type and date')
+
+admin.ok('booking_save', id='SELFTEST-A1', fields={'status': 'No-show'})
+eq((office.ok('trip_sheet', date='2030-02-01')['rows'], office.ok('tour_report', date='2030-02-01')['rows'], office.ok('lunch_report', date='2030-02-01')['rows'],
+    office.ok('transport', date='2030-02-01')['up'], office.ok('collect_report', **{'from': '2030-02-01', 'to': '2030-02-01'})['rows']), ([], [], [], [], []), 'a no-show booking is on none of the daily lists')
+admin.ok('booking_save', id='SELFTEST-A1', fields={'status': 'Confirmed'})
+admin.ok('traveller_save', booking_id='SELFTEST-A1', n=2, fields={'status': 'No-show'})
+eq(len(office.ok('trip_sheet', date='2030-02-01')['rows']), 2, 'a no-show traveller is left out too')
+admin.ok('traveller_save', booking_id='SELFTEST-A1', n=2, fields={'status': ''})
+
+sql("DELETE FROM tours WHERE code = '201'")
+admin.ok('tour_save', code='201', name='Waterfall day', price_usd=25, sort=9)
+eq([t['code'] for t in site(query='?config=1')[1]['tours']], [], 'a new tour is not on the website until it is ticked')
+refused(office.call('tour_web', code='201', show=True), 'office cannot put a tour on the website', 403)
+admin.ok('plan_save', tour='201', days=['Walk to the 100 waterfalls', ''], addon='', costs=[])
+admin.ok('tour_web', code='201', show=True, title='1 day: 100 waterfalls', summary='A wet walk.', duration='1 day', level='Easy', included='Guide, lunch')
+wt = site(query='?config=1')[1]['tours']
+eq((len(wt), wt[0]['code'], wt[0]['title'], wt[0]['price'], wt[0]['days'], wt[0]['level'], wt[0]['photo']), (1, '201', '1 day: 100 waterfalls', 25, ['Walk to the 100 waterfalls'], 'Easy', ''), 'the ticked tour reaches the website with its days and price')
+JPEG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA='
+refused(admin.call('tour_photo', code='201', data='data:image/jpeg;base64,' + 'iVBORw0KGgo' * 20), 'a file that is not a JPEG is refused')
+refused(office.call('tour_photo', code='201', data=JPEG), 'office cannot upload a tour photo', 403)
+ph = admin.ok('tour_photo', code='201', data='data:image/jpeg;base64,' + JPEG)['photo']
+eq((ph.startswith(BASE + '/uploads/tour-201-'), urllib.request.urlopen(ph).status, site(query='?config=1')[1]['tours'][0]['photo']), (True, 200, ph), 'tour photo saved and served')
+bid = 'SELFTEST-W201'
+eq(site({"type": "booking", "id": bid, "tour": "201", "date": "2030-03-01", "transfer": "No", "travellers": [{"first": "SELFTEST-Wa", "last": "Ter", "nat": "Laos"}]})[1], 'ok', 'website booking of the new tour')
+eq(sqlval(f"SELECT CONCAT(tour_name, '|', est_tour_usd) FROM bookings WHERE id='{bid}'"), 'Waterfall day|25.00', 'the new tour is priced from the price list')
+admin.ok('tour_web', code='201', show=False)
+eq(site(query='?config=1')[1]['tours'], [], 'unticked: off the website again')
 print(f'all {n} checks passed')

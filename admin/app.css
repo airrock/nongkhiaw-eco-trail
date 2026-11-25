@@ -70,3 +70,18 @@ td.num,th.num{text-align:right;white-space:nowrap}
 .trav>textarea{display:block;width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;font-size:1rem}
 .btn.danger{color:var(--red);border-color:var(--red)}
 details>summary{cursor:pointer}
+
+/* receipt in the old sheet's layout */
+.receipt .rtitle{font-size:1.5rem;font-weight:800;letter-spacing:.04em}
+.receipt .rno{color:#c0392b;font-size:1.1rem}
+.receipt .rinfo{width:100%;border-collapse:collapse;margin:0 0 12px}
+.receipt .rinfo th{text-align:left;white-space:nowrap;padding:3px 10px 3px 0;vertical-align:top;font-weight:700;border:0;background:none}
+.receipt .rinfo th.r{text-align:right;padding-left:14px}
+.receipt .rinfo td{padding:3px 0;border:0;vertical-align:top}
+.receipt .rtab{width:100%}
+.receipt .rtab th{background:#e8f0ea}
+.receipt .rtotal td{font-weight:800;border-top:2px solid var(--forest)}
+.receipt .rbalance td{font-weight:800;background:#fff2a8}
+.red{color:#c0392b}
+.tourphoto{width:150px;height:100px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+@media print{.receipt .rtab th{background:#e8f0ea !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.receipt .rbalance td{background:#fff2a8 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}

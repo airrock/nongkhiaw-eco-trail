@@ -185,17 +185,49 @@
       });
       return card;
     }
+    // The day's list in one direction, as it goes to the minivan manager: one row per guest, the plate number for all of them.
+    function dayList(d, upWay) {
+      var rows = upWay ? d.up_rows : d.down_rows, short = day(d.date).slice(0, 5);
+      var title = upWay ? short + ' ຂຶ້ນ (Luang Prabang - Nong Khiaw)' : short + ' ລົງ (Nong Khiaw - Luang Prabang)';
+      var pkg = function (r) { return r.tour === 'T00' ? 'Transport only' : 'Package ' + r.tour; };
+      var cols = upWay ? [['No', 'no'], ['Booking ID', 'booking_id'], ['Package', pkg], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', 'food'],
+          ['Pickup date', function (r) { return day(r.date); }], ['Pickup time', 'time'], ['Pick-up location', 'place'], ['Map', 'map'], ['Menu', 'lunch'], ['Qty', 'lunch_qty'], ['Food date', function (r) { return day(r.lunch_date); }], ['Plate no', 'vehicle']]
+        : [['No', 'no'], ['Booking ID', 'booking_id'], ['Package', pkg], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Departure date', function (r) { return day(r.date); }],
+          ['Notes', 'notes'], ['Pickup in Nong Khiaw', 'place'], ['Plate no', 'vehicle']];
+      var lines = upWay ? ['Pick up in Luang Prabang: ' + rows.length + 'pax']
+        : d.down_slots.map(function (x) { return 'Leave ' + x.time + ': ' + x.pax + 'pax' + (x.train ? ' (' + x.train + ' drop off at the train)' : ''); }).concat(d.down_slots.length > 1 ? ['Total: ' + rows.length + 'pax'] : []);
+      var plates = []; rows.forEach(function (r) { if (r.vehicle && plates.indexOf(r.vehicle) === -1) plates.push(r.vehicle); });
+      var plate = input('plate', plates.length === 1 ? plates[0] : '', { placeholder: 'e.g. ກກ 7519' });
+      var card = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, title + ' · ' + rows.length + ' pax'));
+      if (!rows.length) { card.appendChild(h('p', { class: 'muted' }, 'Nobody on this date.')); return card; }
+      card.appendChild(table(cols, rows, title.replace(/[()]/g, '').replace('/', '.'), lines.map(function (x) { return ['', '', '', '', x]; })));
+      card.appendChild(h('div', {}, lines.map(function (x) { return h('p', { style: 'margin:2px 0;font-weight:700' }, x); })));
+      card.appendChild(h('div', { class: 'bar noprint', style: 'margin-top:10px' },
+        h('button', { class: 'btn ghost small', onclick: function () {
+          copyText((upWay ? 'ຂຶ້ນ ' : 'ລົງ ') + day(d.date) + (upWay ? ' Luang Prabang - Nong Khiaw' : ' Nong Khiaw - Luang Prabang') + '\n' + lines.join('\n') + '\n\n' +
+            rows.map(function (r) { return r.no + '. ' + r.name + ' · ' + (upWay ? [r.time, r.place, r.map].filter(Boolean).join(' · ') : r.notes + ' · pickup: ' + r.place); }).join('\n'), 'List copied');
+        } }, 'Copy the list for the minivan manager'),
+        field('Plate number for this whole list', plate),
+        h('button', { class: 'btn small', onclick: function () {
+          api('transport_plate', { date: d.date, dir: upWay ? 'up' : 'down', plate: plate.value.trim() }).then(function (x) { toast('Plate number saved on ' + x.bookings + ' booking' + (x.bookings === 1 ? '' : 's')); load(); }, function () {});
+        } }, 'Save plate for everyone')));
+      if (plates.length > 1) card.appendChild(h('p', { class: 'muted' }, 'This list has more than one plate number (' + plates.join(', ') + '). Saving one here replaces them all; a single booking can be changed below.'));
+      return card;
+    }
     function load() {
       state.transportDate = date.value;
       api('transport', { date: date.value }).then(function (d) {
         body.textContent = '';
+        body.appendChild(dayList(d, false));
+        body.appendChild(dayList(d, true));
+        body.appendChild(h('h2', { class: 'noprint', style: 'margin:18px 4px 6px' }, 'One booking at a time: messages, plate, time'));
         body.appendChild(section('↑ ຂຶ້ນ ' + day(d.date) + ' · Luang Prabang → Nong Khiaw', d.up, d.up_pax, true));
         body.appendChild(section('↓ ລົງ ' + day(d.date) + ' · Nong Khiaw → Luang Prabang', d.down, d.down_pax, false));
       }, function () {});
     }
     date.addEventListener('change', load);
     main.appendChild(h('div', { class: 'card' }, h('div', { class: 'bar' }, h('h1', {}, 'Pickups and minivan'), field('Date', date)),
-      h('p', { class: 'muted', style: 'margin:0' }, 'Everyone riding the minivan on this day. Plate numbers, times and remarks typed here are saved on the booking.')));
+      h('p', { class: 'muted', style: 'margin:0' }, 'Everyone riding the minivan on this day. The two lists at the top go to the minivan manager; type the plate number he sends back once and it is saved for everyone on that list, then message each guest from the blocks below.')));
     main.appendChild(body);
     load();
   }
@@ -266,7 +298,7 @@
         field('Passport issued', input('passport_issued', tr.passport_issued)), field('Passport expires', input('passport_expires', tr.passport_expires)),
         field('Food', select('food', [''].concat(FOODS), tr.food)),
         field('Pickup place', input('pickup_place', tr.pickup_place)), field('Pickup map', input('pickup_map', tr.pickup_map)),
-        field('Takeaway lunch', select('lunch_dish', dishes, tr.lunch_dish)), field('Lunch choice', input('lunch_choice', tr.lunch_choice)),
+        field('Lunch before the tour', select('lunch_dish', dishes, tr.lunch_dish)), field('Lunch choice', input('lunch_choice', tr.lunch_choice)),
         field('Traveller status', select('status', ['', 'Cancelled', 'No-show'], tr.status)), field('Traveller WhatsApp', input('whatsapp', tr.whatsapp)));
       tcard.appendChild(h('details', { class: 'trav' },
         h('summary', {}, tr.n + '. ' + (tr.full_name || '(no name)') + (tr.status ? ' · ' + tr.status : '') + (signed ? ' · agreement signed' : '')),
@@ -296,7 +328,7 @@
       h('div', { class: 'totals' },
         h('span', {}, 'Tour'), h('span', { class: 'right' }, '$' + money(t.tour_usd, 2)), h('span', {}),
         h('span', {}, 'Transport'), h('span', {}), h('span', { class: 'right' }, money(t.transfer_kip) + ' kip'),
-        h('span', {}, 'Takeaway lunch'), h('span', {}), h('span', { class: 'right' }, money(t.lunch_kip) + ' kip'),
+        h('span', {}, 'Lunch before the tour'), h('span', {}), h('span', { class: 'right' }, money(t.lunch_kip) + ' kip'),
         h('span', { class: 'b' }, 'Total'), h('span', { class: 'right b' }, '$' + money(t.total_usd, 2)), h('span', { class: 'right b' }, money(t.total_kip) + ' kip'),
         h('span', {}, 'Paid'), h('span', { class: 'right' }, '$' + money(t.paid_usd, 2)), h('span', {}),
         h('span', { class: 'b' }, 'Still to pay'), h('span', { class: 'right b' }, '$' + money(t.balance_usd, 2)), h('span', { class: 'right b' }, money(t.balance_kip) + ' kip')),
@@ -340,9 +372,16 @@
     }
     if (r) {
       var site = guestSite();
-      rc.appendChild(h('p', { class: 'noprint muted' }, 'Links for the guest: ',
+      // the minivan message for the guest (pickup, then the way back), the same text as on the Pickups tab
+      var vans = (d.minivan || []).map(function (m) {
+        var label = (m.dir === 'up' ? 'minivan pickup ' : 'minivan back ') + day(m.date) + (m.stop ? ' (stop ' + m.stop + ')' : '');
+        return [m.wa.length >= 7 ? h('a', { href: 'https://wa.me/' + m.wa + '?text=' + encodeURIComponent(m.guest), target: '_blank', rel: 'noopener', title: m.guest }, label)
+          : h('a', { href: '#', title: m.guest, onclick: function (e) { e.preventDefault(); copyText(m.guest, 'Minivan message copied (no WhatsApp number on the booking)'); } }, label), ' · '];
+      });
+      rc.appendChild(h('p', { class: 'noprint muted' }, 'Links for the guest: ', vans,
         h('a', { href: site + 'agreement/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'agreement form'), ' · ',
-        h('a', { href: site + 'lunch/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'takeaway lunch')));
+        h('a', { href: site + 'lunch/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'lunch before the tour')));
+      if (vans.length) rc.appendChild(h('p', { class: 'noprint muted', style: 'margin-top:-6px' }, 'The minivan link opens WhatsApp with the pickup place, time and plate number for this guest.'));
       rc.appendChild(receiptPaper(d));
     } else if (b.receipt_ref) rc.appendChild(h('p', { class: 'noprint' }, 'This booking is on receipt ' + b.receipt_ref + ', which belongs to another booking (one paper receipt for several bookings). Search for ' + b.receipt_ref + ' to find it.'));
     else rc.appendChild(h('p', { class: 'muted noprint' }, 'No receipt number yet. Issuing gives this booking the next number; it keeps that number for good.'));
@@ -361,33 +400,56 @@
     main.appendChild(hist);
   }
 
-  // The printed receipt (labels in English for now; the other languages come with the receipt texts).
+  // The printed receipt, laid out like the receipt of the old Google Sheet: the package code, pickup and return with their
+  // times, what each person pays, and a Details column. Labels come from receipt-text.js in the receipt's language.
   function receiptWording(r) { var o = {}; try { o = JSON.parse(r.overrides || '{}') || {}; } catch (e) { o = {}; } return o; }
   function receiptPaper(d) {
     var b = d.booking, t = d.totals, r = d.receipt, s = (state.cfg && state.cfg.settings) || {}, o = receiptWording(r);
     var L = (window.RECEIPT_TEXT && (window.RECEIPT_TEXT[r.language] || window.RECEIPT_TEXT.en)) || {};
     var paid = t.total_usd > 0 && t.balance_usd <= 0.005;
+    var people = d.travellers.filter(function (x) { return x.status !== 'Cancelled'; });
+    var riders = people.filter(function (x) { return x.pickup_place !== 'No transfer'; });
+    var up = /round/i.test(b.transfer) || (/one way/i.test(b.transfer) && !/luang prabang/i.test(b.transfer)), back = /round/i.test(b.transfer) || /to luang prabang/i.test(b.transfer);
+    var stops = d.summary.pickups ? d.summary.pickups.split('; ') : [];
+    var places = stops.length === 1 ? stops[0].replace(/: [\d, ]+$/, '') : stops.join('; ');
+    var join = function (parts) { return parts.filter(Boolean).join('  |  '); };
+    var tourLine = o.tour || (b.tour === 'T00' || !b.tour ? b.tour_name : 'Code: ' + b.tour + ' – ' + b.tour_name) + (Number(b.private_tour) ? ' (Private tour)' : '');
+    var pickupLine = o.transport || (b.transfer && b.transfer !== 'No' ? join([b.transfer, places, up && b.pickup_date ? day(b.pickup_date) + ' ' + (b.pickup_time || '') : '']) : '');
+    var returnLine = !o.transport && back ? join(['Nong Khiaw → Luang Prabang', b.return_date ? day(b.return_date) + ' ' + (b.return_time || '') : '', L.dropoff + ': ' + (Number(b.train_dropoff) ? L.train : L.citycenter)]) : '';
+    var row = function (label, value, label2, value2) {
+      return h('tr', {}, h('th', {}, label ? label + ':' : ''), h('td', { colspan: label2 === undefined ? 3 : 1 }, value),
+        label2 === undefined ? null : h('th', { class: 'r' }, label2 + ':'), label2 === undefined ? null : h('td', {}, value2));
+    };
+    // what each person pays: the tour per person, their share of the transport if they ride, and their own lunch
+    var each = function (x) {
+      var kip = Math.round(t.tour_usd / people.length * t.rate + (riders.length ? (x.pickup_place !== 'No transfer' ? t.transfer_kip / riders.length : 0) : t.transfer_kip / people.length) + Number(x.lunch_kip || 0));
+      return money(kip / t.rate, 2) + ' / ' + money(kip);
+    };
     return h('div', { class: 'receipt' },
       h('div', { class: 'head' }, h('div', {}, h('h2', {}, s.business_name || 'Nong Khiaw Eco-Trail'), h('div', { class: 'muted' }, s.business_address || ''), h('div', { class: 'muted' }, s.business_contact || '')),
-        h('div', { class: 'right' }, h('strong', {}, L.receipt + ' ' + L.no + ' ' + r.no), h('div', {}, L.issued + ': ' + day(r.issued_on)), h('div', {}, L.bookingid + ': ' + b.id))),
-      h('p', {}, h('strong', {}, o.tour || b.tour_name), b.tour_date ? ' · ' + L.tourdate + ': ' + day(b.tour_date) : '', Number(b.private_tour) ? ' · Private tour' : '', b.payment_method ? ' · ' + L.payment + ': ' + b.payment_method : ''),
-      o.transport ? h('p', {}, L.transport + ': ' + o.transport) : b.transfer !== 'No' ? h('p', {}, L.transport + ': ' + b.transfer + (Number(b.train_dropoff) ? ' + ' + L.train : '') +
-        (b.pickup_date ? ' · ' + L.pickup + ' ' + day(b.pickup_date) + (b.pickup_time ? ' ' + b.pickup_time : '') + (b.accommodation ? ' at ' + b.accommodation : '') : '') +
-        (b.return_date ? ' · ' + L['return'] + ' ' + day(b.return_date) + (b.return_time ? ' ' + b.return_time : '') : '')) : null,
-      o.note ? h('p', {}, o.note) : null,
-      h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, L.no), h('th', {}, L.name), h('th', {}, L.passport), h('th', {}, L.food), h('th', {}, L.lunch)),
-        d.travellers.filter(function (x) { return x.status !== 'Cancelled'; }).map(function (x) {
+        h('div', { class: 'right' }, h('div', { class: 'rtitle' }, L.receipt), h('div', {}, L.no + ' ', h('strong', { class: 'rno' }, r.no)))),
+      h('table', { class: 'rinfo' },
+        row(L.name, d.summary.lead_name, L.issued, day(r.issued_on)),
+        row(L.tourdate, day(b.tour_date), L.payment, b.payment_method),
+        row(L.tour, tourLine, L.bookingid, b.id),
+        pickupLine ? row(L.pickup, pickupLine) : null,
+        returnLine ? row(L['return'], returnLine) : null,
+        b.note ? row(L.note || 'Note', b.note) : null,
+        o.note ? row('', o.note) : null),
+      h('div', { class: 'scroll' }, h('table', { class: 'rtab' }, h('tr', {}, h('th', {}, L.no), h('th', {}, L.name), h('th', {}, L.passport), h('th', {}, L.food), h('th', {}, L.lunch),
+          people.length > 1 ? h('th', { class: 'num' }, L.perperson + ' (USD / ' + L.kip + ')') : null),
+        people.map(function (x) {
           return h('tr', {}, h('td', {}, x.n), h('td', {}, x.full_name), h('td', {}, x.passport_no), h('td', {}, x.food || 'Regular'),
-            h('td', {}, x.lunch_dish + (x.lunch_choice ? ' (' + x.lunch_choice + ')' : '')));
+            h('td', {}, x.lunch_dish + (x.lunch_choice ? ' (' + x.lunch_choice + ')' : '')), people.length > 1 ? h('td', { class: 'num' }, each(x)) : null);
         }))),
-      h('div', { class: 'scroll' }, h('table', { style: 'margin-top:12px' }, h('tr', {}, h('th', {}, L.item), h('th', { class: 'num' }, 'USD'), h('th', { class: 'num' }, L.kip)),
-        h('tr', {}, h('td', {}, L.tour + ', ' + d.summary.people + ' ' + L.people), h('td', { class: 'num' }, money(t.tour_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.tour_usd * t.rate)))),
-        t.transfer_kip ? h('tr', {}, h('td', {}, L.transport), h('td', { class: 'num' }, money(t.transfer_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.transfer_kip))) : null,
-        t.lunch_kip ? h('tr', {}, h('td', {}, L.lunch), h('td', { class: 'num' }, money(t.lunch_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.lunch_kip))) : null,
-        h('tr', {}, h('td', {}, h('strong', {}, L.total)), h('td', { class: 'num' }, h('strong', {}, money(t.total_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(t.total_kip)))),
-        h('tr', {}, h('td', {}, paid ? L.paid : L.deposit), h('td', { class: 'num' }, money(t.paid_usd, 2)), h('td', { class: 'num' }, money(t.paid_kip))),
-        h('tr', {}, h('td', {}, h('strong', {}, L.balance)), h('td', { class: 'num' }, h('strong', {}, money(t.balance_usd, 2))), h('td', { class: 'num' }, h('strong', {}, money(t.balance_kip)))))),
-      h('p', { class: 'muted' }, L.rate + ': 1 USD = ' + money(t.rate) + ' kip'),
+      h('div', { class: 'scroll' }, h('table', { class: 'rtab', style: 'margin-top:12px' }, h('tr', {}, h('th', {}, L.item), h('th', {}, L.details), h('th', { class: 'num' }, 'USD'), h('th', { class: 'num' }, L.kip)),
+        h('tr', {}, h('td', {}, L.tour), h('td', {}, people.length + ' ' + L.people), h('td', { class: 'num' }, money(t.tour_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.tour_usd * t.rate)))),
+        t.transfer_kip ? h('tr', {}, h('td', {}, L.transport), h('td', {}, o.transport || b.transfer + (Number(b.train_dropoff) ? ' + ' + L.train : '')), h('td', { class: 'num' }, money(t.transfer_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.transfer_kip))) : null,
+        t.lunch_kip ? h('tr', {}, h('td', {}, L.lunch), h('td', {}, d.summary.lunch), h('td', { class: 'num' }, money(t.lunch_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.lunch_kip))) : null,
+        h('tr', { class: 'rtotal' }, h('td', { colspan: 2 }, L.total), h('td', { class: 'num' }, money(t.total_usd, 2)), h('td', { class: 'num' }, money(t.total_kip))),
+        h('tr', {}, h('td', { colspan: 2 }, paid ? L.paid : L.deposit), h('td', { class: 'num' }, money(t.paid_usd, 2)), h('td', { class: 'num' }, money(t.paid_kip))),
+        h('tr', { class: 'rbalance' }, h('td', { colspan: 2 }, L.balance), h('td', { class: 'num' }, money(t.balance_usd, 2)), h('td', { class: 'num' }, money(t.balance_kip))))),
+      h('p', { class: 'muted', style: 'font-style:italic' }, L.rate + ': 1 USD = ' + money(t.rate) + ' kip'),
       paid ? h('p', { class: 'paid' }, '✓ ' + String(L.paid).toUpperCase()) : null,
       h('p', { style: 'margin-top:28px' }, L.custsig + ': ______________________      ' + L.issuedby + ': ' + (o.issued_by || r.issued_by || '______________')),
       h('p', { style: 'text-align:center;color:#2f6b4f;font-weight:700' }, o.thanks || L.thanks));
@@ -461,7 +523,8 @@
           api('settings_save', { settings: f }).then(function () { toast('Saved'); state.tab = 'settings'; render(); }, function () {});
         } }, 'Save settings')));
 
-      var tt = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tours and prices'));
+      var tt = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tours and prices'),
+        h('p', { class: 'muted' }, 'To add a package (201, 202, 301 …): fill the last line and press "Add tour". Then open Tour plans to write its days and show it on the website.'));
       d.tours.concat([{ code: '', name: '', price_usd: '', sort: d.tours.length + 1, isNew: true }]).forEach(function (t) {
         var row = h('div', { class: 'bar' }, field('Code', input('code', t.code, { disabled: !t.isNew, style: 'width:90px' })),
           h('div', { style: 'flex:1 1 200px' }, field('Name', input('name', t.name))), field('USD per person', input('price_usd', t.price_usd, { type: 'number', step: '0.01', style: 'width:130px' })));
@@ -473,7 +536,7 @@
       });
       main.appendChild(tt);
 
-      var mm = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Takeaway lunch menu'));
+      var mm = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Menu: lunch before the tour'));
       d.menu.concat([{ id: 0, show: 1, grp: '', dish: '', choices: '', price_kip: '', sort: d.menu.length + 1 }]).forEach(function (m) {
         var show = h('input', { type: 'checkbox', name: 'show' }); show.checked = !!Number(m.show);
         var row = h('div', { class: 'bar' }, h('label', { class: 'f' }, 'Show', h('br'), show), field('Group', input('grp', m.grp, { style: 'width:120px' })),
@@ -534,20 +597,73 @@
     return location.origin + location.pathname.replace(/admin\/.*$/, '');
   }
 
-  /* ---------- tables and spreadsheet download ---------- */
-  // cols: [[header, key or function(row), 'num'?], ...]
-  function table(cols, rows, name) {
+  /* ---------- tables and Excel download ---------- */
+  // A real .xlsx file, written here in the browser: a zip (stored, not compressed) of the few XML parts Excel needs.
+  // rows: arrays of cells; a number becomes a number cell, anything else text (so 000325 keeps its zeros). Row 1 is bold.
+  function xlsxBlob(name, rows) {
+    var esc = function (v) { return String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+    var col = function (i) { var c = ''; for (i += 1; i > 0; i = Math.floor((i - 1) / 26)) c = String.fromCharCode(65 + (i - 1) % 26) + c; return c; };
+    var widths = [];
+    var body = rows.map(function (r, ri) {
+      return '<row r="' + (ri + 1) + '">' + r.map(function (v, ci) {
+        if (v === null || v === undefined || v === '') return '';
+        widths[ci] = Math.min(60, Math.max(widths[ci] || 8, String(v).length + 2));
+        var ref = ' r="' + col(ci) + (ri + 1) + '"' + (ri === 0 ? ' s="1"' : '');
+        return typeof v === 'number' && isFinite(v) ? '<c' + ref + '><v>' + v + '</v></c>' : '<c' + ref + ' t="inlineStr"><is><t xml:space="preserve">' + esc(v) + '</t></is></c>';
+      }).join('') + '</row>';
+    }).join('');
+    for (var i = 0; i < widths.length; i++) if (!widths[i]) widths[i] = 8;
+    var cols = widths.length ? '<cols>' + widths.map(function (w, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>'; }).join('') + '</cols>' : '';
+    var X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', M = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships', P = 'http://schemas.openxmlformats.org/package/2006/';
+    var files = [
+      ['[Content_Types].xml', X + '<Types xmlns="' + P + 'content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+      ['_rels/.rels', X + '<Relationships xmlns="' + P + 'relationships"><Relationship Id="rId1" Type="' + R + '/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+      ['xl/workbook.xml', X + '<workbook xmlns="' + M + '" xmlns:r="' + R + '"><sheets><sheet name="' + esc(name.replace(/[\\\/?*\[\]:]/g, ' ').slice(0, 31)) + '" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+      ['xl/_rels/workbook.xml.rels', X + '<Relationships xmlns="' + P + 'relationships"><Relationship Id="rId1" Type="' + R + '/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="' + R + '/styles" Target="styles.xml"/></Relationships>'],
+      ['xl/styles.xml', X + '<styleSheet xmlns="' + M + '"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+        '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>'],
+      ['xl/worksheets/sheet1.xml', X + '<worksheet xmlns="' + M + '">' + cols + '<sheetData>' + body + '</sheetData></worksheet>']];
+    var crcTable = xlsxBlob.crc || (xlsxBlob.crc = (function () { var t = []; for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })());
+    var crc32 = function (u8) { var c = 0xFFFFFFFF; for (var i = 0; i < u8.length; i++) c = crcTable[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+    var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+    var head = function (sig, extra, nameBytes, crc, size) {   // local header (sig 0x04034b50) or central entry (0x02014b50)
+      var b = new DataView(new ArrayBuffer(extra ? 46 : 30)), p = 0;
+      b.setUint32(p, sig, true); p += 4; if (extra) { b.setUint16(p, 20, true); p += 2; }
+      b.setUint16(p, 20, true); p += 2; b.setUint16(p, 0x0800, true); p += 2; b.setUint16(p, 0, true); p += 2;   // version, UTF-8 names, stored
+      b.setUint16(p, 0, true); p += 2; b.setUint16(p, 0x21, true); p += 2;                                         // time, date (1980-01-01)
+      b.setUint32(p, crc, true); p += 4; b.setUint32(p, size, true); p += 4; b.setUint32(p, size, true); p += 4;
+      b.setUint16(p, nameBytes.length, true); p += 2; b.setUint16(p, 0, true); p += 2;
+      if (extra) { b.setUint16(p, 0, true); p += 2; b.setUint16(p, 0, true); p += 2; b.setUint16(p, 0, true); p += 2; b.setUint32(p, 0, true); p += 4; b.setUint32(p, extra.offset, true); }
+      return new Uint8Array(b.buffer);
+    };
+    files.forEach(function (f) {
+      var nameBytes = enc.encode(f[0]), data = enc.encode(f[1]), crc = crc32(data), local = head(0x04034b50, null, nameBytes, crc, data.length);
+      central.push(head(0x02014b50, { offset: offset }, nameBytes, crc, data.length), nameBytes);
+      parts.push(local, nameBytes, data); offset += local.length + nameBytes.length + data.length;
+    });
+    var cdSize = central.reduce(function (n, x) { return n + x.length; }, 0), end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+    return new Blob(parts.concat(central, [new Uint8Array(end.buffer)]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function download(blob, file) { var a = h('a', { href: URL.createObjectURL(blob), download: file }); document.body.appendChild(a); a.click(); a.remove(); }
+  // cols: [[header, key or function(row), 'num'?], ...]; foot: extra rows (arrays) written under the table in the Excel file.
+  function table(cols, rows, name, foot) {
     var cell = function (c, r) { var v = typeof c[1] === 'function' ? c[1](r) : r[c[1]]; return v === null || v === undefined ? '' : v; };
     var wrap = h('div', {});
     if (!rows.length) { wrap.appendChild(h('p', { class: 'muted' }, 'Nothing for this date.')); return wrap; }
     wrap.appendChild(h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, cols.map(function (c) { return h('th', { class: c[2] || '' }, c[0]); })),
       rows.map(function (r) { return h('tr', {}, cols.map(function (c) { var v = cell(c, r); return h('td', { class: c[2] || '' }, c[2] === 'num' && v !== '' ? money(v, c[3] || 0) : v); })); }))));
     wrap.appendChild(h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
-      var q = function (v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-      var csv = [cols.map(function (c) { return q(c[0]); }).join(',')].concat(rows.map(function (r) { return cols.map(function (c) { return q(cell(c, r)); }).join(','); })).join('\r\n');
-      var a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })), download: name + '.csv' });
-      document.body.appendChild(a); a.click(); a.remove();
-    } }, 'Download as a spreadsheet')));
+      var out = [cols.map(function (c) { return c[0]; })].concat(rows.map(function (r) {
+        return cols.map(function (c) { var v = cell(c, r); return c[2] === 'num' && v !== '' && isFinite(Number(v)) ? Number(v) : String(v); });
+      }));
+      if (foot && foot.length) out = out.concat([[]], typeof foot === 'function' ? foot() : foot);
+      download(xlsxBlob(name, out), name + '.xlsx');
+    } }, 'Download as an Excel file')));
     return wrap;
   }
   function tomorrow() { return new Date(Date.now() + 31 * 3600 * 1000).toISOString().slice(0, 10); }   // tomorrow in Laos (UTC+7)
@@ -560,13 +676,30 @@
     function load() {
       var mine = ++run, stale = function () { if (mine !== run) throw new Error('stale'); };
       state.reportDate = date.value; body.textContent = '';
-      api('trip_sheet', { date: date.value }).then(function (t) {
+      api('tour_report', { date: date.value }).then(function (tr) {
+        stale();
+        var short = day(tr.date).slice(0, 5).replace('/', '.');
+        var lineText = function (l, guide) { return l.label + ': ' + l.pax + 'pax' + (guide ? ' · Guide ' + guide : ''); };
+        var guides = tr.lines.map(function (l) {
+          var g = input('guide', l.guide, { placeholder: 'Guide (type the name)', style: 'max-width:240px' });
+          g.addEventListener('change', function () { l.guide = g.value.trim(); api('guide_save', { date: tr.date, tour: l.tour, guide: g.value }).then(function () { toast('Guide saved'); }, function () {}); });
+          return h('div', { class: 'bar', style: 'margin:4px 0' }, h('strong', { style: 'flex:1 1 260px' }, l.label + ': ', h('span', { class: 'red' }, l.pax + 'pax')), g);
+        });
+        var cols = [['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', 'food'], ['Guest note', 'note']];
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, short + ' Tour · report for the team (' + tr.pax + ' pax starting)'),
+          table(cols, tr.rows, short + ' Tour', function () { return tr.lines.map(function (l) { return ['', '', '', '', lineText(l, l.guide)]; }); }),
+          tr.rows.length ? h('div', {}, guides, h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
+            copyText(short + ' Tour\n' + tr.lines.map(function (l) { return lineText(l, l.guide); }).join('\n') + '\n\n' +
+              tr.rows.map(function (r) { return r.no + '. ' + r.name + ' · Package ' + r.tour + ' · ' + r.food + (r.note ? ' (' + r.note + ')' : ''); }).join('\n'), 'Report copied');
+          } }, 'Copy as a message for the team'))) : null));
+        return api('trip_sheet', { date: date.value });
+      }).then(function (t) {
         stale();
         var food = Object.keys(t.food).map(function (k) { return k + ' ' + t.food[k]; }).join(' · ');
         body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Trip sheet · ' + day(t.date) + ' (' + t.travellers + ' travellers starting a tour)'),
           t.rows.length ? h('div', { class: 'kpis' }, kpi('Bookings', t.bookings), kpi('Travellers', t.travellers), kpi('Taking the minivan', t.riders), kpi('Food', food || '-'),
-            kpi('Tours still to collect', '$' + money(t.tour_due_usd, 2)), kpi('Minivan, kip', money(t.transfer_kip)), kpi('Takeaway lunches, kip', money(t.lunch_kip))) : null,
-          table([['Tour', 'tour'], ['Name', 'full_name'], ['Country', 'country'], ['Gender', 'gender'], ['Food', function (r) { return r.food || 'Regular'; }], ['Takeaway lunch', 'lunch'],
+            kpi('Tours still to collect', '$' + money(t.tour_due_usd, 2)), kpi('Minivan, kip', money(t.transfer_kip)), kpi('Lunches before the tour, kip', money(t.lunch_kip))) : null,
+          table([['Tour', 'tour'], ['Name', 'full_name'], ['Country', 'country'], ['Gender', 'gender'], ['Food', function (r) { return r.food || 'Regular'; }], ['Lunch before the tour', 'lunch'],
             ['Pickup place', 'pickup_place'], ['Pickup map', 'pickup_map'], ['Booking ID', 'booking_id'], ['Receipt No', 'receipt_no']], t.rows, 'trip-sheet-' + t.date)));
         return api('guide_report', { date: date.value });
       }).then(function (g) {
@@ -580,10 +713,12 @@
       }).then(function (l) {
         stale();
         var dishes = Object.keys(l.dishes).map(function (k) { return k + ' x' + l.dishes[k]; }).join(' · ');
-        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Lunch report · ' + day(l.date)),
+        var shortL = day(l.date).slice(0, 5).replace('/', '.');
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, shortL + ' Food report · for the kitchen'),
           l.rows.length ? h('p', {}, h('strong', {}, dishes), ' · ' + money(l.total_kip) + ' kip') : null,
-          table([['Booking', 'booking_id'], ['Tour', 'tour'], ['Customer', 'name'], ['Pax', 'pax', 'num'], ['Food item', 'item'], ['Qty', 'qty', 'num'], ['Ready by', 'ready_by'],
-            ['Special requests', 'special'], ['Price kip', 'kip', 'num']], l.rows, 'lunch-report-' + l.date),
+          table([['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Food type', 'food'],
+            ['Menu', 'item'], ['Qty', 'qty', 'num'], ['Date', function (r) { return day(r.day); }], ['Ready by', 'ready_by'], ['Special requests', 'special'], ['Price kip', 'kip', 'num']], l.rows, shortL + ' Food report',
+            Object.keys(l.dishes).map(function (k) { return ['', '', '', '', '', '', k, l.dishes[k]]; })),
           l.message ? h('div', {}, h('h3', {}, 'Message for the kitchen'), h('pre', { style: 'white-space:pre-wrap;font:inherit' }, l.message),
             h('button', { class: 'btn ghost small', onclick: function () { copyText(l.message, 'Kitchen message copied'); } }, 'Copy message')) : null));
         return api('collect_report', { from: date.value, to: date.value });
@@ -631,6 +766,7 @@
   /* ---------- tour plans and cost list (admin) ---------- */
   function viewPlans(main) {
     main.appendChild(h('div', { class: 'card' }, h('h1', {}, 'Tour plans'), h('p', { class: 'muted' },
+      'A new package: add its code, name and price under Prices and settings first; it then appears here, where you write its days and put it on the website. ' +
       'The plan for each day shows in the guide report. The cost lines are what Tour costs starts from. "Counted per": group, person, or "2 people", "4 people" (one for every 2 or 4 guests).')));
     Promise.all([api('settings'), api('plans')]).then(function (res) {
       state.cfg = res[0]; var p = res[1];
@@ -647,7 +783,37 @@
         };
         costs.forEach(addCost); addCost();
         var ad = input('addon', addon.addon), adDay = input('addon_day', addon.starts_day, { type: 'number', min: 1, style: 'width:90px' });
-        main.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, t.code + ' · ' + t.name), dayBox,
+        var builtIn = ['101', '102', '103', '001'].indexOf(t.code) !== -1, web;
+        if (builtIn) web = h('p', { class: 'muted' }, 'On the website: this is one of the four original tours. Its text is under Website > Website text, its price under Prices and settings.');
+        else {
+          var show = h('input', { type: 'checkbox' }); show.checked = !!Number(t.web_show);
+          var wt = input('title', t.web_title, { placeholder: t.name }), wd = input('duration', t.web_duration, { placeholder: '2 days · 1 night' }), wl = select('level', ['', 'Easy', 'Moderate', 'Hard'], t.web_level);
+          var ws = h('textarea', { rows: 3 }, t.web_summary || ''), wi = h('textarea', { rows: 2 }, t.web_included || '');
+          var img = h('img', { class: 'tourphoto', alt: '' }); if (t.photo_url) img.src = t.photo_url; else img.hidden = true;
+          var file = h('input', { type: 'file', accept: 'image/*' });
+          file.addEventListener('change', function () {
+            if (!file.files[0]) return;
+            var pic = new Image(), url = URL.createObjectURL(file.files[0]);
+            pic.onload = function () {   // made smaller here (1600 px at most) so a phone photo uploads fast
+              var k = Math.min(1, 1600 / Math.max(pic.width, pic.height)), c = h('canvas', { width: Math.round(pic.width * k), height: Math.round(pic.height * k) });
+              c.getContext('2d').drawImage(pic, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+              api('tour_photo', { code: t.code, data: c.toDataURL('image/jpeg', 0.82) }).then(function (x) { img.src = x.photo; img.hidden = false; toast('Photo saved'); }, function () {});
+            };
+            pic.onerror = function () { toast('That file is not a photo.', true); };
+            pic.src = url;
+          });
+          web = h('div', { class: 'trav' }, h('h3', { style: 'margin-top:0' }, 'On the website'),
+            h('p', { class: 'muted' }, 'Tick "Show on the website" and this tour appears with the other tours and in the booking form, with its price from Prices and settings and the days typed above. What you type shows as typed in every language.'),
+            h('label', {}, show, ' Show on the website'),
+            h('div', { class: 'grid', style: 'margin-top:8px' }, field('Title on the website', wt), field('Length', wd), field('Level', wl)),
+            h('label', { class: 'f' }, 'Short description', ws), h('label', { class: 'f' }, 'Included', wi),
+            h('div', { class: 'bar' }, img, field('Photo', file)),
+            h('p', {}, h('button', { class: 'btn small', onclick: function () {
+              if (show.checked && !(Number(t.price_usd) > 0)) { toast('Give the tour a price under Prices and settings first.', true); return; }
+              api('tour_web', { code: t.code, show: show.checked, title: wt.value, duration: wd.value, level: wl.value, summary: ws.value, included: wi.value }).then(function () { toast('Saved. The website shows it within a minute.'); }, function () {});
+            } }, 'Save website details')));
+        }
+        main.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, t.code + ' · ' + t.name), web, dayBox,
           h('p', {}, h('button', { class: 'btn ghost small', onclick: function () { addDay(''); } }, '+ Add a day')),
           h('div', { class: 'bar' }, h('div', { style: 'flex:1 1 220px' }, field('Additional package (empty = none)', ad)), field('Starts on day', adDay)),
           h('h3', {}, 'Cost lines'), costBox, h('p', {}, h('button', { class: 'btn ghost small', onclick: function () { addCost(); } }, '+ Add a cost line')),

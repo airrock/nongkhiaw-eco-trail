@@ -33,8 +33,8 @@ window.parseWhatsAppBooking = function (text) {
     else if ((m = /^Nationality:\s*(.*)$/.exec(l))) cur.nat = m[1];
     else if ((m = /^Passport:\s*(\S*)\s*\(issued\s*(\S+),\s*expires\s*([^)\s]+)\)/.exec(l))) { cur.pass = m[1]; cur.issued = ymd(m[2]); cur.expires = ymd(m[3]); }
     else if ((m = /^Food:\s*(.*)$/.exec(l))) cur.food = m[1] || 'Regular';
-    else if ((m = /^Takeaway lunch:\s*(.+?)(?:\s*\((.+)\))?,\s*[\d,.]+\s*kip$/i.exec(l))) { cur.lunch = m[1]; cur.lunchChoice = m[2] || ''; }
-    else if (/^(Takeaway lunch total|Note):/.test(l)) cur = null;
+    else if ((m = /^(?:Takeaway lunch|Lunch before the tour):\s*(.+?)(?:\s*\((.+)\))?,\s*[\d,.]+\s*kip$/i.exec(l))) { cur.lunch = m[1]; cur.lunchChoice = m[2] || ''; }
+    else if (/^(Takeaway lunch total|Lunch before the tour total|Note):/.test(l)) cur = null;
   });
   if (!people.length) return { error: 'No travellers ("Traveller 1: ...") in the message.' };
   var dt = ymd(date && date[1]);

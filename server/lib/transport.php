@@ -58,7 +58,7 @@ function stop_message(array $g, int $si, int $n, ?string $up, string $id, ?strin
 function guest_message(string $first, string $to, string $place, string $time, string $plate, string $extra, string $manager, string $day): string {
   $digits = wa_digits($manager);
   $contact = strlen($digits) >= 7 ? 'https://wa.me/' . $digits : $manager;
-  $time = preg_replace('/\s+(AM|PM)$/i', '', $time) . (preg_match('/(AM|PM)$/i', $time, $m) ? strtolower($m[1]) : '');   // "8:00 AM" -> "8:00am"
+  $time = preg_replace_callback('/\s*(AM|PM)\.?$/i', fn ($m) => strtolower($m[1]), trim($time));   // "8:00 AM" or "8:00am" -> "8:00am"
   return 'Hello ' . ($first ?: 'there') . '! Your minivan to ' . $to . ' is booked ' . $day . ".\n\n" .
     'Pickup at ' . $place . ($time !== '' ? ' between ' . $time : '') . '. ' . $extra . "\n\n" .
     'Minivan plate: ' . ($plate ?: '(we send it soon)') . "\n" .

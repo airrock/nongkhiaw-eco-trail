@@ -458,4 +458,6 @@ admin.ok('settings_save', settings={'transport_manager': '+856 20 55200091'})
 g = [u for u in office.ok('transport', date='2032-03-01')['up'] if u['booking_id'] == 'SELFTEST-W2'][0]['guest']
 eq(("Minivan coordinator's WhatsApp: https://wa.me/8562055200091" in g, 'Minivan plate: ກຮ 2222' in g, g.endswith('Thank you!')), (True, True, True), 'guest message: plate and the coordinator link')
 admin.ok('settings_save', settings={'transport_manager': ''})
+office.ok('booking_save', id='SELFTEST-W2', fields={'pickup_time': '7:30 - 8:00am'})
+eq('between 7:30 and 8:00am. Please' in [u for u in office.ok('transport', date='2032-03-01')['up'] if u['booking_id'] == 'SELFTEST-W2'][0]['guest'], True, 'a typed "8:00am" stays "8:00am"')
 print(f'all {n} checks passed')

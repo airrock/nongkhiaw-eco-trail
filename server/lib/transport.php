@@ -125,6 +125,7 @@ function time_sort(string $t): int {
   if (!preg_match('/(\d{1,2})(?::(\d{2}))?/', $t, $m)) return 9999;
   $h = (int) $m[1] % 12; $pm = (bool) preg_match('/PM/i', $t);
   if ($pm && !preg_match('/AM\s*-/i', $t)) $h += 12;
+  elseif (!preg_match('/AM|PM/i', $t) && $h < 7) $h += 12;   // "3:30 - 4:30" typed without AM or PM is the afternoon minivan
   return $h * 60 + (int) ($m[2] ?? 0);
 }
 

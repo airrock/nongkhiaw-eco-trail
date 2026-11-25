@@ -62,8 +62,12 @@
   function menuItem(dish) { return MENU.filter(function (m) { return m.dish === dish; })[0]; }
 
   var EXTRA_TOURS = [];
+  var BUILT_IN = null;
   function applyConfig(cfg) {
     if (!cfg || typeof cfg !== 'object') return;
+    // start again from the built-in text each time: a text set back to built-in in the dashboard must not stay changed
+    if (!BUILT_IN) BUILT_IN = JSON.parse(JSON.stringify(DICT));
+    else Object.keys(BUILT_IN).forEach(function (l) { DICT[l] = JSON.parse(JSON.stringify(BUILT_IN[l])); });
     if (Array.isArray(cfg.menu) && cfg.menu.length) {
       MENU = cfg.menu.filter(function (m) { return m && m.dish && Number(m.price) > 0; }).map(function (m) {
         return { group: String(m.group || 'Menu'), dish: String(m.dish), price: Number(m.price), choices: Array.isArray(m.choices) ? m.choices.map(String) : [] };
@@ -375,45 +379,47 @@
   }
   /* one block of passport fields per guest; typed values survive count changes */
   var travBox = $('#travellers');
+  // Text from the dashboard's Website texts goes into this HTML: it is always escaped, never run as HTML.
+  function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function field(key, html) {
-    return '<label><span data-i18n="' + key + '">' + t(key) + '</span>' + html + '</label>';
+    return '<label><span data-i18n="' + key + '">' + esc(t(key)) + '</span>' + html + '</label>';
   }
   function travBlock(n) {
     var f = document.createElement('fieldset');
     f.className = 'trav';
     f.innerHTML =
-      '<legend><span data-i18n="trav">' + t('trav') + '</span> ' + n + '</legend>' +
+      '<legend><span data-i18n="trav">' + esc(t('trav')) + '</span> ' + n + '</legend>' +
       '<div class="row2">' +
         field('lbl_first', '<input type="text" data-k="first" autocomplete="off" required>') +
         field('lbl_last', '<input type="text" data-k="last" autocomplete="off" required>') +
       '</div>' +
       '<div class="row2">' +
-        field('lbl_gender', '<select data-k="gender" required><option value="" data-i18n="g_sel">' + t('g_sel') + '</option>' +
-          '<option value="Female" data-i18n="g_f">' + t('g_f') + '</option><option value="Male" data-i18n="g_m">' + t('g_m') + '</option>' +
-          '<option value="X" data-i18n="g_x">' + t('g_x') + '</option></select>') +
-        field('lbl_nat', '<input type="text" data-k="nat" data-i18n-ph="ph_nat" placeholder="' + t('ph_nat') + '" required>') +
+        field('lbl_gender', '<select data-k="gender" required><option value="" data-i18n="g_sel">' + esc(t('g_sel')) + '</option>' +
+          '<option value="Female" data-i18n="g_f">' + esc(t('g_f')) + '</option><option value="Male" data-i18n="g_m">' + esc(t('g_m')) + '</option>' +
+          '<option value="X" data-i18n="g_x">' + esc(t('g_x')) + '</option></select>') +
+        field('lbl_nat', '<input type="text" data-k="nat" data-i18n-ph="ph_nat" placeholder="' + esc(t('ph_nat')) + '" required>') +
       '</div>' +
       field('lbl_pass', '<input type="text" data-k="pass" autocomplete="off" autocapitalize="characters" spellcheck="false" required>') +
       '<div class="row2">' +
         field('lbl_issue', '<input type="date" data-k="issued" required>') +
         field('lbl_expiry', '<input type="date" data-k="expires" required>') +
       '</div>' +
-      field('lbl_food', '<select data-k="food"><option value="Regular" data-i18n="food_reg">' + t('food_reg') +
-        '</option><option value="Vegetarian" data-i18n="food_veg">' + t('food_veg') +
-        '</option><option value="Vegan" data-i18n="food_vegan">' + t('food_vegan') +
-        '</option><option value="Gluten-free" data-i18n="food_gf">' + t('food_gf') + '</option></select>') +
+      field('lbl_food', '<select data-k="food"><option value="Regular" data-i18n="food_reg">' + esc(t('food_reg')) +
+        '</option><option value="Vegetarian" data-i18n="food_veg">' + esc(t('food_veg')) +
+        '</option><option value="Vegan" data-i18n="food_vegan">' + esc(t('food_vegan')) +
+        '</option><option value="Gluten-free" data-i18n="food_gf">' + esc(t('food_gf')) + '</option></select>') +
       // From the second traveller on: pickup at the group's place (default), somewhere else, or no transfer at all.
       (n > 1 ? '<div class="pk" hidden>' +
-        field('lbl_pickup_who', '<select data-k="pickup"><option value="same" data-i18n="pk_same">' + t('pk_same') +
-          '</option><option value="other" data-i18n="pk_other">' + t('pk_other') + '</option><option value="none" data-i18n="pk_none">' +
-          t('pk_none') + '</option></select>') +
+        field('lbl_pickup_who', '<select data-k="pickup"><option value="same" data-i18n="pk_same">' + esc(t('pk_same')) +
+          '</option><option value="other" data-i18n="pk_other">' + esc(t('pk_other')) + '</option><option value="none" data-i18n="pk_none">' +
+          esc(t('pk_none')) + '</option></select>') +
         '<div class="pk-other" hidden>' +
           field('lbl_pk_place', '<input type="text" data-k="pkplace" autocomplete="off">') +
           field('lbl_pk_map', '<input type="url" data-k="pkmap" inputmode="url" placeholder="https://maps.app.goo.gl/…">') +
           '<a class="btn btn-line btn-sm" data-k="pkfind" href="https://www.google.com/maps/search/?api=1&amp;query=Luang+Prabang" ' +
-          'target="_blank" rel="noopener" data-i18n="btn_findmap">' + t('btn_findmap') + '</a>' +
+          'target="_blank" rel="noopener" data-i18n="btn_findmap">' + esc(t('btn_findmap')) + '</a>' +
         '</div></div>' : '') +
-      field('lbl_lunch', '<select data-k="lunch"></select><small data-i18n="lunch_tip">' + t('lunch_tip') + '</small>') +
+      field('lbl_lunch', '<select data-k="lunch"></select><small data-i18n="lunch_tip">' + esc(t('lunch_tip')) + '</small>') +
       '<div class="lunch-choice" hidden>' + field('lbl_lunch_choice', '<select data-k="lunchchoice"></select>') + '</div>';
     fillLunch(f);
     return f;

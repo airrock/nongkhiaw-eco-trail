@@ -668,8 +668,9 @@
     var body = rows.map(function (r, ri) {
       return '<row r="' + (ri + 1) + '">' + r.map(function (v, ci) {
         if (v === null || v === undefined || v === '') return '';
-        widths[ci] = Math.min(60, Math.max(widths[ci] || 8, String(v).length + 2));
-        var ref = ' r="' + col(ci) + (ri + 1) + '"' + (ri === 0 ? ' s="1"' : '');
+        if (r.length > 1) widths[ci] = Math.min(60, Math.max(widths[ci] || 8, String(v).length + 2));   // a one-cell title line does not widen column A
+        var bold = ri === 0 || (ri === 1 && rows[0].length === 1);
+        var ref = ' r="' + col(ci) + (ri + 1) + '"' + (bold ? ' s="1"' : '');
         return typeof v === 'number' && isFinite(v) ? '<c' + ref + '><v>' + v + '</v></c>' : '<c' + ref + ' t="inlineStr"><is><t xml:space="preserve">' + esc(v) + '</t></is></c>';
       }).join('') + '</row>';
     }).join('');
@@ -712,7 +713,7 @@
   }
   function download(blob, file) { var a = h('a', { href: URL.createObjectURL(blob), download: file }); document.body.appendChild(a); a.click(); a.remove(); }
   // cols: [[header, key or function(row), 'num'?], ...]; foot: extra rows (arrays) written under the table in the Excel file.
-  function table(cols, rows, name, foot) {
+  function table(cols, rows, name, foot, title) {
     var cell = function (c, r) { var v = typeof c[1] === 'function' ? c[1](r) : r[c[1]]; return v === null || v === undefined ? '' : v; };
     var wrap = h('div', {});
     if (!rows.length) { wrap.appendChild(h('p', { class: 'muted' }, 'Nothing for this date.')); return wrap; }
@@ -724,6 +725,7 @@
       }));
       var under = typeof foot === 'function' ? foot() : foot;
       if (under && under.length) out = out.concat([[]], under);
+      if (title) out = [[title]].concat(out);   // a line above the columns, e.g. the tour date
       download(xlsxBlob(name, out), name + '.xlsx');
     } }, 'Download as an Excel file')));
     return wrap;
@@ -750,9 +752,9 @@
           g.addEventListener('change', function () { l.guide = g.value.trim(); api('guide_save', { date: tr.date, tour: l.tour, guide: g.value }).then(function () { toast('Guide saved'); }, function () {}); });
           return h('div', { class: 'bar', style: 'margin:4px 0' }, h('strong', { style: 'flex:1 1 260px' }, l.label + ' – ', h('span', { class: 'red' }, l.pax + ' pax')), g);
         });
-        var cols = [['No', 'no'], ['Tour date', function () { return day(tr.date); }], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', 'food'], ['Guest note', 'note']];
+        var cols = [['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', 'food'], ['Guest note', 'note']];
         body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tour report for the team · tour date ' + day(tr.date) + ' (' + tr.pax + ' pax starting)'),
-          table(cols, tr.rows, short + ' Tour', function () { return tr.lines.map(function (l) { return ['', '', '', '', '', lineText(l, l.guide)]; }); }),
+          table(cols, tr.rows, short + ' Tour', function () { return tr.lines.map(function (l) { return ['', '', '', '', lineText(l, l.guide)]; }); }, 'Tour date ' + day(tr.date)),
           tr.rows.length ? h('div', {}, guides, h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
             copyText('Tour date ' + day(tr.date) + '\n' + tr.lines.map(function (l) { return lineText(l, l.guide); }).join('\n') + '\n\n' +
               tr.rows.map(function (r) { return r.no + '. ' + r.name + ' · Package ' + r.tour + ' · ' + r.food + (r.note ? ' (' + r.note + ')' : ''); }).join('\n'), 'Report copied');

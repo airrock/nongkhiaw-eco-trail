@@ -504,7 +504,8 @@
     // "Transport line" in Edit wording replaces the words of the transfer; the places, dates and times stay
     var word = o.transport || b.transfer;
     var pickupLine = up ? join([word, places, b.pickup_date ? day(b.pickup_date) + ' ' + (b.pickup_time || '') : '']) : '';
-    var returnLine = back ? join([(up ? '' : word + '  |  ') + L.nklpb + (b.nk_pickup ? ' (' + b.nk_pickup + ')' : ''), b.return_date ? day(b.return_date) + ' ' + (b.return_time || '') : '',
+    // the pickup place in Nong Khiaw is its own part of the line, like the place on the pickup line (no brackets inside brackets)
+    var returnLine = back ? join([(up ? '' : word + '  |  ') + L.nklpb, b.nk_pickup || s.nk_office || '', b.return_date ? day(b.return_date) + ' ' + (b.return_time || '') : '',
       L.dropoff + ': ' + (Number(b.train_dropoff) ? L.train : L.citycenter)]) : '';
     if (!up && !back && o.transport) pickupLine = o.transport;
     var row = function (label, value, label2, value2) {

@@ -31,20 +31,27 @@ function guide_report(string $date): array {
 }
 
 // Takeaway lunches for the tours starting on $date, with the count per dish and the message for the kitchen.
+// The waiver's "medical / allergies" answer when it says something ("no", "none", "-" say nothing).
+function allergy(?string $m): string {
+  $m = trim((string) $m);
+  return preg_match('/^(no|none|nothing|nope|n\/?a|nil|-+|\.+|0|ບໍ່ມີ)\.?$/iu', $m) ? '' : $m;
+}
+
 function lunch_report(string $date): array {
   $rows = all("SELECT t.booking_id, COALESCE(b.tour_date, b.pickup_date) AS day, b.tour, t.full_name, t.lunch_dish, t.lunch_choice, t.lunch_kip, t.food, t.pickup_place,
-      b.note, b.pickup_date, b.transport_remark, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no,
+      b.note, b.pickup_date, b.transport_remark, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no, a.medical,
       (SELECT COUNT(*) FROM travellers x WHERE x.booking_id = b.id AND x.status = '') AS pax
-    FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id
+    FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id LEFT JOIN agreements a ON a.booking_id = t.booking_id AND a.n = t.n
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND t.lunch_dish <> '' AND COALESCE(b.tour_date, b.pickup_date) = ?
     ORDER BY b.submitted_at, b.id, t.n", [$date]);
   $out = []; $count = []; $lines = [];
   foreach ($rows as $i => $r) {
     $item = trim($r['lunch_dish'] . ' ' . $r['lunch_choice']);
     $rides = $r['pickup_place'] !== '' && $r['pickup_place'] !== 'No transfer' && $r['pickup_date'] === $r['day'];
-    $special = trim(($r['food'] !== '' && $r['food'] !== 'Regular' ? $r['food'] . ($r['note'] !== '' ? ' | ' : '') : '') . $r['note']);
+    $alg = allergy($r['medical']);
+    $special = implode(' | ', array_filter([$r['food'] !== '' && $r['food'] !== 'Regular' ? $r['food'] : '', $alg !== '' ? 'Allergy / medical: ' . $alg : '', $r['note']]));
     $out[] = ['no' => $i + 1, 'booking_id' => $r['booking_id'], 'tour' => $r['tour'], 'receipt_no' => $r['receipt_no'], 'name' => $r['full_name'], 'pax' => (int) $r['pax'],
-      'food' => $r['food'] !== '' ? $r['food'] : 'Regular', 'item' => $item, 'qty' => 1, 'day' => $r['day'],
+      'food' => ($r['food'] !== '' ? $r['food'] : 'Regular') . ($alg !== '' ? ' · allergy: ' . $alg : ''), 'alert' => $alg !== '', 'item' => $item, 'qty' => 1, 'day' => $r['day'],
       'ready_by' => ($rides ? 'When the minivan from Luang Prabang arrives' : 'Before the tour starts') . ($r['transport_remark'] !== '' ? " ({$r['transport_remark']})" : ''),
       'special' => $special, 'kip' => (float) $r['lunch_kip']];
     $count[$item] = ($count[$item] ?? 0) + 1;
@@ -127,26 +134,30 @@ function trip_sheet(string $date): array {
 }
 
 /* ---------- tour report for the team: everyone whose tour starts on one day, and who guides each package ---------- */
-// Packages that start together are one group (101, 102, 103 all begin with the overnight camping): the group's first package
-// carries the head count of the whole group, the others their own. The guide of each line is typed by staff (day_guides).
+// One line per package ("Package 101 <name> – 5 pax", as the team asked on 2026-11-25), then the total of everyone starting
+// that day when there is more than one package. The guide of each line is typed by staff (day_guides).
 function tour_report(string $date): array {
-  $rows = all("SELECT t.booking_id, b.tour, b.tour_name, b.note, b.private_tour, t.full_name, t.food, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no,
+  $rows = all("SELECT t.booking_id, b.tour, b.tour_name, b.note, b.private_tour, t.full_name, t.food, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no, a.medical,
       (SELECT COUNT(*) FROM travellers x WHERE x.booking_id = b.id AND x.status = '') AS pax
-    FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id
+    FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id LEFT JOIN agreements a ON a.booking_id = t.booking_id AND a.n = t.n
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND b.tour <> ? AND b.tour_date = ?
     ORDER BY b.tour, b.private_tour, b.submitted_at, b.id, t.n", [TRANSPORT_ONLY, $date]);
-  $out = []; $count = []; $last = '';
+  $out = []; $count = []; $bookedName = []; $last = '';
   foreach ($rows as $i => $r) {
     $first = $r['booking_id'] !== $last; $last = $r['booking_id'];
     $out[] = ['no' => $i + 1, 'booking_id' => $r['booking_id'], 'tour' => $r['tour'] . ($r['private_tour'] ? ' (PRIVATE)' : ''), 'receipt_no' => $r['receipt_no'], 'name' => $r['full_name'],
-      'pax' => $first ? (int) $r['pax'] : '', 'food' => ($r['food'] !== '' ? $r['food'] : 'Regular'), 'note' => $first ? $r['note'] : ''];
+      'pax' => $first ? (int) $r['pax'] : '', 'food' => ($r['food'] !== '' ? $r['food'] : 'Regular') . (allergy($r['medical']) !== '' ? ' · allergy: ' . allergy($r['medical']) : ''),
+      'alert' => allergy($r['medical']) !== '', 'note' => $first ? $r['note'] : ''];
     $count[$r['tour']] = ($count[$r['tour']] ?? 0) + 1;
+    $bookedName[$r['tour']] = $bookedName[$r['tour']] ?? $r['tour_name'];   // a package missing from Prices and settings keeps the booking's name
   }
   $names = []; foreach (all('SELECT code, name FROM tours ORDER BY sort, code') as $t) $names[$t['code']] = $t['name'];
   $guides = []; foreach (all('SELECT tour, guide FROM day_guides WHERE day = ?', [$date]) as $g) $guides[$g['tour']] = $g['guide'];
   // one line per package, its code before its name: "Package 101 Overnight Camping Above the Clouds – 5 pax"
   $lines = [];
-  foreach ($count as $code => $n) $lines[] = ['tour' => (string) $code, 'label' => trim("Package $code " . ($names[$code] ?? '')), 'pax' => $n, 'guide' => $guides[$code] ?? ''];
+  foreach ($count as $code => $n) $lines[] = ['tour' => (string) $code, 'label' => trim("Package $code " . ($names[$code] ?? $bookedName[$code] ?? '')), 'pax' => $n, 'guide' => $guides[$code] ?? ''];
+  // everyone starting that day, as in the team's first report ("Overnight camping: 14pax")
+  if (count($lines) > 1) $lines[] = ['tour' => '', 'label' => 'All packages', 'pax' => count($out), 'guide' => '', 'total' => true];
   return ['date' => $date, 'rows' => $out, 'lines' => $lines, 'pax' => count($out)];
 }
 

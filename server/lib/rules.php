@@ -40,7 +40,9 @@ function transfer_times(array $b): array {
   if ($up === '' && goes_up((string) $b['transfer']) && !empty($b['pickup_date'])) $up = PICKUP_TIME;
   if ($down === '' && !empty($b['return_date'])) {
     $remark = (string) ($b['transport_remark'] ?? '');
-    if (!preg_match('/another day/i', $remark) && preg_match('/\d{1,2}(?::\d{2})?\s*(?:-\s*\d{1,2}(?::\d{2})?\s*)?(?:AM|PM)/i', $remark, $m)) $down = preg_replace('/\s*-\s*/', ' - ', $m[0]);
+    // only a time staff wrote as "Minivan back 2 PM" (the Sheet's wording) counts; the website's "Back after the tour, about ..."
+    // note is a guess made when the guest booked and would stay wrong after the date back moves; other remarks are not times
+    if (preg_match('/^\s*minivan back\s+(\d{1,2}(?::\d{2})?\s*(?:-\s*\d{1,2}(?::\d{2})?\s*)?(?:AM|PM))/i', $remark, $m)) $down = preg_replace('/\s*-\s*/', ' - ', $m[1]);
     else {
       $ends = !empty($b['tour_date']) && $b['tour'] !== TRANSPORT_ONLY ? (new DateTime($b['tour_date']))->modify('+' . (tour_length((string) $b['tour']) - 1) . ' day')->format('Y-m-d') : null;
       $down = $ends !== null && $ends === $b['return_date'] ? RETURN_AFTER_TOUR : RETURN_MORNING;
@@ -218,7 +220,7 @@ function booking_summary(string $id, ?array $trav = null): array {
   $pick = [];
   foreach ($stops as $k => $nums) $pick[] = explode("\1", $k)[0] . ': ' . implode(', ', $nums);
   return [
-    'people' => count($trav), 'lead_name' => $trav[0]['full_name'] ?? '',
+    'people' => count($trav), 'lead_name' => (array_values(array_filter($trav, fn ($t) => $t['status'] !== 'Cancelled'))[0] ?? $trav[0] ?? [])['full_name'] ?? '',   // a cancelled first guest is not the name on the receipt
     'traveller_names' => implode(', ', array_column($trav, 'full_name')),
     'countries' => implode(', ', array_values(array_unique(array_filter(array_column($trav, 'country'), 'strlen')))),
     'food' => $count(array_map(fn ($t) => $t['food'] ?: 'Regular', $trav), ', ', ' '),

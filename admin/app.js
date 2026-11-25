@@ -184,8 +184,7 @@
     else toast('Could not copy. Select the text and copy it by hand.', true);
   }
   function viewTransport(main) {
-    var t = new Date(Date.now() + 7 * 3600 * 1000 + 24 * 3600 * 1000);   // tomorrow in Laos (UTC+7)
-    var date = input('date', state.transportDate || t.toISOString().slice(0, 10), { type: 'date' });
+    var date = input('date', picked('transportDate'), { type: 'date' });
     var body = h('div', {});
     function section(title, list, pax, up) {
       var card = h('div', { class: 'card' }, h('div', { class: 'bar' }, h('h2', { style: 'margin:0' }, title + ' (' + pax + ' pax)'),
@@ -228,6 +227,8 @@
         : d.down_slots.map(function (x) { return 'Leave ' + x.time + ': ' + x.pax + 'pax' + (x.train ? ' (' + x.train + ' drop off at the train)' : ''); }).concat(d.down_slots.length > 1 ? ['Total: ' + rows.length + 'pax'] : []);
       var plates = []; rows.forEach(function (r) { if (r.vehicle && plates.indexOf(r.vehicle) === -1) plates.push(r.vehicle); });
       var plate = input('plate', plates.length === 1 ? plates[0] : '', { placeholder: 'e.g. ກກ 7519' });
+      // more than one minivan back (several leaving times): the plate can go on one leaving time only
+      var slotSel = !upWay && d.down_slots.length > 1 ? select('slot', ['Everyone on this list'].concat(d.down_slots.map(function (x) { return 'Leave ' + x.time; })), 'Everyone on this list') : null;
       var card = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, title + ' · ' + rows.length + ' pax'));
       if (!rows.length) { card.appendChild(h('p', { class: 'muted' }, 'Nobody on this date.')); return card; }
       card.appendChild(table(cols, rows, title.replace(/[()]/g, '').replace('/', '.'), lines.map(function (x) { return ['', '', '', '', x]; })));
@@ -237,25 +238,28 @@
           copyText((upWay ? 'ຂຶ້ນ ' : 'ລົງ ') + day(d.date) + (upWay ? ' Luang Prabang - Nong Khiaw' : ' Nong Khiaw - Luang Prabang') + '\n' + lines.join('\n') + '\n\n' +
             rows.map(function (r) { return r.no + '. ' + r.name + ' · ' + (upWay ? [r.time, r.place, r.map].filter(Boolean).join(' · ') : r.notes + ' · pickup: ' + r.place); }).join('\n'), 'List copied');
         } }, 'Copy the list for the minivan manager'),
-        field('Plate number for this whole list', plate),
+        field(slotSel ? 'Plate number' : 'Plate number for this whole list', plate), slotSel ? field('For', slotSel) : null,
         h('button', { class: 'btn small', onclick: function () {
-          api('transport_plate', { date: d.date, dir: upWay ? 'up' : 'down', plate: plate.value.trim() }).then(function (x) { toast('Plate number saved on ' + x.bookings + ' booking' + (x.bookings === 1 ? '' : 's')); load(); }, function () {});
-        } }, 'Save plate for everyone')));
+          var only = slotSel && slotSel.value !== 'Everyone on this list' ? slotSel.value.replace(/^Leave /, '') : '';
+          api('transport_plate', { date: d.date, dir: upWay ? 'up' : 'down', plate: plate.value.trim(), time: only }).then(function (x) { toast('Plate number saved on ' + x.bookings + ' booking' + (x.bookings === 1 ? '' : 's')); load(); }, function () {});
+        } }, slotSel ? 'Save plate' : 'Save plate for everyone')));
       if (plates.length > 1) card.appendChild(h('p', { class: 'muted' }, 'This list has more than one plate number (' + plates.join(', ') + '). Saving one here replaces them all; a single booking can be changed below.'));
       return card;
     }
     function load() {
-      state.transportDate = date.value;
+      state.transportDate = { value: date.value, on: laoToday() };
       api('transport', { date: date.value }).then(function (d) {
         body.textContent = '';
         body.appendChild(dayList(d, false));
         body.appendChild(dayList(d, true));
-        // the passenger list the minivan carries: names as in the passport, passport details, nationality, place and dates
+        // the transfer report for the local government: both routes on one sheet, in the order Noy listed the columns
         var pshort = day(d.date).slice(0, 5).replace('/', '.');
-        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, pshort + ' Passenger list for the minivan · ' + d.passengers.length + ' pax'),
-          d.passengers.length ? table([['No', 'no'], ['Way', 'way'], ['Full name (as in passport)', 'name'], ['Passport no', 'passport'], ['Date of issue', 'issued'], ['Date of expiry', 'expires'], ['Nationality', 'country'],
-            ['Pickup place', 'place'], ['Date to Nong Khiaw', function (r) { return day(r.pickup_date); }], ['Date back', function (r) { return day(r.return_date); }], ['Plate no', 'vehicle'], ['Booking ID', 'booking_id']],
-            d.passengers, pshort + ' Minivan passenger list') : h('p', { class: 'muted' }, 'Nobody on this date.'),
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, pshort + ' Transfer report · both routes · ' + d.passengers.length + ' pax'),
+          h('p', { class: 'muted' }, 'For the local government, before the minivan leaves. One row per guest; Pax is on the first guest of each group.'),
+          d.passengers.length ? table([['No', 'no'], ['Transfer date', function (r) { return day(r.date); }], ['Route', 'route'], ['Full name (as in passport)', 'name'],
+            ['Passport no', 'passport'], ['Date of issue', 'issued'], ['Date of expiry', 'expires'], ['Nationality', 'country'], ['Pax in group', 'pax'],
+            ['Pickup place', 'place'], ['Google Maps link', 'map'], ['WhatsApp', 'whatsapp'], ['Remarks', 'remark'], ['Time', 'time'], ['Plate no', 'vehicle'], ['Booking ID', 'booking_id']],
+            d.passengers, pshort + ' Minivan transfer report') : h('p', { class: 'muted' }, 'Nobody on this date.'),
           d.passengers.some(function (r) { return !r.passport; }) ? h('p', { class: 'muted' }, 'Some guests have no passport number yet. Fill it in on the booking, under Travellers.') : null));
         body.appendChild(h('h2', { class: 'noprint', style: 'margin:18px 4px 6px' }, 'One booking at a time: messages, plate, time'));
         body.appendChild(section('↑ ຂຶ້ນ ' + day(d.date) + ' · Luang Prabang → Nong Khiaw', d.up, d.up_pax, true));
@@ -345,7 +349,7 @@
         field('Passport issued', input('passport_issued', tr.passport_issued)), field('Passport expires', input('passport_expires', tr.passport_expires)),
         field('Food', select('food', [''].concat(FOODS), tr.food)),
         field('Pickup place (or "No transfer")', input('pickup_place', tr.pickup_place, { list: 'placelist' })), field('Pickup map', input('pickup_map', tr.pickup_map)),
-        field('Lunch before the tour', dishSel), field('Lunch choice', choiceSel),
+        field('Lunch before the tour starts', dishSel), field('Lunch choice', choiceSel),
         field('Traveller status', select('status', ['', 'Cancelled', 'No-show'], tr.status)), field('Traveller WhatsApp', input('whatsapp', tr.whatsapp)));
       tcard.appendChild(h('details', { class: 'trav' },
         h('summary', {}, tr.n + '. ' + (tr.full_name || '(no name)') + (tr.status ? ' · ' + tr.status : '') + (signed ? ' · agreement signed' : '')),
@@ -376,7 +380,7 @@
       h('div', { class: 'totals' },
         h('span', {}, 'Tour'), h('span', { class: 'right' }, '$' + money(t.tour_usd, 2)), h('span', {}),
         h('span', {}, 'Transport'), h('span', {}), h('span', { class: 'right' }, money(t.transfer_kip) + ' kip'),
-        h('span', {}, 'Lunch before the tour'), h('span', {}), h('span', { class: 'right' }, money(t.lunch_kip) + ' kip'),
+        h('span', {}, 'Lunch before the tour starts'), h('span', {}), h('span', { class: 'right' }, money(t.lunch_kip) + ' kip'),
         h('span', { class: 'b' }, 'Total'), h('span', { class: 'right b' }, '$' + money(t.total_usd, 2)), h('span', { class: 'right b' }, money(t.total_kip) + ' kip'),
         h('span', {}, 'Paid'), h('span', { class: 'right' }, '$' + money(t.paid_usd, 2)), h('span', {}),
         t.balance_usd < -0.005 ? [h('span', { class: 'b' }, 'Overpaid, to give back'), h('span', { class: 'right b' }, '$' + money(-t.balance_usd, 2)), h('span', { class: 'right b' }, money(-t.balance_kip) + ' kip')]
@@ -427,10 +431,16 @@
         return [m.wa.length >= 7 ? h('a', { href: 'https://wa.me/' + m.wa + '?text=' + encodeURIComponent(m.guest), target: '_blank', rel: 'noopener', title: m.guest }, label)
           : h('a', { href: '#', title: m.guest, onclick: function (e) { e.preventDefault(); copyText(m.guest, 'Minivan message copied (no WhatsApp number on the booking)'); } }, label), ' · '];
       });
-      rc.appendChild(h('p', { class: 'noprint muted' }, 'Links for the guest: ', vans,
+      // the message for the minivan team (with the guest's WhatsApp link and the map link), once per different text
+      var teams = [];
+      (d.minivan || []).forEach(function (m) { if (m.team && teams.indexOf(m.team) === -1) teams.push(m.team); });
+      var teamLinks = teams.map(function (t, i) {
+        return [h('a', { href: '#', title: t, onclick: function (e) { e.preventDefault(); copyText(t, 'Team message copied'); } }, 'copy team message' + (teams.length > 1 ? ' ' + (i + 1) : '')), ' · '];
+      });
+      rc.appendChild(h('p', { class: 'noprint muted' }, 'Links for the guest: ', vans, teamLinks,
         h('a', { href: site + 'agreement/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'agreement form'), ' · ',
         h('a', { href: site + 'lunch/?k=' + r.form_key + '&lang=' + r.language, target: '_blank', rel: 'noopener' }, 'lunch before the tour')));
-      if (vans.length) rc.appendChild(h('p', { class: 'noprint muted', style: 'margin-top:-6px' }, 'The minivan link opens WhatsApp with the pickup place, time and plate number for this guest.'));
+      if (vans.length) rc.appendChild(h('p', { class: 'noprint muted', style: 'margin-top:-6px' }, 'The minivan link opens WhatsApp with the pickup place, time and plate number for this guest. Copy team message copies the message for the minivan team, with the guest\'s WhatsApp link and the map link.'));
       rc.appendChild(receiptPaper(d));
     } else if (b.receipt_ref) rc.appendChild(h('p', { class: 'noprint' }, 'This booking is on receipt ' + b.receipt_ref + ', which belongs to another booking (one paper receipt for several bookings). Search for ' + b.receipt_ref + ' to find it.'));
     else rc.appendChild(h('p', { class: 'muted noprint' }, 'No receipt number yet. Issuing gives this booking the next number; it keeps that number for good.'));
@@ -584,14 +594,19 @@
         } }, 'Save settings')));
 
       var tt = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tours and prices'),
-        h('p', { class: 'muted' }, 'To add a package (201, 202, 301 …): fill the last line and press "Add tour". Then open Tour plans to write its days and show it on the website.'));
+        h('p', { class: 'muted' }, 'To add a package: fill the last line and press "Add tour". The code is up to 5 letters or digits, no spaces or dashes (201, 301, 1D100). Then open Tour plans to write its days and show it on the website.'));
       d.tours.concat([{ code: '', name: '', price_usd: '', sort: d.tours.length + 1, isNew: true }]).forEach(function (t) {
-        var row = h('div', { class: 'bar' }, field('Code', input('code', t.code, { disabled: !t.isNew, style: 'width:90px' })),
+        var row = h('div', { class: 'bar' }, field('Code', input('code', t.code, { disabled: !t.isNew, style: 'width:90px', maxlength: 5, pattern: '[A-Za-z0-9]{1,5}', placeholder: t.isNew ? '201' : '' })),
           h('div', { style: 'flex:1 1 200px' }, field('Name', input('name', t.name))), field('USD per person', input('price_usd', t.price_usd, { type: 'number', step: '0.01', style: 'width:130px' })));
         row.appendChild(h('button', { class: 'btn small', onclick: function () {
           var v = {}; row.querySelectorAll('[name]').forEach(function (i) { v[i.name] = i.value; });
           api('tour_save', { code: v.code, name: v.name, price_usd: v.price_usd, sort: t.sort, is_new: !!t.isNew }).then(function () { toast('Saved'); render(); }, function () {});
         } }, t.isNew ? 'Add tour' : 'Save'));
+        // a package added by mistake can go again (the server refuses while bookings use it, and the four original tours)
+        if (!t.isNew && ['101', '102', '103', '001', 'T00'].indexOf(String(t.code)) === -1) row.appendChild(h('button', { class: 'btn warn small', onclick: function () {
+          if (!confirm('Delete tour ' + t.code + ' with its days, cost lines and photo? This cannot be undone.')) return;
+          api('tour_delete', { code: t.code }).then(function () { toast('Tour ' + t.code + ' deleted'); render(); }, function () {});
+        } }, 'Delete'));
         tt.appendChild(row);
       });
       main.appendChild(tt);
@@ -721,7 +736,7 @@
       rows.map(function (r) { return h('tr', {}, cols.map(function (c) { var v = cell(c, r); return h('td', { class: c[2] || '' }, c[2] === 'num' && v !== '' ? money(v, c[3] || 0) : v); })); }))));
     wrap.appendChild(h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
       var out = [cols.map(function (c) { return c[0]; })].concat(rows.map(function (r) {
-        return cols.map(function (c) { var v = cell(c, r); return typeof v === 'number' || (c[2] === 'num' && v !== '' && isFinite(Number(v))) ? Number(v) : String(v); });
+        return cols.map(function (c) { var v = cell(c, r); if (v && v.nodeType) v = v.textContent; return typeof v === 'number' || (c[2] === 'num' && v !== '' && isFinite(Number(v))) ? Number(v) : String(v); });
       }));
       var under = typeof foot === 'function' ? foot() : foot;
       if (under && under.length) out = out.concat([[]], under);
@@ -732,27 +747,30 @@
   }
   // "2026-11-25 03:10:00" in UTC (as stored) -> "25/11/2026 10:10" in Laos
   function laoTime(utc) { var d = new Date(String(utc).replace(' ', 'T') + 'Z'); if (isNaN(d)) return utc; d = new Date(d.getTime() + 7 * 3600 * 1000); return day(d.toISOString().slice(0, 10)) + ' ' + d.toISOString().slice(11, 16); }
+  // a date picked on a list holds for the rest of that day; a dashboard left open overnight opens on the new tomorrow
+  function picked(key) { var p = state[key]; return p && p.on === laoToday() ? p.value : tomorrow(); }
   function tomorrow() { return new Date(Date.now() + 31 * 3600 * 1000).toISOString().slice(0, 10); }   // tomorrow in Laos (UTC+7)
   function openBooking(id) { return h('button', { class: 'btn ghost small', onclick: function () { state.tab = 'booking'; state.id = id; render(); } }, id); }
 
   /* ---------- daily lists: guide, lunch, collect on arrival ---------- */
   function viewReports(main) {
-    var date = input('date', state.reportDate || tomorrow(), { type: 'date' }), body = h('div', {});
+    var date = input('date', picked('reportDate'), { type: 'date' }), body = h('div', {});
     var run = 0;
     function load() {
       var mine = ++run, stale = function () { if (mine !== run) throw new Error('stale'); };
-      if (!date.value) { date.value = state.reportDate || tomorrow(); }   // an emptied date goes back to the last one shown
-      state.reportDate = date.value; body.textContent = '';
+      if (!date.value) { date.value = picked('reportDate'); }   // an emptied date goes back to the last one shown
+      state.reportDate = { value: date.value, on: laoToday() }; body.textContent = '';
       api('tour_report', { date: date.value }).then(function (tr) {
         stale();
         var short = day(tr.date).slice(0, 5).replace('/', '.');
         var lineText = function (l, guide) { return l.label + ' – ' + l.pax + ' pax' + (guide ? ' · Guide ' + guide : ''); };
         var guides = tr.lines.map(function (l) {
+          if (l.total) return h('div', { class: 'bar', style: 'margin:4px 0' }, h('strong', {}, l.label + ' – ', h('span', { class: 'red' }, l.pax + ' pax')));
           var g = input('guide', l.guide, { placeholder: 'Guide (type the name)', style: 'max-width:240px' });
           g.addEventListener('change', function () { l.guide = g.value.trim(); api('guide_save', { date: tr.date, tour: l.tour, guide: g.value }).then(function () { toast('Guide saved'); }, function () {}); });
           return h('div', { class: 'bar', style: 'margin:4px 0' }, h('strong', { style: 'flex:1 1 260px' }, l.label + ' – ', h('span', { class: 'red' }, l.pax + ' pax')), g);
         });
-        var cols = [['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', 'food'], ['Guest note', 'note']];
+        var cols = [['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', function (r) { return r.alert ? h('span', { class: 'red' }, r.food) : r.food; }], ['Guest note', 'note']];
         body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tour report for the team · tour date ' + day(tr.date) + ' (' + tr.pax + ' pax starting)'),
           table(cols, tr.rows, short + ' Tour', function () { return tr.lines.map(function (l) { return ['', '', '', '', lineText(l, l.guide)]; }); }, 'Tour date ' + day(tr.date)),
           tr.rows.length ? h('div', {}, guides, h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
@@ -765,8 +783,8 @@
         var food = Object.keys(t.food).map(function (k) { return k + ' ' + t.food[k]; }).join(' · ');
         body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Trip sheet · ' + day(t.date) + ' (' + t.travellers + ' travellers starting a tour)'),
           t.rows.length ? h('div', { class: 'kpis' }, kpi('Bookings', t.bookings), kpi('Travellers', t.travellers), kpi('Taking the minivan', t.riders), kpi('Food', food || '-'),
-            kpi('Tours still to collect', '$' + money(t.tour_due_usd, 2)), kpi('Minivan, kip', money(t.transfer_kip)), kpi('Lunches before the tour, kip', money(t.lunch_kip))) : null,
-          table([['Tour', 'tour'], ['Name', 'full_name'], ['Country', 'country'], ['Gender', 'gender'], ['Food', function (r) { return r.food || 'Regular'; }], ['Lunch before the tour', 'lunch'],
+            kpi('Tours still to collect', '$' + money(t.tour_due_usd, 2)), kpi('Minivan, kip', money(t.transfer_kip)), kpi('Lunches before the tour starts, kip', money(t.lunch_kip))) : null,
+          table([['Tour', 'tour'], ['Name', 'full_name'], ['Country', 'country'], ['Gender', 'gender'], ['Food', function (r) { return r.food || 'Regular'; }], ['Lunch before the tour starts', 'lunch'],
             ['Pickup place', 'pickup_place'], ['Pickup map', 'pickup_map'], ['Booking ID', 'booking_id'], ['Receipt No', 'receipt_no']], t.rows, 'trip-sheet-' + t.date)));
         return api('guide_report', { date: date.value });
       }).then(function (g) {
@@ -783,7 +801,7 @@
         var shortL = day(l.date).slice(0, 5).replace('/', '.');
         body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, shortL + ' Food report · for the kitchen'),
           l.rows.length ? h('p', {}, h('strong', {}, dishes), ' · ' + money(l.total_kip) + ' kip') : null,
-          table([['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Food type', 'food'],
+          table([['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Food type', function (r) { return r.alert ? h('span', { class: 'red' }, r.food) : r.food; }],
             ['Menu', 'item'], ['Qty', 'qty', 'num'], ['Date', function (r) { return day(r.day); }], ['Ready by', 'ready_by'], ['Special requests', 'special'], ['Price kip', 'kip', 'num']], l.rows, shortL + ' Food report',
             Object.keys(l.dishes).map(function (k) { return ['', '', '', '', '', '', k, l.dishes[k]]; })),
           l.message ? h('div', {}, h('h3', {}, 'Message for the kitchen'), h('pre', { style: 'white-space:pre-wrap;font:inherit' }, l.message),
@@ -850,7 +868,7 @@
         };
         costs.forEach(addCost); addCost();
         var ad = input('addon', addon.addon), adDay = input('addon_day', addon.starts_day, { type: 'number', min: 1, style: 'width:90px' });
-        var builtIn = ['101', '102', '103', '001'].indexOf(t.code) !== -1, web;
+        var builtIn = ['101', '102', '103', '001'].indexOf(t.code) !== -1, web, saveWeb = null;
         if (builtIn) web = h('p', { class: 'muted' }, 'On the website: this is one of the four original tours. Its text is under Website > Website text, its price under Prices and settings.');
         else {
           var show = h('input', { type: 'checkbox' }); show.checked = !!Number(t.web_show);
@@ -876,9 +894,12 @@
             h('label', { class: 'f' }, 'Short description', ws), h('label', { class: 'f' }, 'Included', wi),
             h('div', { class: 'bar' }, img, field('Photo', file)),
             h('p', {}, h('button', { class: 'btn small', onclick: function () {
-              if (show.checked && !(Number(t.price_usd) > 0)) { toast('Give the tour a price under Prices and settings first.', true); return; }
-              api('tour_web', { code: t.code, show: show.checked, title: wt.value, duration: wd.value, level: wl.value, summary: ws.value, included: wi.value }).then(function () { toast('Saved. The website shows it within a minute.'); }, function () {});
+              saveWeb().then(function () { toast('Saved. The website shows it within a minute.'); }, function () {});
             } }, 'Save website details')));
+          saveWeb = function () {
+            if (show.checked && !(Number(t.price_usd) > 0)) { toast('Give the tour a price under Prices and settings first.', true); return Promise.reject(new Error('no price')); }
+            return api('tour_web', { code: t.code, show: show.checked, title: wt.value, duration: wd.value, level: wl.value, summary: ws.value, included: wi.value });
+          };
         }
         main.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, t.code + ' · ' + t.name), web, dayBox,
           h('p', {}, h('button', { class: 'btn ghost small', onclick: function () { addDay(''); } }, '+ Add a day')),
@@ -890,7 +911,8 @@
               costs: [].map.call(costBox.querySelectorAll('.costline'), function (row) { var c = {}; row.querySelectorAll('[name]').forEach(function (i) { c[i.name] = i.value; }); return c; }) };
             while (body.days.length && !body.days[body.days.length - 1].trim()) body.days.pop();
             if (body.days.some(function (x) { return !x.trim(); })) { toast('A day in the middle is empty. Fill it in or move the later days up.'); return; }
-            api('plan_save', body).then(function () { toast('Saved ' + t.code); state.tab = 'plans'; render(); }, function () {});
+            // the website details are saved too, so nothing typed above is lost when the page reloads
+            (saveWeb ? saveWeb() : Promise.resolve()).then(function () { return api('plan_save', body); }).then(function () { toast('Saved ' + t.code); state.tab = 'plans'; render(); }, function () {});
           } }, 'Save ' + t.code)));
       });
       main.appendChild(h('datalist', { id: 'perlist' }, ['group', 'person', '2 people', '4 people'].map(function (x) { return h('option', { value: x }); })));

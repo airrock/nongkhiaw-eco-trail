@@ -88,7 +88,7 @@ function booking_full(string $id, array $user): array {
   $minivan = [];
   if (!$b['deleted_at']) foreach (['up' => $b['pickup_date'], 'down' => $b['return_date']] as $dir => $day) {
     if (!$day) continue;
-    foreach (transport_day($day, $id)[$dir] as $x) $minivan[] = ['dir' => $dir, 'date' => $day, 'wa' => $x['wa'], 'guest' => $x['guest'], 'place' => $x['place'], 'stop' => $x['stop'], 'vehicle' => $x['vehicle']];
+    foreach (transport_day($day, $id)[$dir] as $x) $minivan[] = ['dir' => $dir, 'date' => $day, 'wa' => $x['wa'], 'guest' => $x['guest'], 'place' => $x['place'], 'stop' => $x['stop'], 'vehicle' => $x['vehicle'], 'team' => $x['team']];
   }
   return ['booking' => $b, 'minivan' => $minivan, 'tour_days' => tour_length((string) $b['tour']), 'travellers' => $trav, 'summary' => booking_summary($id, $trav), 'totals' => booking_totals($id),
     'payments' => all('SELECT * FROM payments WHERE booking_id = ? ORDER BY paid_on, id', [$id]),
@@ -170,13 +170,22 @@ try {
         }
         // A pickup place or map changed on the booking is the group's place: the travellers who had the old one (or none) follow,
         // so the Pickups tab, the minivan messages and the receipt all show it. A traveller with their own place keeps it.
-        $now = one('SELECT * FROM bookings WHERE id = ?', [$id]);
         $same = fn ($a, $b) => mb_strtolower(trim((string) $a)) === mb_strtolower(trim((string) $b));
+        // a new hotel with the old map link: the link would show the old hotel, so it is cleared (staff paste the new one)
+        if (in_array('accommodation', $changed, true) && !in_array('maps_link', $changed, true) && trim((string) $old['maps_link']) !== '') {
+          q("UPDATE bookings SET maps_link = '' WHERE id = ?", [$id]);
+          q('UPDATE travellers SET pickup_map = \'\' WHERE booking_id = ? AND pickup_map = ?', [$id, $old['maps_link']]);
+          $changed[] = 'maps_link';
+        }
+        $now = one('SELECT * FROM bookings WHERE id = ?', [$id]);
         $place = goes_up($now['transfer']) ? 'accommodation' : 'nk_pickup';
         if (array_intersect($changed, [$place, 'maps_link', 'transfer'])) {
           $moved = false;
           foreach (all("SELECT n, pickup_place, pickup_map FROM travellers WHERE booking_id = ? AND pickup_place <> 'No transfer'", [$id]) as $t) {
-            if (in_array($place, $changed, true) && ($same($t['pickup_place'], $old[$place]) || trim($t['pickup_place']) === '') && $now[$place] !== '') {
+            // the group's old place: the field itself, or, when the transfer changed direction, the place of the other direction
+            $wasGroup = $same($t['pickup_place'], $old[$place]) || trim($t['pickup_place']) === ''
+              || (in_array('transfer', $changed, true) && ($same($t['pickup_place'], $old['nk_pickup']) || $same($t['pickup_place'], $old['accommodation'])));
+            if (in_array($place, $changed, true) && $wasGroup && $now[$place] !== '') {
               q('UPDATE travellers SET pickup_place = ? WHERE booking_id = ? AND n = ?', [$now[$place], $id, $t['n']]); $moved = true; $t['pickup_place'] = $now[$place];
             }
             if ($place === 'accommodation' && in_array('maps_link', $changed, true) && $same($t['pickup_place'], $now['accommodation']) && !$same($t['pickup_map'], $now['maps_link'])) {
@@ -430,7 +439,7 @@ try {
     case 'transport': out(transport_day(date_or_null($in['date'] ?? null) ?? lao_today()));
     case 'transport_plate': {
       $dir = ($in['dir'] ?? '') === 'up' ? 'up' : 'down';
-      $n = set_day_plate(date_or_null($in['date'] ?? null) ?? lao_today(), $dir, clean($in['plate'] ?? '', 60), $user);
+      $n = set_day_plate(date_or_null($in['date'] ?? null) ?? lao_today(), $dir, clean($in['plate'] ?? '', 60), $user, clean($in['time'] ?? '', 40));
       out(['ok' => true, 'bookings' => $n]);
     }
 

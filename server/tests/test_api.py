@@ -165,7 +165,7 @@ eq('booked by SELFTEST-Ann One' in tr['up'][1]['team'], True, 'second stop names
 eq(tr['up'][0]['guest'].split('\n')[:3], ['Hello SELFTEST-Ann! Your minivan to Nong Khiaw is booked for 01/02/2030.', 'Pickup at Sunset Hostel between 7:30 and 8:00 AM.', 'The plate number is AB 1234.'], 'guest message')
 tr = office.ok('transport', date='2030-02-03')
 eq((tr['up_pax'], tr['down_pax'], tr['down'][0]['drop'], tr['down'][0]['place']), (0, 2, 'Luang Prabang train station', 'Office (The Trio Bar & Cafe)'), 'way back')
-eq('ລົງ: 03/02 3:30 - 4:30 PM ສົ່ງສະຖານີລົດໄຟ' in tr['down'][0]['team'], True, 'team message: time from the remark, train station')
+eq('ລົງ: 03/02 10:00 - 10:30 AM ສົ່ງສະຖານີລົດໄຟ' in tr['down'][0]['team'], True, 'team message: back after the day the tour ends = morning minivan, train station')
 eq(office.ok('transport', date='2030-02-07')['down'], [], 'a deleted booking is not on the list')
 
 # ---------- daily lists and money reports ----------
@@ -247,7 +247,7 @@ eq(admin.ok('booking', id='SELFTEST-A1')['receipt']['no'], rno, 'wording does no
 
 # ---------- feedback round 2026-11-25: times, no-show, pickup place, team and minivan lists, Excel, tours on the website ----------
 bk = admin.ok('booking', id='SELFTEST-A1')
-eq((bk['booking']['pickup_time'], bk['booking']['return_time']), ('7:30 - 8:00 AM', '3:30 - 4:30 PM'), 'minivan times are filled in when nobody typed them')
+eq((bk['booking']['pickup_time'], bk['booking']['return_time']), ('7:30 - 8:00 AM', '10:00 - 10:30 AM'), 'minivan times are filled in when nobody typed them (back the day after the 2-day tour ends: morning)')
 eq(sqlval("SELECT CONCAT(pickup_time, '|', return_time) FROM bookings WHERE id='SELFTEST-A1'"), '|', 'the usual times are not stored')
 admin.ok('booking_save', id='SELFTEST-A1', fields={'return_time': '2 PM', 'transport_remark': ''})
 eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '2 PM', 'a typed time wins')
@@ -271,10 +271,15 @@ eq(office.ok('transport', date='2030-02-01')['up'][0]['place'], old_place, 'and 
 eq(office.ok('transport_plate', date='2030-02-01', dir='up', plate='ກກ 7519')['bookings'], 1, 'one plate number for the whole list')
 eq(sqlval("SELECT vehicle_to_nk FROM bookings WHERE id='SELFTEST-A1'"), 'ກກ 7519', 'plate saved on the booking')
 ps = office.ok('transport', date='2030-02-01')['passengers']
-eq((len(ps), ps[0]['way'], ps[0]['name'], ps[0]['passport'], ps[0]['country'] != '', ps[0]['place'], ps[0]['pickup_date'], ps[0]['return_date'], sorted(ps[0].keys()) == sorted(['no', 'way', 'name', 'passport', 'issued', 'expires', 'country', 'place', 'pickup_date', 'return_date', 'booking_id', 'vehicle'])),
-   (2, 'ຂຶ້ນ', 'SELFTEST-Ann One', 'AB123', True, old_place, '2030-02-01', '2030-02-03', True), 'minivan passenger list: passport details, place and both dates')
+eq((len(ps), ps[0]['route'], ps[0]['date'], ps[0]['name'], ps[0]['passport'], ps[0]['country'] != '', ps[0]['pax'], ps[1]['pax'], ps[0]['place'], ps[0]['map'] == '', ps[0]['whatsapp'],
+    sorted(ps[0].keys()) == sorted(['no', 'date', 'dir', 'route', 'name', 'passport', 'issued', 'expires', 'country', 'pax', 'place', 'map', 'whatsapp', 'remark', 'time', 'vehicle', 'booking_id'])),
+   (2, 'Luang Prabang → Nong Khiaw', '2030-02-01', 'SELFTEST-Ann One', 'AB123', True, 2, '', old_place, True, '+15550100', True), 'transfer report: date, route, passport, group pax, map, WhatsApp with country code')
+pd = office.ok('transport', date='2030-02-03')['passengers']
+eq((len(pd), pd[0]['route'], pd[0]['remark'].endswith('Drop-off: Luang Prabang train station')), (2, 'Nong Khiaw → Luang Prabang', True), 'transfer report: the way back with its drop-off')
+bk = office.ok('booking', id='SELFTEST-A1')
+eq(all('https://wa.me/15550100' in m['team'] for m in bk['minivan']), True, 'team message on the booking, with the WhatsApp link')
 dn = office.ok('transport', date='2030-02-03')
-eq((dn['down_rows'][0]['notes'], dn['down_slots']), ('Leave at 3:30 - 4:30 PM, drop off at the train station', [{'time': '3:30 - 4:30 PM', 'pax': 2, 'train': 2}]), 'way back: note and head count per leaving time')
+eq((dn['down_rows'][0]['notes'], dn['down_slots']), ('Leave at 10:00 - 10:30 AM, drop off at the train station', [{'time': '10:00 - 10:30 AM', 'pax': 2, 'train': 2}]), 'way back: note and head count per leaving time')
 
 rep = office.ok('tour_report', date='2030-02-01')
 eq((rep['pax'], [(r['no'], r['tour'], r['receipt_no'], r['pax']) for r in rep['rows']], [(x['tour'], x['pax'], x['label'].split(' ')[:2]) for x in rep['lines']]),
@@ -420,4 +425,29 @@ eq(admin.ok('settings')['settings']['logo_url'], 'https://nongkhiawlaos.com/imag
 phone = User(); phone.ok('login', email='admin@test.local', password='admin-pass-2')
 admin.ok('change_password', old='admin-pass-2', new='admin-pass-3')
 eq((admin.ok('me')['user'] is not None, phone.ok('me')['user']), (True, None), 'other session signed out after a password change')
+# ----- the audit round: return time, no-show customer, a new hotel's map, a transfer that changes direction -----
+W = {"type": "booking", "id": "SELFTEST-W1", "tour": "101", "date": "2032-03-01", "transfer": "Round trip", "pickupDate": "2032-03-01", "returnDate": "2032-03-02",
+     "returnPlan": "end", "hotel": "Old Hotel", "map": "https://maps.example/old", "payment": "USD cash", "phone": "+44 7000 000000", "lang": "en",
+     "travellers": [{"first": "SELFTEST-W", "last": "Lead"}, {"first": "SELFTEST-W", "last": "Two"}]}
+site(W)
+eq(office.ok('booking', id='SELFTEST-W1')['booking']['return_time'] or office.ok('transport', date='2032-03-02')['down'][0]['time'], '3:30 - 4:30 PM', 'back on the day the tour ends: 3:30 - 4:30 PM')
+office.ok('booking_save', id='SELFTEST-W1', fields={'return_date': '2032-03-05'})
+eq(office.ok('transport', date='2032-03-05')['down'][0]['time'], '10:00 - 10:30 AM', "the website's 'back after the tour' note does not hold the time once the date back moves")
+office.ok('booking_save', id='SELFTEST-W1', fields={'transport_remark': 'Driver call at 7 AM'})
+eq(office.ok('transport', date='2032-03-05')['down'][0]['time'], '10:00 - 10:30 AM', 'a time inside another remark is not the time back')
+office.ok('booking_save', id='SELFTEST-W1', fields={'transport_remark': 'Minivan back 2 PM'})
+eq(office.ok('transport', date='2032-03-05')['down'][0]['time'], '2 PM', "the Sheet's 'Minivan back 2 PM' still counts")
+office.ok('traveller_save', booking_id='SELFTEST-W1', n=1, fields={'status': 'No-show'})
+eq('SELFTEST-W Lead' in office.ok('transport', date='2032-03-01')['up'][0]['team'], False, 'a no-show is not named as the customer in the team message')
+office.ok('traveller_save', booking_id='SELFTEST-W1', n=1, fields={'status': ''})
+office.ok('booking_save', id='SELFTEST-W1', fields={'accommodation': 'New Hotel'})
+up = office.ok('transport', date='2032-03-01')['up'][0]
+eq((up['place'], up['map'], sqlval("SELECT maps_link FROM bookings WHERE id='SELFTEST-W1'")), ('New Hotel', '', ''), 'a new hotel without a new map: the old map link is cleared')
+X = dict(W, id='SELFTEST-W2', transfer='One way to Luang Prabang', pickupDate='', hotel='', map='', returnPlan='later', returnDate='2032-03-04')
+site(X)
+office.ok('booking_save', id='SELFTEST-W2', fields={'transfer': 'Round trip', 'pickup_date': '2032-03-01', 'accommodation': 'LP Hostel'})
+eq(sorted(set(u['place'] for u in office.ok('transport', date='2032-03-01')['up'] if u['booking_id'] == 'SELFTEST-W2')), ['LP Hostel'], 'one way back made a round trip: the travellers follow the new Luang Prabang hotel')
+office.ok('booking_save', id='SELFTEST-W2', fields={'return_date': '2032-03-05'})
+eq(office.ok('transport_plate', date='2032-03-05', dir='down', plate='ກກ 1111', time='2 PM')['bookings'], 1, 'a plate for one leaving time only')
+eq((sqlval("SELECT vehicle_to_lpb FROM bookings WHERE id='SELFTEST-W1'"), sqlval("SELECT vehicle_to_lpb FROM bookings WHERE id='SELFTEST-W2'")), ('ກກ 1111', ''), 'the other minivan keeps its own plate')
 print(f'all {n} checks passed')

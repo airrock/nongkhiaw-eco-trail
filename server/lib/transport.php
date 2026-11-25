@@ -79,18 +79,26 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
         'food' => $t['food'] !== '' ? $t['food'] : 'Regular', 'lunch' => trim($t['lunch_dish'] . ($t['lunch_choice'] !== '' ? ' (' . $t['lunch_choice'] . ')' : ''))],
       all("SELECT * FROM travellers WHERE booking_id = ? AND pickup_place <> 'No transfer' AND status = '' ORDER BY n", [$b['id']]));
     if (!$people) continue;
-    $lead = (string) val('SELECT full_name FROM travellers WHERE booking_id = ? ORDER BY n LIMIT 1', [$b['id']]) ?: $people[0]['name'];
+    $lead = (string) val("SELECT full_name FROM travellers WHERE booking_id = ? AND status = '' ORDER BY n LIMIT 1", [$b['id']]) ?: $people[0]['name'];   // a no-show is not the customer
     $first = $people[0]['first'] ?: explode(' ', $people[0]['name'])[0];
     $nk = $b['nk_pickup'] ?: $office; $train = (bool) $b['train_dropoff'];
     [$upTime, $downTime] = array_map('time_label', transfer_times($b));
     $team = team_message($people, $goesUp ? $b['pickup_date'] : null, $back ? $b['return_date'] : null, $train, $lead, $b['whatsapp'], $b['id'], $b['receipt_no'], $nk, $downTime);
     $base = ['booking_id' => $b['id'], 'receipt_no' => $b['receipt_no'], 'whatsapp' => $b['whatsapp'], 'lead' => $lead, 'remark' => $b['transport_remark'], 'wa' => wa_digits($b['whatsapp'])];
     $row = fn ($p, $i) => ['booking_id' => $b['id'], 'tour' => $b['tour'], 'receipt_no' => $b['receipt_no'], 'name' => $p['name'], 'pax' => $i === 0 ? count($people) : '', 'riders' => 1];
-    // the passenger list the minivan carries: one row per guest riding that day, either way, with the passport details
+    // the passenger list for the local government: one row per guest and route riding that day, with the passport details
     $ridesUp = $goesUp && $b['pickup_date'] === $date; $ridesDown = $back && $b['return_date'] === $date;
-    if ($ridesUp || $ridesDown) foreach ($people as $p) $passengers[] = ['way' => $ridesUp && $ridesDown ? 'ຂຶ້ນ + ລົງ' : ($ridesUp ? 'ຂຶ້ນ' : 'ລົງ'), 'name' => $p['name'], 'passport' => $p['passport'],
-      'issued' => $p['issued'], 'expires' => $p['expires'], 'country' => $p['country'], 'place' => $ridesUp && $ridesDown ? $p['place'] . ' / back from ' . $nk : ($ridesUp ? $p['place'] : $nk),
-      'pickup_date' => $goesUp ? $b['pickup_date'] : null, 'return_date' => $back ? $b['return_date'] : null, 'booking_id' => $b['id'], 'vehicle' => $ridesUp && $ridesDown ? trim($b['vehicle_to_nk'] . ' / ' . $b['vehicle_to_lpb'], ' /') : ($ridesUp ? $b['vehicle_to_nk'] : $b['vehicle_to_lpb'])];
+    foreach (array_filter([$ridesUp ? 'up' : null, $ridesDown ? 'down' : null]) as $dir) {
+      foreach ($people as $i => $p) {
+        $phone = $p['phone'] !== '' ? $p['phone'] : (string) $b['whatsapp'];
+        $remark = trim(implode('; ', array_filter([$b['transport_remark'], $dir === 'down' ? 'Drop-off: ' . ($train ? 'Luang Prabang train station' : 'city center') : ''])));
+        $passengers[] = ['date' => $date, 'dir' => $dir, 'route' => $dir === 'up' ? 'Luang Prabang → Nong Khiaw' : 'Nong Khiaw → Luang Prabang',
+          'name' => $p['name'], 'passport' => $p['passport'], 'issued' => $p['issued'], 'expires' => $p['expires'], 'country' => $p['country'],
+          'pax' => $i === 0 ? count($people) : '', 'place' => $dir === 'up' ? $p['place'] : $nk, 'map' => $dir === 'up' ? $p['map'] : '',
+          'whatsapp' => strlen(wa_digits($phone)) >= 7 ? '+' . wa_digits($phone) : trim($phone), 'remark' => $remark,
+          'time' => $dir === 'up' ? $upTime : $downTime, 'vehicle' => $dir === 'up' ? $b['vehicle_to_nk'] : $b['vehicle_to_lpb'], 'booking_id' => $b['id']];
+      }
+    }
     if ($goesUp && $b['pickup_date'] === $date) {
       $stops = pickup_stops($people);
       foreach ($stops as $si => $g) {
@@ -128,7 +136,8 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
   unset($r);
   foreach ($downRows as $i => &$r) $r['no'] = $i + 1;
   unset($r);
-  usort($passengers, fn ($a, $b) => [$a['way'] === 'ລົງ' ? 1 : 0, $a['booking_id']] <=> [$b['way'] === 'ລົງ' ? 1 : 0, $b['booking_id']]);
+  // the way up first, then the way back, each by time; a booking's guests stay together (usort is stable)
+  usort($passengers, fn ($a, $b) => [$a['dir'] === 'down' ? 1 : 0, time_sort($a['time']), $a['booking_id']] <=> [$b['dir'] === 'down' ? 1 : 0, time_sort($b['time']), $b['booking_id']]);
   foreach ($passengers as $i => &$r) $r['no'] = $i + 1;
   unset($r);
   return ['date' => $date, 'up' => $up, 'down' => $down, 'up_pax' => array_sum(array_column($up, 'pax')), 'down_pax' => array_sum(array_column($down, 'pax')),
@@ -153,10 +162,12 @@ function time_label(string $t): string {
 }
 
 // One plate number for everyone on the minivan that day in one direction. Returns how many bookings it was written on.
-function set_day_plate(string $date, string $dir, string $plate, array $user): int {
+// $time: only the bookings leaving at that time (one plate per minivan when several go the same way)
+function set_day_plate(string $date, string $dir, string $plate, array $user, string $time = ''): int {
   $col = $dir === 'up' ? 'vehicle_to_nk' : 'vehicle_to_lpb';
   $day = transport_day($date);
-  $ids = array_values(array_unique(array_column($dir === 'up' ? $day['up'] : $day['down'], 'booking_id')));
+  $list = array_filter($dir === 'up' ? $day['up'] : $day['down'], fn ($x) => $time === '' || $x['time'] === $time);
+  $ids = array_values(array_unique(array_column($list, 'booking_id')));
   foreach ($ids as $id) {
     $old = (string) val("SELECT `$col` FROM bookings WHERE id = ?", [$id]);
     if ($old === $plate) continue;

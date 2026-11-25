@@ -51,6 +51,8 @@ td.num,th.num{text-align:right;white-space:nowrap}
 .receipt{background:#fff;padding:14px;border:1px solid var(--line);border-radius:6px;max-width:760px}
 .receipt h2{margin:0 0 2px;font-size:1.3rem}
 .receipt .head{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid var(--forest);padding-bottom:10px;margin-bottom:12px}
+.receipt .head .grow{flex:1}.receipt .rlogo{width:64px;height:64px;object-fit:contain;flex:none}
+.top-logo{width:46px;height:auto;flex:none}.login-logo{display:block;width:72px;height:72px;margin:0 auto 10px}
 .receipt .paid{color:var(--ok);font-weight:800;font-size:1.1rem}
 @media print{
   .scroll{overflow:visible}

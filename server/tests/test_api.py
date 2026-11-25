@@ -277,11 +277,11 @@ dn = office.ok('transport', date='2030-02-03')
 eq((dn['down_rows'][0]['notes'], dn['down_slots']), ('Leave at 3:30 - 4:30 PM, drop off at the train station', [{'time': '3:30 - 4:30 PM', 'pax': 2, 'train': 2}]), 'way back: note and head count per leaving time')
 
 rep = office.ok('tour_report', date='2030-02-01')
-eq((rep['pax'], [(r['no'], r['tour'], r['receipt_no'], r['pax']) for r in rep['rows']], [(x['tour'], x['pax']) for x in rep['lines']]),
-   (3, [(1, '102 (PRIVATE)', '000001', 3), (2, '102 (PRIVATE)', '000001', ''), (3, '102 (PRIVATE)', '000001', '')], [('101', 3), ('102', 3)]), 'tour report: the group line counts everyone, each package its own')
-office.ok('guide_save', date='2030-02-01', tour='101', guide='Mr Boun Mee')
+eq((rep['pax'], [(r['no'], r['tour'], r['receipt_no'], r['pax']) for r in rep['rows']], [(x['tour'], x['pax'], x['label'].split(' ')[:2]) for x in rep['lines']]),
+   (3, [(1, '102 (PRIVATE)', '000001', 3), (2, '102 (PRIVATE)', '000001', ''), (3, '102 (PRIVATE)', '000001', '')], [('102', 3, ['Package', '102'])]), 'tour report: one line per package, code before the name')
+office.ok('guide_save', date='2030-02-01', tour='102', guide='Mr Boun Mee')
 eq(office.ok('tour_report', date='2030-02-01')['lines'][0]['guide'], 'Mr Boun Mee', 'guide of the day saved')
-office.ok('guide_save', date='2030-02-01', tour='101', guide='')
+office.ok('guide_save', date='2030-02-01', tour='102', guide='')
 eq(sqlval('SELECT COUNT(*) FROM day_guides'), '0', 'an emptied guide is removed')
 l = office.ok('lunch_report', date='2030-02-01')
 eq((l['rows'][0]['no'], l['rows'][0]['receipt_no'], l['rows'][0]['food'], l['rows'][0]['day']), (1, '000001', 'Vegan', '2030-02-01'), 'kitchen report: receipt number, food type and date')
@@ -413,4 +413,11 @@ eq(site({"type": "agreement", "key": k, "people": [{"n": 3, "photo": "yes", "ecN
 eq(site({"type": "lunch", "key": k, "people": [{"n": 3, "lunch": "Fried rice", "choice": "Tofu"}]})[1], {'saved': 0}, 'nor order a lunch')
 refused(admin.call('change_password', old='admin-pass-2', new='admin-pass-2'), 'the new password must differ')
 refused(admin.call('user_password', id=99999, password='whatever-1'), 'resetting the password of an unknown user')
+refused(admin.call('settings_save', settings={'logo_url': 'javascript:alert(1)'}), 'a logo link that is not https')
+admin.ok('settings_save', settings={'logo_url': 'https://nongkhiawlaos.com/images/receipt-logo.png'})
+eq(admin.ok('settings')['settings']['logo_url'], 'https://nongkhiawlaos.com/images/receipt-logo.png', 'logo link saved')
+# a password change ends the user's other sessions, not the one that changed it
+phone = User(); phone.ok('login', email='admin@test.local', password='admin-pass-2')
+admin.ok('change_password', old='admin-pass-2', new='admin-pass-3')
+eq((admin.ok('me')['user'] is not None, phone.ok('me')['user']), (True, None), 'other session signed out after a password change')
 print(f'all {n} checks passed')

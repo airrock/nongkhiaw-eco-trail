@@ -3,7 +3,8 @@
   'use strict';
   var API = '../api/admin.php';
   var app = document.getElementById('app');
-  var state = { user: null, tab: 'bookings', filters: { from: new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10), to: '', q: '', status: '' }, cfg: null };   // from today in Laos
+  function laoToday() { return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); }
+  var state = { user: null, tab: 'bookings', filters: { from: laoToday(), to: '', q: '', status: '', auto: true }, cfg: null };   // from today in Laos
   var STATUSES = ['Requested', 'Confirmed', 'Paid', 'Cancelled', 'No-show'];
   var TRANSFERS = ['No', 'One way to Nong Khiaw', 'One way to Luang Prabang', 'Round trip'];
   var PAYS = ['USD cash', 'Kip cash', 'Card (USD only, 3% bank fee)', 'BCEL QR'];
@@ -88,6 +89,7 @@
     var email = input('email', '', { type: 'email', autocomplete: 'username', required: true });
     var pass = input('password', '', { type: 'password', autocomplete: 'current-password', required: true });
     return h('div', { class: 'login' }, h('div', { class: 'card' },
+      h('img', { class: 'login-logo', src: 'logo.png', alt: '', width: 72, height: 72 }),
       h('h1', {}, 'Nong Khiaw Eco-Trail'), h('p', { class: 'muted' }, 'Staff dashboard. Sign in with your own account.'),
       h('form', { onsubmit: function (e) {
         e.preventDefault();
@@ -120,24 +122,40 @@
     tabs.push(['account', 'My account']);
     var main = h('main', {});
     app.appendChild(h('div', { class: 'top' },
-      h('div', { class: 'row' }, h('strong', {}, 'Nong Khiaw Eco-Trail'),
+      h('div', { class: 'row' }, h('img', { class: 'top-logo', src: 'logo-white.png', alt: '', width: 46, height: 23 }), h('strong', {}, 'Nong Khiaw Eco-Trail'),
         h('div', { class: 'who' }, state.user.name, h('br'), isAdmin() ? 'Admin' : 'Office staff')),
       h('div', { class: 'tabs' }, tabs.map(function (t) {
         return h('button', { class: state.tab === t[0] || (state.tab === 'booking' && t[0] === 'bookings') ? 'on' : '', onclick: function () { state.tab = t[0]; render(); } }, t[1]);
       }))));
     app.appendChild(main);
-    ({ bookings: viewBookings, transport: viewTransport, reports: viewReports, agreements: viewAgreements, inquiries: viewInquiries, money: viewMoney, booking: viewBooking, 'new': viewNew, settings: viewSettings, users: viewUsers, overview: viewOverview, plans: viewPlans, website: viewWebsite, account: viewAccount })[state.tab](main);
+    var views = { bookings: viewBookings, transport: viewTransport, reports: viewReports, agreements: viewAgreements, inquiries: viewInquiries, money: viewMoney, booking: viewBooking, 'new': viewNew, settings: viewSettings, users: viewUsers, overview: viewOverview, plans: viewPlans, website: viewWebsite, account: viewAccount };
+    if (!views[state.tab] || (!isAdmin() && ADMIN_TABS.indexOf(state.tab) !== -1)) state.tab = 'bookings';
+    var want = '#' + state.tab + (state.tab === 'booking' ? '/' + encodeURIComponent(state.id) : '');
+    if (location.hash !== want) {
+      if (location.hash && location.hash !== '#') history.pushState(null, '', want); else history.replaceState(null, '', want);
+    }
+    views[state.tab](main);
   }
+  var ADMIN_TABS = ['overview', 'money', 'plans', 'settings', 'website', 'users'];
+  function fromHash() {
+    var m = /^#([a-z]+)(?:\/(.+))?$/.exec(location.hash);
+    if (!m) return false;
+    if (m[1] === 'booking' && !m[2]) return false;
+    state.tab = m[1]; if (m[2]) state.id = decodeURIComponent(m[2]);
+    return true;
+  }
+  window.addEventListener('popstate', function () { if (state.user && fromHash()) render(); });
 
   /* ---------- bookings list ---------- */
   function viewBookings(main) {
     var f = state.filters, list = h('ul', { class: 'list' }), count = h('p', { class: 'muted' }, 'Loading…');
+    if (f.auto) f.from = laoToday();   // a dashboard left open overnight starts from the new day
     var q = input('q', f.q, { type: 'search', placeholder: 'Name, booking ID, receipt no, passport, WhatsApp' });
     var from = input('from', f.from, { type: 'date' }), to = input('to', f.to, { type: 'date' });
     var status = select('status', [''].concat(STATUSES), f.status);
     var deleted = h('input', { type: 'checkbox' });
     function load() {
-      state.filters = { q: q.value, from: from.value, to: to.value, status: status.value };
+      state.filters = { q: q.value, from: from.value, to: to.value, status: status.value, auto: from.value === laoToday() };
       // a search looks through every booking, whatever the dates say
       api('bookings', Object.assign({ deleted: deleted.checked }, state.filters, q.value.trim() ? { from: '', to: '' } : {})).then(function (d) {
         list.textContent = '';
@@ -465,7 +483,9 @@
     usd[0] = Math.round((usd[0] + t.total_usd - usd.reduce(function (a, u) { return a + u; }, 0)) * 100) / 100;
     var each = function (x, i) { return money(usd[i], 2) + ' / ' + money(shares[i]); };
     return h('div', { class: 'receipt' },
-      h('div', { class: 'head' }, h('div', {}, h('h2', {}, s.business_name || 'Nong Khiaw Eco-Trail'), h('div', { class: 'muted' }, s.business_address || ''), h('div', { class: 'muted' }, s.business_contact || '')),
+      h('div', { class: 'head' }, h('img', { class: 'rlogo', src: /^https?:\/\//i.test(s.logo_url || '') ? s.logo_url : 'logo.png', alt: '', width: 64, height: 64,
+        onerror: function () { this.onerror = null; if (!/\/admin\/logo\.png$/.test(this.src)) this.src = 'logo.png'; } }),
+        h('div', { class: 'grow' }, h('h2', {}, s.business_name || 'Nong Khiaw Eco-Trail'), h('div', { class: 'muted' }, s.business_address || ''), h('div', { class: 'muted' }, s.business_contact || '')),
         h('div', { class: 'right' }, h('div', { class: 'rtitle' }, L.receipt), h('div', {}, L.no + ' ', h('strong', { class: 'rno' }, r.no)))),
       h('div', { class: 'scroll' }, h('table', { class: 'rinfo' },
         row(L.name, d.summary.lead_name, L.issued, day(r.issued_on)),
@@ -554,6 +574,7 @@
         field('Kip for 1 USD', input('kip_per_usd', s.kip_per_usd, { type: 'number' })),
         field('Office pickup place in Nong Khiaw', input('nk_office', s.nk_office)), field('Business name (receipt)', input('business_name', s.business_name)),
         field('Address (receipt)', input('business_address', s.business_address)), field('Contact line (receipt)', input('business_contact', s.business_contact)),
+        field('Logo link (receipt; empty = the website logo)', input('logo_url', s.logo_url, { type: 'url', placeholder: 'https://nongkhiawlaos.com/images/receipt-logo.png' })),
         field('Transport manager name and WhatsApp', input('transport_manager', s.transport_manager)));
       main.appendChild(h('div', { class: 'card' }, h('h1', {}, 'Prices and settings'), h('p', { class: 'muted' }, 'Changes apply to new bookings and new payments. Saved bookings keep their amounts.'), g, h('p'),
         h('button', { class: 'btn', onclick: function () {
@@ -723,17 +744,17 @@
       api('tour_report', { date: date.value }).then(function (tr) {
         stale();
         var short = day(tr.date).slice(0, 5).replace('/', '.');
-        var lineText = function (l, guide) { return l.label + ': ' + l.pax + 'pax' + (guide ? ' · Guide ' + guide : ''); };
+        var lineText = function (l, guide) { return l.label + ' – ' + l.pax + ' pax' + (guide ? ' · Guide ' + guide : ''); };
         var guides = tr.lines.map(function (l) {
           var g = input('guide', l.guide, { placeholder: 'Guide (type the name)', style: 'max-width:240px' });
           g.addEventListener('change', function () { l.guide = g.value.trim(); api('guide_save', { date: tr.date, tour: l.tour, guide: g.value }).then(function () { toast('Guide saved'); }, function () {}); });
-          return h('div', { class: 'bar', style: 'margin:4px 0' }, h('strong', { style: 'flex:1 1 260px' }, l.label + ': ', h('span', { class: 'red' }, l.pax + 'pax')), g);
+          return h('div', { class: 'bar', style: 'margin:4px 0' }, h('strong', { style: 'flex:1 1 260px' }, l.label + ' – ', h('span', { class: 'red' }, l.pax + ' pax')), g);
         });
-        var cols = [['No', 'no'], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', 'food'], ['Guest note', 'note']];
-        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, short + ' Tour · report for the team (' + tr.pax + ' pax starting)'),
-          table(cols, tr.rows, short + ' Tour', function () { return tr.lines.map(function (l) { return ['', '', '', '', lineText(l, l.guide)]; }); }),
+        var cols = [['No', 'no'], ['Tour date', function () { return day(tr.date); }], ['Booking ID', 'booking_id'], ['Package', function (r) { return 'Package ' + r.tour; }], ['Receipt No', 'receipt_no'], ['Name', 'name'], ['Pax', 'pax'], ['Food type', 'food'], ['Guest note', 'note']];
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tour report for the team · tour date ' + day(tr.date) + ' (' + tr.pax + ' pax starting)'),
+          table(cols, tr.rows, short + ' Tour', function () { return tr.lines.map(function (l) { return ['', '', '', '', '', lineText(l, l.guide)]; }); }),
           tr.rows.length ? h('div', {}, guides, h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
-            copyText(short + ' Tour\n' + tr.lines.map(function (l) { return lineText(l, l.guide); }).join('\n') + '\n\n' +
+            copyText('Tour date ' + day(tr.date) + '\n' + tr.lines.map(function (l) { return lineText(l, l.guide); }).join('\n') + '\n\n' +
               tr.rows.map(function (r) { return r.no + '. ' + r.name + ' · Package ' + r.tour + ' · ' + r.food + (r.note ? ' (' + r.note + ')' : ''); }).join('\n'), 'Report copied');
           } }, 'Copy as a message for the team'))) : null));
         return api('trip_sheet', { date: date.value });
@@ -1079,6 +1100,7 @@
 
   /* ---------- start ---------- */
   function loadConfig() { return api('settings').then(function (d) { state.cfg = d; }, function () {}); }
+  fromHash();
   api('me').then(function (d) {
     state.user = d.user;
     return state.user ? loadConfig() : null;

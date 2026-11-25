@@ -112,7 +112,10 @@ try {
     if (!password_verify((string) ($in['old'] ?? ''), $row['password_hash'])) throw new Refused('The current password is wrong.');
     check_password((string) ($in['new'] ?? ''));
     if ((string) $in['new'] === (string) ($in['old'] ?? '')) throw new Refused('Choose a new password, not the current one.');
-    q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash((string) $in['new'], PASSWORD_DEFAULT), $user['id']]);
+    $hash = password_hash((string) $in['new'], PASSWORD_DEFAULT);
+    q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [$hash, $user['id']]);
+    session_regenerate_id(true);
+    $_SESSION['pw'] = pw_mark($hash);   // this session stays signed in, the others end
     out(['ok' => true]);
   }
   if ($user['must_change_password']) out(['error' => 'Choose your own password first.'], 403);   // signed in with a temporary password
@@ -316,6 +319,7 @@ try {
       foreach ($todo as $k => $v) {   // everything is checked first: nothing is saved when one value is wrong
         if (isset($names[$k]) && (!is_numeric($v) || (float) $v <= 0)) throw new Refused($names[$k] . ' must be a number above 0. Nothing was saved.');
         if (mb_strlen((string) $v) > 500) throw new Refused("$k is too long. Nothing was saved.");
+        if ($k === 'logo_url' && trim((string) $v) !== '' && !preg_match('#^https?://\S+$#i', trim((string) $v))) throw new Refused('Logo link must start with https://. Nothing was saved.');
       }
       tx(function () use ($todo, $user) { foreach ($todo as $k => $v) update_row('settings', '`key` = ?', [$k], ['value'], ['value' => trim((string) $v)], $k, $user); });
       out(['ok' => true]);
@@ -417,6 +421,7 @@ try {
       check_password((string) ($in['password'] ?? ''));
       if (!val('SELECT 1 FROM users WHERE id = ?', [(int) $in['id']])) throw new Refused('User not found.');
       q('UPDATE users SET password_hash = ?, must_change_password = 1, failed_logins = 0, locked_until = NULL WHERE id = ?', [password_hash((string) $in['password'], PASSWORD_DEFAULT), (int) $in['id']]);
+      if ((int) $in['id'] === $user['id']) $_SESSION['pw'] = pw_mark((string) val('SELECT password_hash FROM users WHERE id = ?', [$user['id']]));
       log_change('users', (string) (int) $in['id'], 'password', null, null, $user);
       out(['ok' => true]);
     }

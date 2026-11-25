@@ -144,16 +144,9 @@ function tour_report(string $date): array {
   }
   $names = []; foreach (all('SELECT code, name FROM tours ORDER BY sort, code') as $t) $names[$t['code']] = $t['name'];
   $guides = []; foreach (all('SELECT tour, guide FROM day_guides WHERE day = ?', [$date]) as $g) $guides[$g['tour']] = $g['guide'];
-  $groups = [];
-  foreach (array_keys($count) as $code) $groups[substr((string) $code, 0, 1)][] = (string) $code;
+  // one line per package, its code before its name: "Package 101 Overnight Camping Above the Clouds – 5 pax"
   $lines = [];
-  foreach ($groups as $key => $codes) {
-    $all = array_values(array_filter(array_map('strval', array_keys($names)), fn ($c) => substr($c, 0, 1) === (string) $key));
-    $head = $all ? min($all) : min($codes);
-    $total = array_sum(array_map(fn ($c) => $count[$c], $codes));
-    $lines[] = ['tour' => $head, 'label' => $names[$head] ?? "Package $head", 'pax' => $total, 'guide' => $guides[$head] ?? ''];
-    foreach ($codes as $c) if ($c !== $head) $lines[] = ['tour' => $c, 'label' => "Package $c: " . ($names[$c] ?? ''), 'pax' => $count[$c], 'guide' => $guides[$c] ?? ''];
-  }
+  foreach ($count as $code => $n) $lines[] = ['tour' => (string) $code, 'label' => trim("Package $code " . ($names[$code] ?? '')), 'pax' => $n, 'guide' => $guides[$code] ?? ''];
   return ['date' => $date, 'rows' => $out, 'lines' => $lines, 'pax' => count($out)];
 }
 

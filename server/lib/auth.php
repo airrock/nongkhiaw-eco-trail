@@ -17,8 +17,12 @@ function current_user(): ?array {
   start_session();
   $id = $_SESSION['uid'] ?? null;
   if (!$id) return null;
-  $u = one('SELECT id, name, email, role, active, must_change_password FROM users WHERE id = ?', [$id]);
+  $u = one('SELECT id, name, email, role, active, must_change_password, password_hash FROM users WHERE id = ?', [$id]);
   if (!$u || !$u['active']) { $_SESSION = []; return null; }
+  // a password changed elsewhere (by the user or an admin) ends every other session of that user
+  $mark = pw_mark($u['password_hash']); unset($u['password_hash']);
+  if (!isset($_SESSION['pw'])) $_SESSION['pw'] = $mark;   // sessions from before this check
+  elseif (!hash_equals($_SESSION['pw'], $mark)) { $_SESSION = []; return null; }
   $u['id'] = (int) $u['id']; $u['must_change_password'] = (bool) $u['must_change_password']; unset($u['active']);
   return $u;
 }
@@ -38,8 +42,11 @@ function login(string $email, string $password): array {
   q('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?', [$u['id']]);
   session_regenerate_id(true);
   $_SESSION['uid'] = (int) $u['id'];
+  $_SESSION['pw'] = pw_mark($u['password_hash']);
   return current_user();
 }
+
+function pw_mark(string $hash): string { return substr(hash('sha256', $hash), 0, 20); }
 
 function check_password(string $p): void {
   if (mb_strlen($p) < 8) throw new Refused('The password needs at least 8 characters.');

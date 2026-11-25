@@ -410,7 +410,7 @@
     var people = d.travellers.filter(function (x) { return x.status !== 'Cancelled'; });
     var riders = people.filter(function (x) { return x.pickup_place !== 'No transfer'; });
     var up = /round/i.test(b.transfer) || (/one way/i.test(b.transfer) && !/luang prabang/i.test(b.transfer)), back = /round/i.test(b.transfer) || /to luang prabang/i.test(b.transfer);
-    var stops = d.summary.pickups ? d.summary.pickups.split('; ') : [];
+    var stops = (d.summary.pickups ? d.summary.pickups.split('; ') : []).filter(function (x) { return !/^No transfer:/.test(x); });
     var places = stops.length === 1 ? stops[0].replace(/: [\d, ]+$/, '') : stops.join('; ');
     var join = function (parts) { return parts.filter(Boolean).join('  |  '); };
     var tourLine = o.tour || (b.tour === 'T00' || !b.tour ? b.tour_name : 'Code: ' + b.tour + ' – ' + b.tour_name) + (Number(b.private_tour) ? ' (Private tour)' : '');
@@ -428,14 +428,14 @@
     return h('div', { class: 'receipt' },
       h('div', { class: 'head' }, h('div', {}, h('h2', {}, s.business_name || 'Nong Khiaw Eco-Trail'), h('div', { class: 'muted' }, s.business_address || ''), h('div', { class: 'muted' }, s.business_contact || '')),
         h('div', { class: 'right' }, h('div', { class: 'rtitle' }, L.receipt), h('div', {}, L.no + ' ', h('strong', { class: 'rno' }, r.no)))),
-      h('table', { class: 'rinfo' },
+      h('div', { class: 'scroll' }, h('table', { class: 'rinfo' },
         row(L.name, d.summary.lead_name, L.issued, day(r.issued_on)),
         row(L.tourdate, day(b.tour_date), L.payment, b.payment_method),
         row(L.tour, tourLine, L.bookingid, b.id),
         pickupLine ? row(L.pickup, pickupLine) : null,
         returnLine ? row(L['return'], returnLine) : null,
         b.note ? row(L.note || 'Note', b.note) : null,
-        o.note ? row('', o.note) : null),
+        o.note ? row('', o.note) : null)),
       h('div', { class: 'scroll' }, h('table', { class: 'rtab' }, h('tr', {}, h('th', {}, L.no), h('th', {}, L.name), h('th', {}, L.passport), h('th', {}, L.food), h('th', {}, L.lunch),
           people.length > 1 ? h('th', { class: 'num' }, L.perperson + ' (USD / ' + L.kip + ')') : null),
         people.map(function (x) {
@@ -659,9 +659,10 @@
       rows.map(function (r) { return h('tr', {}, cols.map(function (c) { var v = cell(c, r); return h('td', { class: c[2] || '' }, c[2] === 'num' && v !== '' ? money(v, c[3] || 0) : v); })); }))));
     wrap.appendChild(h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () {
       var out = [cols.map(function (c) { return c[0]; })].concat(rows.map(function (r) {
-        return cols.map(function (c) { var v = cell(c, r); return c[2] === 'num' && v !== '' && isFinite(Number(v)) ? Number(v) : String(v); });
+        return cols.map(function (c) { var v = cell(c, r); return typeof v === 'number' || (c[2] === 'num' && v !== '' && isFinite(Number(v))) ? Number(v) : String(v); });
       }));
-      if (foot && foot.length) out = out.concat([[]], typeof foot === 'function' ? foot() : foot);
+      var under = typeof foot === 'function' ? foot() : foot;
+      if (under && under.length) out = out.concat([[]], under);
       download(xlsxBlob(name, out), name + '.xlsx');
     } }, 'Download as an Excel file')));
     return wrap;

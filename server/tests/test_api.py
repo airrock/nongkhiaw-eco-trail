@@ -270,6 +270,9 @@ admin.ok('booking_save', id='SELFTEST-A1', fields={'accommodation': old_place})
 eq(office.ok('transport', date='2030-02-01')['up'][0]['place'], old_place, 'and back again')
 eq(office.ok('transport_plate', date='2030-02-01', dir='up', plate='ກກ 7519')['bookings'], 1, 'one plate number for the whole list')
 eq(sqlval("SELECT vehicle_to_nk FROM bookings WHERE id='SELFTEST-A1'"), 'ກກ 7519', 'plate saved on the booking')
+ps = office.ok('transport', date='2030-02-01')['passengers']
+eq((len(ps), ps[0]['way'], ps[0]['name'], ps[0]['passport'], ps[0]['country'] != '', ps[0]['place'], ps[0]['pickup_date'], ps[0]['return_date'], sorted(ps[0].keys()) == sorted(['no', 'way', 'name', 'passport', 'issued', 'expires', 'country', 'place', 'pickup_date', 'return_date', 'booking_id', 'vehicle'])),
+   (2, 'ຂຶ້ນ', 'SELFTEST-Ann One', 'AB123', True, old_place, '2030-02-01', '2030-02-03', True), 'minivan passenger list: passport details, place and both dates')
 dn = office.ok('transport', date='2030-02-03')
 eq((dn['down_rows'][0]['notes'], dn['down_slots']), ('Leave at 3:30 - 4:30 PM, drop off at the train station', [{'time': '3:30 - 4:30 PM', 'pax': 2, 'train': 2}]), 'way back: note and head count per leaving time')
 

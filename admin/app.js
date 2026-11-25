@@ -220,6 +220,13 @@
         body.textContent = '';
         body.appendChild(dayList(d, false));
         body.appendChild(dayList(d, true));
+        // the passenger list the minivan carries: names as in the passport, passport details, nationality, place and dates
+        var pshort = day(d.date).slice(0, 5).replace('/', '.');
+        body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, pshort + ' Passenger list for the minivan · ' + d.passengers.length + ' pax'),
+          d.passengers.length ? table([['No', 'no'], ['Way', 'way'], ['Full name (as in passport)', 'name'], ['Passport no', 'passport'], ['Date of issue', 'issued'], ['Date of expiry', 'expires'], ['Nationality', 'country'],
+            ['Pickup place', 'place'], ['Date to Nong Khiaw', function (r) { return day(r.pickup_date); }], ['Date back', function (r) { return day(r.return_date); }], ['Plate no', 'vehicle'], ['Booking ID', 'booking_id']],
+            d.passengers, pshort + ' Minivan passenger list') : h('p', { class: 'muted' }, 'Nobody on this date.'),
+          d.passengers.some(function (r) { return !r.passport; }) ? h('p', { class: 'muted' }, 'Some guests have no passport number yet. Fill it in on the booking, under Travellers.') : null));
         body.appendChild(h('h2', { class: 'noprint', style: 'margin:18px 4px 6px' }, 'One booking at a time: messages, plate, time'));
         body.appendChild(section('↑ ຂຶ້ນ ' + day(d.date) + ' · Luang Prabang → Nong Khiaw', d.up, d.up_pax, true));
         body.appendChild(section('↓ ລົງ ' + day(d.date) + ' · Nong Khiaw → Luang Prabang', d.down, d.down_pax, false));

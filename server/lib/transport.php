@@ -70,11 +70,12 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
   $rows = all("SELECT b.*, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no FROM bookings b LEFT JOIN receipts r ON r.booking_id = b.id
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND (b.pickup_date = ? OR b.return_date = ?)" . ($onlyBooking !== null ? ' AND b.id = ?' : '') . ' ORDER BY b.submitted_at',
     $onlyBooking !== null ? [$date, $date, $onlyBooking] : [$date, $date]);
-  $up = []; $down = []; $upRows = []; $downRows = [];
+  $up = []; $down = []; $upRows = []; $downRows = []; $passengers = [];
   foreach ($rows as $b) {
     $goesUp = goes_up($b['transfer']); $back = goes_down($b['transfer']) || $b['return_date'] !== null;   // a return date typed later counts too
     if (!$goesUp && !$back) continue;
     $people = array_map(fn ($t) => ['n' => (int) $t['n'], 'name' => $t['full_name'], 'first' => $t['first_name'], 'place' => $t['pickup_place'], 'map' => $t['pickup_map'], 'phone' => $t['whatsapp'],
+        'passport' => $t['passport_no'], 'issued' => show_date($t['passport_issued']), 'expires' => show_date($t['passport_expires']), 'country' => $t['country'],
         'food' => $t['food'] !== '' ? $t['food'] : 'Regular', 'lunch' => trim($t['lunch_dish'] . ($t['lunch_choice'] !== '' ? ' (' . $t['lunch_choice'] . ')' : ''))],
       all("SELECT * FROM travellers WHERE booking_id = ? AND pickup_place <> 'No transfer' AND status = '' ORDER BY n", [$b['id']]));
     if (!$people) continue;
@@ -85,6 +86,11 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
     $team = team_message($people, $goesUp ? $b['pickup_date'] : null, $back ? $b['return_date'] : null, $train, $lead, $b['whatsapp'], $b['id'], $b['receipt_no'], $nk, $downTime);
     $base = ['booking_id' => $b['id'], 'receipt_no' => $b['receipt_no'], 'whatsapp' => $b['whatsapp'], 'lead' => $lead, 'remark' => $b['transport_remark'], 'wa' => wa_digits($b['whatsapp'])];
     $row = fn ($p, $i) => ['booking_id' => $b['id'], 'tour' => $b['tour'], 'receipt_no' => $b['receipt_no'], 'name' => $p['name'], 'pax' => $i === 0 ? count($people) : '', 'riders' => 1];
+    // the passenger list the minivan carries: one row per guest riding that day, either way, with the passport details
+    $ridesUp = $goesUp && $b['pickup_date'] === $date; $ridesDown = $back && $b['return_date'] === $date;
+    if ($ridesUp || $ridesDown) foreach ($people as $p) $passengers[] = ['way' => $ridesUp && $ridesDown ? 'ຂຶ້ນ + ລົງ' : ($ridesUp ? 'ຂຶ້ນ' : 'ລົງ'), 'name' => $p['name'], 'passport' => $p['passport'],
+      'issued' => $p['issued'], 'expires' => $p['expires'], 'country' => $p['country'], 'place' => $ridesUp ? $p['place'] : $nk,
+      'pickup_date' => $goesUp ? $b['pickup_date'] : null, 'return_date' => $back ? $b['return_date'] : null, 'booking_id' => $b['id'], 'vehicle' => $ridesUp ? $b['vehicle_to_nk'] : $b['vehicle_to_lpb']];
     if ($goesUp && $b['pickup_date'] === $date) {
       $stops = pickup_stops($people);
       foreach ($stops as $si => $g) {
@@ -117,8 +123,11 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
   unset($r);
   foreach ($downRows as $i => &$r) $r['no'] = $i + 1;
   unset($r);
+  usort($passengers, fn ($a, $b) => [$a['way'] === 'ລົງ' ? 1 : 0, $a['booking_id']] <=> [$b['way'] === 'ລົງ' ? 1 : 0, $b['booking_id']]);
+  foreach ($passengers as $i => &$r) $r['no'] = $i + 1;
+  unset($r);
   return ['date' => $date, 'up' => $up, 'down' => $down, 'up_pax' => array_sum(array_column($up, 'pax')), 'down_pax' => array_sum(array_column($down, 'pax')),
-    'up_rows' => $upRows, 'down_rows' => $downRows, 'down_slots' => array_values($slots)];
+    'up_rows' => $upRows, 'down_rows' => $downRows, 'passengers' => $passengers, 'down_slots' => array_values($slots)];
 }
 // "3:30 - 4:30 PM" -> minutes after midnight of the first time, so the lists sort by the clock. Unreadable times go last.
 function time_sort(string $t): int {

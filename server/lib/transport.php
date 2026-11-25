@@ -53,11 +53,16 @@ function stop_message(array $g, int $si, int $n, ?string $up, string $id, ?strin
   return implode("\n", $lines);
 }
 
+// The guest's minivan message, in the words the team asked for (feedback 0014). $manager is the coordinator's WhatsApp
+// number (Prices and settings, "Transport manager"); with digits it becomes a wa.me link the guest can tap.
 function guest_message(string $first, string $to, string $place, string $time, string $plate, string $extra, string $manager, string $day): string {
-  return 'Hello ' . ($first ?: 'there') . '! Your minivan to ' . $to . ' is booked ' . $day . ".\n" .
-    'Pickup at ' . $place . ($time ? ' between ' . $time : '') . ".\n" .
-    'The plate number is ' . ($plate ?: '(we send it soon)') . ".\n" . $extra .
-    ($manager ? "\nIf you need help with your pickup, please contact our transport manager: " . $manager . '.' : '');
+  $digits = wa_digits($manager);
+  $contact = strlen($digits) >= 7 ? 'https://wa.me/' . $digits : $manager;
+  $time = preg_replace('/\s+(AM|PM)$/i', '', $time) . (preg_match('/(AM|PM)$/i', $time, $m) ? strtolower($m[1]) : '');   // "8:00 AM" -> "8:00am"
+  return 'Hello ' . ($first ?: 'there') . '! Your minivan to ' . $to . ' is booked ' . $day . ".\n\n" .
+    'Pickup at ' . $place . ($time !== '' ? ' between ' . $time : '') . '. ' . $extra . "\n\n" .
+    'Minivan plate: ' . ($plate ?: '(we send it soon)') . "\n" .
+    ($contact !== '' ? "Minivan coordinator's WhatsApp: " . $contact . "\n\nIf you need help with your pickup, you can message him directly. " : "\n") . 'Thank you!';
 }
 
 // Everyone riding the minivan on $date: 'up' (Luang Prabang -> Nong Khiaw) and 'down' (back), one entry per pickup stop,
@@ -163,10 +168,11 @@ function time_label(string $t): string {
 
 // One plate number for everyone on the minivan that day in one direction. Returns how many bookings it was written on.
 // $time: only the bookings leaving at that time (one plate per minivan when several go the same way)
-function set_day_plate(string $date, string $dir, string $plate, array $user, string $time = ''): int {
+// $ids: only these bookings (staff tick who rides this minivan: one van takes up to 12 guests)
+function set_day_plate(string $date, string $dir, string $plate, array $user, string $time = '', ?array $ids = null): int {
   $col = $dir === 'up' ? 'vehicle_to_nk' : 'vehicle_to_lpb';
   $day = transport_day($date);
-  $list = array_filter($dir === 'up' ? $day['up'] : $day['down'], fn ($x) => $time === '' || $x['time'] === $time);
+  $list = array_filter($dir === 'up' ? $day['up'] : $day['down'], fn ($x) => ($time === '' || $x['time'] === $time) && ($ids === null || in_array($x['booking_id'], $ids, true)));
   $ids = array_values(array_unique(array_column($list, 'booking_id')));
   foreach ($ids as $id) {
     $old = (string) val("SELECT `$col` FROM bookings WHERE id = ?", [$id]);

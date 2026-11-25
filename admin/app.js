@@ -226,9 +226,6 @@
       var lines = upWay ? ['Pick up in Luang Prabang: ' + rows.length + 'pax']
         : d.down_slots.map(function (x) { return 'Leave ' + x.time + ': ' + x.pax + 'pax' + (x.train ? ' (' + x.train + ' drop off at the train)' : ''); }).concat(d.down_slots.length > 1 ? ['Total: ' + rows.length + 'pax'] : []);
       var plates = []; rows.forEach(function (r) { if (r.vehicle && plates.indexOf(r.vehicle) === -1) plates.push(r.vehicle); });
-      var plate = input('plate', plates.length === 1 ? plates[0] : '', { placeholder: 'e.g. ກກ 7519' });
-      // more than one minivan back (several leaving times): the plate can go on one leaving time only
-      var slotSel = !upWay && d.down_slots.length > 1 ? select('slot', ['Everyone on this list'].concat(d.down_slots.map(function (x) { return 'Leave ' + x.time; })), 'Everyone on this list') : null;
       var card = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, title + ' · ' + rows.length + ' pax'));
       if (!rows.length) { card.appendChild(h('p', { class: 'muted' }, 'Nobody on this date.')); return card; }
       card.appendChild(table(cols, rows, title.replace(/[()]/g, '').replace('/', '.'), lines.map(function (x) { return ['', '', '', '', x]; })));
@@ -237,13 +234,44 @@
         h('button', { class: 'btn ghost small', onclick: function () {
           copyText((upWay ? 'ຂຶ້ນ ' : 'ລົງ ') + day(d.date) + (upWay ? ' Luang Prabang - Nong Khiaw' : ' Nong Khiaw - Luang Prabang') + '\n' + lines.join('\n') + '\n\n' +
             rows.map(function (r) { return r.no + '. ' + r.name + ' · ' + (upWay ? [r.time, r.place, r.map].filter(Boolean).join(' · ') : r.notes + ' · pickup: ' + r.place); }).join('\n'), 'List copied');
-        } }, 'Copy the list for the minivan manager'),
-        field(slotSel ? 'Plate number' : 'Plate number for this whole list', plate), slotSel ? field('For', slotSel) : null,
-        h('button', { class: 'btn small', onclick: function () {
-          var only = slotSel && slotSel.value !== 'Everyone on this list' ? slotSel.value.replace(/^Leave /, '') : '';
-          api('transport_plate', { date: d.date, dir: upWay ? 'up' : 'down', plate: plate.value.trim(), time: only }).then(function (x) { toast('Plate number saved on ' + x.bookings + ' booking' + (x.bookings === 1 ? '' : 's')); load(); }, function () {});
-        } }, slotSel ? 'Save plate' : 'Save plate for everyone')));
-      if (plates.length > 1) card.appendChild(h('p', { class: 'muted' }, 'This list has more than one plate number (' + plates.join(', ') + '). Saving one here replaces them all; a single booking can be changed below.'));
+        } }, 'Copy the list for the minivan manager')));
+      // Plate numbers: one minivan takes up to 12 guests, so staff tick the bookings riding each minivan and save its plate.
+      // Ticked at first: the bookings without a plate yet, so after saving the first minivan the rest are ready for the next.
+      var groups = [];
+      rows.forEach(function (r) {
+        var g = groups.filter(function (x) { return x.id === r.booking_id; })[0];
+        if (!g) groups.push(g = { id: r.booking_id, name: r.name, pax: 0, time: r.time, place: r.place, vehicle: r.vehicle || '' });
+        g.pax++;
+      });
+      var anyPlate = groups.some(function (g) { return g.vehicle; });
+      var counter = h('strong', {});
+      var boxes = groups.map(function (g) {
+        var cb = h('input', { type: 'checkbox' }); cb.checked = !anyPlate || !g.vehicle; cb.addEventListener('change', count);
+        return { g: g, cb: cb, el: h('label', { style: 'display:block;padding:4px 0' }, cb, ' ' + g.name + (g.pax > 1 ? ' + ' + (g.pax - 1) : '') + ' · ' + g.pax + ' pax · ' +
+          [g.time, g.place].filter(Boolean).join(' · ') + ' · ', g.vehicle ? h('span', { class: 'pill' }, g.vehicle) : h('span', { class: 'muted' }, 'no plate yet')) };
+      });
+      function count() {
+        var n = boxes.reduce(function (a, b) { return a + (b.cb.checked ? b.g.pax : 0); }, 0);
+        counter.textContent = 'Ticked: ' + n + ' pax' + (n > 12 ? ' (more than 12: one minivan takes up to 12)' : '');
+        counter.className = n > 12 ? 'red' : '';
+      }
+      var tick = function (test) { boxes.forEach(function (b) { b.cb.checked = test(b.g); }); count(); };
+      var quick = [h('button', { class: 'btn ghost small', onclick: function () { tick(function () { return true; }); } }, 'Tick all'),
+        h('button', { class: 'btn ghost small', onclick: function () { tick(function () { return false; }); } }, 'Tick none'),
+        h('button', { class: 'btn ghost small', onclick: function () { tick(function (g) { return !g.vehicle; }); } }, 'Tick those without a plate')];
+      if (!upWay && d.down_slots.length > 1) d.down_slots.forEach(function (x) { quick.push(h('button', { class: 'btn ghost small', onclick: function () { tick(function (g) { return g.time === x.time; }); } }, 'Tick leave ' + x.time)); });
+      var plate = input('plate', '', { placeholder: 'e.g. ກກ 7519' });
+      card.appendChild(h('div', { class: 'trav noprint', style: 'margin-top:10px' },
+        h('h3', { style: 'margin-top:0' }, 'Plate numbers · one minivan takes up to 12 guests'),
+        h('p', { class: 'muted', style: 'margin-top:0' }, 'Tick the bookings riding one minivan, type its plate and save. Each guest\'s WhatsApp message then shows their own plate. Do the same for the next minivan.'),
+        h('div', { class: 'bar' }, quick), boxes.map(function (b) { return b.el; }), h('p', {}, counter),
+        h('div', { class: 'bar' }, field('Plate number', plate),
+          h('button', { class: 'btn small', onclick: function () {
+            var ids = boxes.filter(function (b) { return b.cb.checked; }).map(function (b) { return b.g.id; });
+            if (!ids.length) { toast('Tick the bookings riding this minivan first.', true); return; }
+            api('transport_plate', { date: d.date, dir: upWay ? 'up' : 'down', plate: plate.value.trim(), ids: ids }).then(function (x) { toast('Plate number saved on ' + x.bookings + ' booking' + (x.bookings === 1 ? '' : 's')); load(); }, function () {});
+          } }, 'Save plate for the ticked guests'))));
+      count();
       return card;
     }
     function load() {
@@ -585,7 +613,7 @@
         field('Office pickup place in Nong Khiaw', input('nk_office', s.nk_office)), field('Business name (receipt)', input('business_name', s.business_name)),
         field('Address (receipt)', input('business_address', s.business_address)), field('Contact line (receipt)', input('business_contact', s.business_contact)),
         field('Logo link (receipt; empty = the website logo)', input('logo_url', s.logo_url, { type: 'url', placeholder: 'https://nongkhiawlaos.com/images/receipt-logo.png' })),
-        field('Transport manager name and WhatsApp', input('transport_manager', s.transport_manager)));
+        field('Minivan coordinator\'s WhatsApp (with country code, for the guest message)', input('transport_manager', s.transport_manager, { placeholder: '+856 20 5520 0091' })));
       main.appendChild(h('div', { class: 'card' }, h('h1', {}, 'Prices and settings'), h('p', { class: 'muted' }, 'Changes apply to new bookings and new payments. Saved bookings keep their amounts.'), g, h('p'),
         h('button', { class: 'btn', onclick: function () {
           var f = changed(g, s);

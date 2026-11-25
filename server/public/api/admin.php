@@ -439,7 +439,9 @@ try {
     case 'transport': out(transport_day(date_or_null($in['date'] ?? null) ?? lao_today()));
     case 'transport_plate': {
       $dir = ($in['dir'] ?? '') === 'up' ? 'up' : 'down';
-      $n = set_day_plate(date_or_null($in['date'] ?? null) ?? lao_today(), $dir, clean($in['plate'] ?? '', 60), $user, clean($in['time'] ?? '', 40));
+      $n = set_day_plate(date_or_null($in['date'] ?? null) ?? lao_today(), $dir, clean($in['plate'] ?? '', 60), $user, clean($in['time'] ?? '', 40),
+        isset($in['ids']) ? array_values(array_map('strval', array_filter((array) $in['ids'], 'is_scalar'))) : null);
+      if (isset($in['ids']) && !$n) throw new Refused('Tick at least one booking on this list.');
       out(['ok' => true, 'bookings' => $n]);
     }
 

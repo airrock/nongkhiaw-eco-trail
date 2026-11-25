@@ -25,6 +25,31 @@ const DATE_FIELDS = ['tour_date', 'pickup_date', 'return_date'];
 const SETTING_KEYS = ['transfer_one_kip', 'transfer_round_kip', 'train_extra_kip', 'kip_per_usd', 'nk_office', 'business_name',
   'business_address', 'business_contact', 'logo_url', 'transport_manager'];
 
+// Names staff see, for messages about a field.
+const FIELD_LABELS = ['tour_date' => 'Tour date', 'tour' => 'Tour code', 'tour_name' => 'Tour name', 'pickup_date' => 'Pickup date', 'return_date' => 'Date back',
+  'accommodation' => 'Pickup place', 'maps_link' => 'Map link', 'nk_pickup' => 'Pickup place in Nong Khiaw', 'payment_method' => 'Payment method', 'note' => 'Guest note',
+  'est_tour_usd' => 'Tour amount USD', 'est_transfer_kip' => 'Transport amount kip', 'staff_notes' => 'Staff notes', 'whatsapp' => 'WhatsApp', 'vehicle_to_nk' => 'Vehicle to Nong Khiaw',
+  'vehicle_to_lpb' => 'Vehicle to Luang Prabang', 'transport_remark' => 'Transport remark', 'pickup_time' => 'Pickup time', 'return_time' => 'Time back', 'viewpoint' => 'Viewpoint',
+  'addon_package' => 'Additional package', 'first_name' => 'First name', 'last_name' => 'Last name', 'full_name' => 'Full name', 'country' => 'Nationality', 'gender' => 'Gender',
+  'passport_no' => 'Passport no', 'passport_issued' => 'Passport issued', 'passport_expires' => 'Passport expires', 'food' => 'Food', 'pickup_place' => 'Pickup place',
+  'pickup_map' => 'Pickup map', 'web_title' => 'Title', 'web_summary' => 'Description', 'web_duration' => 'Length', 'web_included' => 'Included'];
+// Each typed value must fit its column: a clear message names the field instead of a server error.
+function check_value(string $table, string $f, $v) {
+  static $cols = [];
+  if (!isset($cols[$table])) foreach (all("SHOW COLUMNS FROM `$table`") as $c) $cols[$table][$c['Field']] = strtolower($c['Type']);
+  $type = $cols[$table][$f] ?? ''; $label = FIELD_LABELS[$f] ?? $f;
+  if (is_array($v) || is_object($v)) throw new Refused("$label: type a value.");
+  if (preg_match('/^(?:var)?char\((\d+)\)/', $type, $m) && mb_strlen((string) $v) > (int) $m[1]) throw new Refused("$label: {$m[1]} characters at most.");
+  if (str_starts_with($type, 'text') && mb_strlen((string) $v) > 20000) throw new Refused("$label is too long.");
+  if (preg_match('/^(decimal|int|tinyint|bigint|smallint)/', $type)) {
+    if (!is_numeric($v)) throw new Refused("$label: type a number.");
+    if ((float) $v < 0) throw new Refused("$label cannot be below 0.");
+    if (abs((float) $v) > 1e10) throw new Refused("$label is too large.");
+  }
+  if (in_array($f, ['maps_link', 'pickup_map'], true) && $v !== '' && !preg_match('~^https?://~i', (string) $v)) throw new Refused("$label: paste a web address (https://...).");
+  return $v;
+}
+
 // Updates the listed columns of one row, logs only what changed, returns the changed column names.
 function update_row(string $table, string $where, array $whereArgs, array $allowed, array $in, string $rowId, array $user): array {
   $old = one("SELECT * FROM `$table` WHERE $where", $whereArgs);
@@ -33,9 +58,14 @@ function update_row(string $table, string $where, array $whereArgs, array $allow
   foreach ($allowed as $f) {
     if (!array_key_exists($f, $in)) continue;
     $v = $in[$f];
-    if (in_array($f, DATE_FIELDS, true)) $v = date_or_null($v);
+    if (in_array($f, DATE_FIELDS, true)) {
+      $d = date_or_null($v);
+      if ($d === null && is_string($v) && trim($v) !== '') throw new Refused((FIELD_LABELS[$f] ?? $f) . ': not a real date.');
+      $v = $d;
+    }
     elseif (is_bool($v)) $v = (int) $v;
     elseif ($v === null) $v = '';
+    if ($v !== null) $v = check_value($table, $f, is_string($v) ? trim($v) : $v);
     if ((string) $v === (string) $old[$f] && ($v === null) === ($old[$f] === null)) continue;
     $set[] = "`$f` = ?"; $args[] = $v; $was[$f] = $old[$f]; $now[$f] = $v;
   }
@@ -81,7 +111,8 @@ try {
     $row = one('SELECT password_hash FROM users WHERE id = ?', [$user['id']]);
     if (!password_verify((string) ($in['old'] ?? ''), $row['password_hash'])) throw new Refused('The current password is wrong.');
     check_password((string) ($in['new'] ?? ''));
-    q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash($in['new'], PASSWORD_DEFAULT), $user['id']]);
+    if ((string) $in['new'] === (string) ($in['old'] ?? '')) throw new Refused('Choose a new password, not the current one.');
+    q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash((string) $in['new'], PASSWORD_DEFAULT), $user['id']]);
     out(['ok' => true]);
   }
   if ($user['must_change_password']) out(['error' => 'Choose your own password first.'], 403);   // signed in with a temporary password
@@ -99,7 +130,7 @@ try {
       if ($d = date_or_null($in['from'] ?? null)) { $w[] = 'b.tour_date >= ?'; $a[] = $d; }
       if ($d = date_or_null($in['to'] ?? null)) { $w[] = 'b.tour_date <= ?'; $a[] = $d; }
       if (in_array($in['status'] ?? '', STATUSES, true)) { $w[] = 'b.status = ?'; $a[] = $in['status']; }
-      $s = clean($in['q'] ?? '', 60);
+      $s = addcslashes(clean($in['q'] ?? '', 60), '%_\\');
       if ($s !== '') {
         $w[] = '(b.id LIKE ? OR b.whatsapp LIKE ? OR r.no LIKE ? OR b.receipt_ref LIKE ? OR EXISTS (SELECT 1 FROM travellers t WHERE t.booking_id = b.id AND (t.full_name LIKE ? OR t.passport_no LIKE ?)))';
         array_push($a, "%$s%", "%$s%", "%$s%", "%$s%", "%$s%", "%$s%");
@@ -117,7 +148,15 @@ try {
     case 'booking_save': {
       $id = (string) $in['id']; $f = (array) ($in['fields'] ?? []);
       if (isset($f['status']) && !in_array($f['status'], STATUSES, true)) throw new Refused('Unknown status.');
+      if (isset($f['transfer']) && !in_array($f['transfer'], ['No', 'One way to Nong Khiaw', 'One way to Luang Prabang', 'Round trip'], true)) throw new Refused('Unknown minivan transfer.');
       tx(function () use ($id, $f, $user) {
+        // Paid follows the payments: it cannot be chosen while money is still owed
+        if (($f['status'] ?? '') === 'Paid' && booking_totals($id)['balance_usd'] > 0.005) throw new Refused('Paid is set by itself when the payments cover the total. Record the payment first.');
+        // a new tour code brings its own name and additional package unless they were typed too
+        if (isset($f['tour']) && !isset($f['tour_name']) && ($t = one('SELECT name FROM tours WHERE code = ?', [trim((string) $f['tour'])]))) {
+          $f['tour_name'] = $t['name'];
+          if (!isset($f['addon_package'])) $f['addon_package'] = (string) (val('SELECT addon FROM tour_addons WHERE tour = ?', [trim((string) $f['tour'])]) ?? '');
+        }
         $old = one('SELECT * FROM bookings WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [$id]);
         if (!$old) throw new Refused('Booking not found.');
         $changed = update_row('bookings', 'id = ?', [$id], BOOKING_FIELDS, $f, $id, $user);
@@ -161,14 +200,26 @@ try {
     case 'traveller_save': {
       $id = (string) $in['booking_id']; $n = (int) $in['n']; $f = (array) ($in['fields'] ?? []);
       if (isset($f['status']) && !in_array($f['status'], ['', 'Cancelled', 'No-show'], true)) throw new Refused('Unknown status.');
+      if (isset($f['pickup_place']) && strcasecmp(trim((string) $f['pickup_place']), 'No transfer') === 0) $f['pickup_place'] = 'No transfer';
+      if (isset($f['passport_no']) && is_string($f['passport_no'])) $f['passport_no'] = mb_strtoupper(trim($f['passport_no']));
+      if (array_key_exists('lunch_dish', $f) && ($dish = clean($f['lunch_dish'], 80)) !== '') {
+        $item = lunch_map()[$dish] ?? null;
+        if (!$item) throw new Refused('That dish is not on the menu.');
+        if ($item['choices'] && !in_array(clean($f['lunch_choice'] ?? '', 40), $item['choices'], true)) throw new Refused("Choose for $dish: " . implode(', ', $item['choices']) . '.');
+      }
       tx(function () use ($id, $n, $f, $user) {
         if (!one('SELECT id FROM bookings WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [$id])) throw new Refused('Booking not found.');
+        $old = one('SELECT * FROM travellers WHERE booking_id = ? AND n = ?', [$id, $n]);
+        if (!$old) throw new Refused('Traveller not found.');
+        // the full name follows first + last name unless it was typed differently
+        $fn = $f['first_name'] ?? $old['first_name']; $ln = $f['last_name'] ?? $old['last_name'];
+        if (!isset($f['full_name']) && (isset($f['first_name']) || isset($f['last_name'])) && (trim($old['full_name']) === '' || trim($old['full_name']) === trim($old['first_name'] . ' ' . $old['last_name'])))
+          $f['full_name'] = trim(trim((string) $fn) . ' ' . trim((string) $ln));
+        $wasCancelled = $old['status'] === 'Cancelled';
+        if (array_key_exists('status', $f) && $wasCancelled !== ($f['status'] === 'Cancelled')) scale_tour($id, $wasCancelled ? 1 : -1);   // counted before the change
         $changed = update_row('travellers', 'booking_id = ? AND n = ?', [$id, $n], TRAVELLER_FIELDS, $f, "$id #$n", $user);
         if (array_key_exists('lunch_dish', $f)) set_lunch($id, $n, clean($f['lunch_dish'], 80), clean($f['lunch_choice'] ?? '', 40));
-        if (in_array('pickup_place', $changed, true)) {
-          $b = one('SELECT transfer, train_dropoff FROM bookings WHERE id = ?', [$id]);
-          q('UPDATE bookings SET est_transfer_kip = ? WHERE id = ?', [transfer_kip($b['transfer'], (bool) $b['train_dropoff'], riders($id)), $id]);
-        }
+        if (array_intersect($changed, ['pickup_place', 'status'])) recount_booking($id);
         sync_paid_status($id);
       });
       out(booking_full($id, $user));
@@ -179,20 +230,27 @@ try {
         if (!one('SELECT id FROM bookings WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [$id])) throw new Refused('Booking not found.');
         $n = 1 + (int) val('SELECT COALESCE(MAX(n), 0) FROM travellers WHERE booking_id = ?', [$id]);
         $first = one('SELECT pickup_place, pickup_map FROM travellers WHERE booking_id = ? ORDER BY n LIMIT 1', [$id]) ?: ['pickup_place' => '', 'pickup_map' => ''];
+        scale_tour($id, 1);
         q('INSERT INTO travellers (booking_id, n, pickup_place, pickup_map) VALUES (?,?,?,?)', [$id, $n, $first['pickup_place'], $first['pickup_map']]);
         log_change('travellers', "$id #$n", 'insert', null, null, $user);
-        update_row('travellers', 'booking_id = ? AND n = ?', [$id, $n], TRAVELLER_FIELDS, (array) ($in['fields'] ?? []), "$id #$n", $user);
+        $tf = (array) ($in['fields'] ?? []);
+        if (!isset($tf['full_name']) && (isset($tf['first_name']) || isset($tf['last_name']))) $tf['full_name'] = trim(trim((string) ($tf['first_name'] ?? '')) . ' ' . trim((string) ($tf['last_name'] ?? '')));
+        update_row('travellers', 'booking_id = ? AND n = ?', [$id, $n], TRAVELLER_FIELDS, $tf, "$id #$n", $user);
+        recount_booking($id);
       });
       out(booking_full($id, $user));
     }
     case 'traveller_remove': {
       $id = (string) $in['booking_id']; $n = (int) $in['n'];
       tx(function () use ($id, $n, $user) {
+        if (!one('SELECT id FROM bookings WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [$id])) throw new Refused('Booking not found.');
         $t = one('SELECT * FROM travellers WHERE booking_id = ? AND n = ?', [$id, $n]);
         if (!$t) throw new Refused('Traveller not found.');
         if ((int) val('SELECT COUNT(*) FROM travellers WHERE booking_id = ?', [$id]) < 2) throw new Refused('A booking needs at least one traveller.');
+        if ($t['status'] !== 'Cancelled') scale_tour($id, -1);
         q('DELETE FROM travellers WHERE booking_id = ? AND n = ?', [$id, $n]);
         log_change('travellers', "$id #$n", 'delete', ['full_name' => $t['full_name']], null, $user);
+        recount_booking($id);
       });
       out(booking_full($id, $user));
     }
@@ -228,11 +286,14 @@ try {
       out(booking_full($p['booking_id'], $user));
     }
     case 'receipt_issue':
+      if (!in_array(clean($in['language'] ?? 'en', 5), CONTENT_LANGS, true)) throw new Refused('Unknown language.');
       issue_receipt((string) $in['booking_id'], clean($in['language'] ?? '', 5), $user);
       out(booking_full((string) $in['booking_id'], $user));
     case 'receipt_save': {
+      $rb = one('SELECT b.deleted_at FROM receipts r JOIN bookings b ON b.id = r.booking_id WHERE r.no = ?', [(string) ($in['no'] ?? '')]);
+      if (!$rb || ($rb['deleted_at'] && !$admin)) throw new Refused('Receipt not found.');
       $f = [];
-      if (isset($in['language'])) $f['language'] = clean($in['language'], 5);
+      if (isset($in['language'])) { $f['language'] = clean($in['language'], 5); if (!in_array($f['language'], CONTENT_LANGS, true)) throw new Refused('Unknown language.'); }
       if (isset($in['overrides']) && is_array($in['overrides'])) {   // wording of this one receipt; an empty field goes back to the automatic text
         $o = [];
         foreach (['tour', 'transport', 'note', 'issued_by', 'thanks'] as $k) if (($v = clean($in['overrides'][$k] ?? '', 400)) !== '') $o[$k] = $v;
@@ -249,18 +310,24 @@ try {
       $tours = array_map(fn ($t) => $t + ['photo_url' => $t['web_photo'] !== '' ? upload_url($t['web_photo']) : ''], all('SELECT * FROM tours ORDER BY sort, code'));
       out(['settings' => $s, 'tours' => $tours, 'menu' => all('SELECT * FROM lunch_menu ORDER BY sort, id')]);
     }
-    case 'settings_save':
-      foreach ((array) ($in['settings'] ?? []) as $k => $v) {
-        if (!in_array($k, SETTING_KEYS, true)) continue;
-        if (str_ends_with($k, '_kip') || $k === 'kip_per_usd') { if (!is_numeric($v) || (float) $v <= 0) throw new Refused("$k must be a number above 0."); }
-        update_row('settings', '`key` = ?', [$k], ['value'], ['value' => (string) $v], $k, $user);
+    case 'settings_save': {
+      $names = ['transfer_one_kip' => 'Minivan one way', 'transfer_round_kip' => 'Minivan round trip', 'train_extra_kip' => 'Train station extra', 'kip_per_usd' => 'Kip for 1 USD'];
+      $todo = array_filter((array) ($in['settings'] ?? []), fn ($k) => in_array($k, SETTING_KEYS, true), ARRAY_FILTER_USE_KEY);
+      foreach ($todo as $k => $v) {   // everything is checked first: nothing is saved when one value is wrong
+        if (isset($names[$k]) && (!is_numeric($v) || (float) $v <= 0)) throw new Refused($names[$k] . ' must be a number above 0. Nothing was saved.');
+        if (mb_strlen((string) $v) > 500) throw new Refused("$k is too long. Nothing was saved.");
       }
+      tx(function () use ($todo, $user) { foreach ($todo as $k => $v) update_row('settings', '`key` = ?', [$k], ['value'], ['value' => trim((string) $v)], $k, $user); });
       out(['ok' => true]);
+    }
     case 'tour_save': {
       $code = clean($in['code'] ?? '', 5);
       if (!preg_match('/^[A-Za-z0-9]{1,5}$/', $code) || $code === TRANSPORT_ONLY) throw new Refused('Tour code: up to 5 letters or digits.');
       if (!is_numeric($in['price_usd'] ?? null) || (float) $in['price_usd'] < 0) throw new Refused('Type the price.');
+      if (clean($in['name'] ?? '', 120) === '') throw new Refused('Type the tour name.');
       $old = one('SELECT * FROM tours WHERE code = ?', [$code]);
+      if ($old && !empty($in['is_new'])) throw new Refused("Tour $code already exists. Change its line above instead.");
+      if (!$old) $in['sort'] = 1 + (int) val('SELECT COALESCE(MAX(sort), 0) FROM tours');
       q('INSERT INTO tours (code, name, price_usd, sort) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE name = VALUES(name), price_usd = VALUES(price_usd), sort = VALUES(sort)',
         [$code, clean($in['name'] ?? '', 120), $in['price_usd'], (int) ($in['sort'] ?? 0)]);
       log_change('tours', $code, $old ? 'update' : 'insert', $old ? ['name' => $old['name'], 'price_usd' => $old['price_usd']] : null,
@@ -295,11 +362,24 @@ try {
       log_change('tours', $code, 'update', null, ['web_photo' => $file], $user);
       out(['ok' => true, 'photo' => upload_url($file)]);
     }
-    case 'tour_delete':
-      q('DELETE FROM tours WHERE code = ?', [(string) $in['code']]); log_change('tours', (string) $in['code'], 'delete', null, null, $user); out(['ok' => true]);
+    case 'tour_delete': {
+      $code = (string) ($in['code'] ?? '');
+      if (in_array($code, ['101', '102', '103', '001'], true)) throw new Refused('The four original tours cannot be deleted.');
+      if (val('SELECT 1 FROM bookings WHERE tour = ? AND deleted_at IS NULL LIMIT 1', [$code])) throw new Refused("Bookings use tour $code: it cannot be deleted. Untick it on the website instead.");
+      $photo = (string) val('SELECT web_photo FROM tours WHERE code = ?', [$code]);
+      tx(function () use ($code, $user) {
+        foreach (['tour_days', 'tour_addons', 'tour_costs'] as $t) q("DELETE FROM `$t` WHERE tour = ?", [$code]);
+        q('DELETE FROM day_guides WHERE tour = ?', [$code]); q('DELETE FROM tours WHERE code = ?', [$code]);
+        log_change('tours', $code, 'delete', null, null, $user);
+      });
+      if (preg_match('/^tour-[a-z0-9]+-[a-f0-9]{12}\.jpg$/', $photo) && is_file(dirname(__DIR__) . "/uploads/$photo")) unlink(dirname(__DIR__) . "/uploads/$photo");
+      out(['ok' => true]);
+    }
     case 'menu_save': {
       $dish = clean($in['dish'] ?? '', 80);
       if ($dish === '') throw new Refused('Type the dish.');
+      if (!is_numeric($in['price_kip'] ?? null) || (float) $in['price_kip'] <= 0) throw new Refused('Type the price in kip (above 0).');
+      if (val('SELECT 1 FROM lunch_menu WHERE dish = ? AND id <> ?', [$dish, (int) ($in['id'] ?? 0)])) throw new Refused('This dish is already on the menu.');
       $row = [(int) !empty($in['show']), clean($in['grp'] ?? '', 80), $dish, clean($in['choices'] ?? '', 300), is_numeric($in['price_kip'] ?? null) ? $in['price_kip'] : 0, (int) ($in['sort'] ?? 0)];
       if (!empty($in['id'])) q('UPDATE lunch_menu SET `show` = ?, grp = ?, dish = ?, choices = ?, price_kip = ?, sort = ? WHERE id = ?', array_merge($row, [(int) $in['id']]));
       else q('INSERT INTO lunch_menu (`show`, grp, dish, choices, price_kip, sort) VALUES (?,?,?,?,?,?)', $row);
@@ -317,7 +397,7 @@ try {
       if (!in_array($in['role'] ?? '', ['admin', 'staff'], true)) throw new Refused('Choose a role.');
       check_password((string) ($in['password'] ?? ''));
       if (val('SELECT 1 FROM users WHERE email = ?', [$email])) throw new Refused('This email already has an account.');
-      q('INSERT INTO users (name, email, password_hash, role) VALUES (?,?,?,?)', [$name, $email, password_hash($in['password'], PASSWORD_DEFAULT), $in['role']]);
+      q('INSERT INTO users (name, email, password_hash, role) VALUES (?,?,?,?)', [$name, $email, password_hash((string) $in['password'], PASSWORD_DEFAULT), $in['role']]);
       log_change('users', $email, 'insert', null, ['role' => $in['role']], $user);
       out(['ok' => true]);
     }
@@ -335,7 +415,8 @@ try {
     }
     case 'user_password': {
       check_password((string) ($in['password'] ?? ''));
-      q('UPDATE users SET password_hash = ?, must_change_password = 1, failed_logins = 0, locked_until = NULL WHERE id = ?', [password_hash($in['password'], PASSWORD_DEFAULT), (int) $in['id']]);
+      if (!val('SELECT 1 FROM users WHERE id = ?', [(int) $in['id']])) throw new Refused('User not found.');
+      q('UPDATE users SET password_hash = ?, must_change_password = 1, failed_logins = 0, locked_until = NULL WHERE id = ?', [password_hash((string) $in['password'], PASSWORD_DEFAULT), (int) $in['id']]);
       log_change('users', (string) (int) $in['id'], 'password', null, null, $user);
       out(['ok' => true]);
     }
@@ -366,7 +447,8 @@ try {
 
     /* ----- agreements and inquiries ----- */
     case 'agreements': {
-      $from = date_or_null($in['from'] ?? null) ?? lao_today(); $to = max($from, date_or_null($in['to'] ?? null) ?? $from);
+      $from = date_or_null($in['from'] ?? null) ?? lao_today(); $to = date_or_null($in['to'] ?? null) ?? $from;
+      if ($to < $from) [$from, $to] = [$to, $from];
       out(['rows' => all("SELECT t.booking_id, t.n, t.full_name, b.tour_date, b.tour, r.no AS receipt_no, r.form_key, r.language, a.id AS agreement_id, a.submitted_at,
           a.photo_permission, a.medical, a.ec_name, a.ec_phone, a.insurance, a.signed_name, a.staff_checked
         FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id LEFT JOIN agreements a ON a.booking_id = t.booking_id AND a.n = t.n
@@ -381,9 +463,10 @@ try {
     case 'inquiry_save': {
       $f = (array) ($in['fields'] ?? []);
       if (isset($f['status']) && !in_array($f['status'], ['New', 'Replied', 'Booked', 'Closed'], true)) throw new Refused('Unknown status.');
+      if (isset($f['staff_notes'])) $f['staff_notes'] = clean($f['staff_notes'], 5000);
       update_row('inquiries', 'id = ?', [(int) $in['id']], ['status', 'staff_notes'], $f, (string) (int) $in['id'], $user); out(['ok' => true]);
     }
-    case 'inquiry_delete': q('DELETE FROM inquiries WHERE id = ?', [(int) $in['id']]); out(['ok' => true]);
+    case 'inquiry_delete': q('DELETE FROM inquiries WHERE id = ?', [(int) $in['id']]); log_change('inquiries', (string) (int) $in['id'], 'delete', null, null, $user); out(['ok' => true]);
 
     /* ----- money reports and website reviews (admin) ----- */
     case 'arrange': out(arrange_tour(date_or_null($in['date'] ?? null) ?? lao_today(), clean($in['tour'] ?? '', 5)));
@@ -417,6 +500,10 @@ try {
       out(['rows' => $rows]);
     }
     case 'agency_save': {
+      if (!date_or_null($in['tour_date'] ?? null)) throw new Refused('Pick the tour date.');
+      if (!is_numeric($in['guests'] ?? null) || (int) $in['guests'] < 1) throw new Refused('Guests: type a number (1 or more).');
+      if (!val('SELECT 1 FROM tours WHERE code = ?', [clean($in['tour'] ?? '', 5)])) throw new Refused('Tour code: use a code from the price list.');
+      foreach (['price_usd' => 'Price per person', 'sender_usd' => 'Sender gets per person'] as $k => $l) if (clean($in[$k] ?? '', 20) !== '' && (!is_numeric($in[$k]) || (float) $in[$k] < 0)) throw new Refused("$l: type a number.");
       $d = [];
       foreach (['tour', 'guests', 'sending_agency', 'receiving_agency', 'price_usd', 'sender_usd', 'guide_name', 'guide_whatsapp', 'notes', 'accommodation', 'remark'] as $k) $d[$k] = clean($in[$k] ?? '', 300);
       $row = [date_or_null($in['tour_date'] ?? null), clean($in['booking_id'] ?? '', 40), json_encode($d, JSON_UNESCAPED_UNICODE)];
@@ -438,12 +525,20 @@ try {
     case 'plan_save': {
       $tour = clean($in['tour'] ?? '', 5);
       if (!val('SELECT 1 FROM tours WHERE code = ?', [$tour])) throw new Refused('Unknown tour.');
+      $days = array_values((array) ($in['days'] ?? []));
+      while ($days && clean(end($days), 2000) === '') array_pop($days);
+      foreach ($days as $i => $d) if (clean($d, 2000) === '') throw new Refused('Day ' . ($i + 1) . ' is empty. Fill it in or move the later days up.');
+      $in['days'] = $days;
+      if (clean($in['addon'] ?? '', 200) !== '' && is_numeric($in['addon_day'] ?? null) && ((int) $in['addon_day'] < 1 || (int) $in['addon_day'] > max(1, count($days))))
+        throw new Refused('The additional package must start on day 1 to ' . max(1, count($days)) . '.');
+      foreach ((array) ($in['costs'] ?? []) as $c) if (clean($c['item'] ?? '', 200) !== '' && ((isset($c['qty']) && is_numeric($c['qty']) && (float) $c['qty'] < 0) || (float) ($c['unit_kip'] ?? 0) < 0))
+        throw new Refused('Cost lines cannot be below 0.');
       tx(function () use ($tour, $in, $user) {
         q('DELETE FROM tour_days WHERE tour = ?', [$tour]); q('DELETE FROM tour_addons WHERE tour = ?', [$tour]); q('DELETE FROM tour_costs WHERE tour = ?', [$tour]);
         foreach (array_values((array) ($in['days'] ?? [])) as $i => $plan) if (clean($plan, 2000) !== '') q('INSERT INTO tour_days (tour, day, plan) VALUES (?,?,?)', [$tour, $i + 1, clean($plan, 2000)]);
         if (clean($in['addon'] ?? '', 200) !== '') q('INSERT INTO tour_addons (tour, addon, starts_day) VALUES (?,?,?)', [$tour, clean($in['addon'], 200), is_numeric($in['addon_day'] ?? null) ? (int) $in['addon_day'] : null]);
         foreach ((array) ($in['costs'] ?? []) as $c) if (clean($c['item'] ?? '', 200) !== '')
-          q('INSERT INTO tour_costs (tour, item, unit_kip, counted_per, qty) VALUES (?,?,?,?,?)', [$tour, clean($c['item'], 200), (float) ($c['unit_kip'] ?? 0), clean($c['counted_per'] ?? 'group', 20) ?: 'group', (float) ($c['qty'] ?? 1) ?: 1]);
+          q('INSERT INTO tour_costs (tour, item, unit_kip, counted_per, qty) VALUES (?,?,?,?,?)', [$tour, clean($c['item'], 200), (float) ($c['unit_kip'] ?? 0), clean($c['counted_per'] ?? 'group', 20) ?: 'group', is_numeric($c['qty'] ?? null) ? (float) $c['qty'] : 1]);
         log_change('tour_days', $tour, 'update', null, null, $user);
       });
       out(['ok' => true]);
@@ -476,6 +571,7 @@ try {
     /* ----- history of one booking ----- */
     case 'history': {
       $id = (string) $in['id'];
+      if (!$admin && !val('SELECT 1 FROM bookings WHERE id = ? AND deleted_at IS NULL', [$id])) throw new Refused('Booking not found.');
       out(['history' => all("SELECT at, user_name, table_name, row_id, action, old_values, new_values FROM change_log
         WHERE (table_name = 'bookings' AND row_id = ?) OR (table_name = 'travellers' AND row_id LIKE ?) ORDER BY id DESC LIMIT 200", [$id, "$id #%"])]);
     }

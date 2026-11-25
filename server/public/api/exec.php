@@ -34,7 +34,7 @@ try {
     case 'inquiry': save_inquiry($d); reply('ok');
     case 'agreement': reply(['saved' => save_agreement($d)]);
     case 'lunch': reply(['saved' => save_lunch($d)]);
-    default: reply('unknown type');
+    default: http_response_code(400); reply('unknown type');
   }
 } catch (Refused $e) {
   http_response_code(400); reply($e->getMessage());

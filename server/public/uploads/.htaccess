@@ -1,8 +1,16 @@
 # Photos only: nothing in this folder is ever run as a script, and the folder cannot be listed.
 Options -Indexes
-<FilesMatch "\.(php\d?|phtml|phar|cgi|pl|py|sh)$">
+<FilesMatch "(?i)\.(php\d?|phtml|phar|pht|phps|cgi|pl|py|sh|htaccess)$">
   Require all denied
 </FilesMatch>
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>
+RemoveHandler .php .phtml .pht .phar
+RemoveType .php .phtml .pht .phar
 <IfModule mod_headers.c>
   Header set X-Content-Type-Options "nosniff"
 </IfModule>

@@ -7,6 +7,7 @@ function start_session(): void {
   if (session_status() === PHP_SESSION_ACTIVE) return;
   $https = ($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
   session_name('nk_staff');
+  ini_set('session.gc_maxlifetime', '43200');   // a dashboard left open in the office stays signed in for 12 hours
   session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => $https, 'httponly' => true, 'samesite' => 'Lax']);
   session_start();
 }
@@ -31,6 +32,7 @@ function login(string $email, string $password): array {
   if (!$u['active'] || !password_verify($password, $u['password_hash'])) {
     $fails = (int) $u['failed_logins'] + 1;
     q('UPDATE users SET failed_logins = ?, locked_until = IF(? >= 8, UTC_TIMESTAMP() + INTERVAL 15 MINUTE, NULL) WHERE id = ?', [$fails >= 8 ? 0 : $fails, $fails, $u['id']]);
+    if ($fails >= 8) throw new Refused('Too many wrong passwords. Try again in 15 minutes.');
     throw $wrong;
   }
   q('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?', [$u['id']]);

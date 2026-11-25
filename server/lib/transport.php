@@ -54,7 +54,7 @@ function stop_message(array $g, int $si, int $n, ?string $up, string $id, ?strin
 }
 
 function guest_message(string $first, string $to, string $place, string $time, string $plate, string $extra, string $manager, string $day): string {
-  return 'Hello ' . ($first ?: 'there') . '! Your minivan to ' . $to . ' is booked for ' . $day . ".\n" .
+  return 'Hello ' . ($first ?: 'there') . '! Your minivan to ' . $to . ' is booked ' . $day . ".\n" .
     'Pickup at ' . $place . ($time ? ' between ' . $time : '') . ".\n" .
     'The plate number is ' . ($plate ?: '(we send it soon)') . ".\n" . $extra .
     ($manager ? "\nIf you need help with your pickup, please contact our transport manager: " . $manager . '.' : '');
@@ -65,7 +65,7 @@ function guest_message(string $first, string $to, string $place, string $time, s
 function transport_day(string $date, ?string $onlyBooking = null): array {
   $today = lao_today();
   $tomorrow = (new DateTime($today))->modify('+1 day')->format('Y-m-d');
-  $dayWord = $date === $tomorrow ? 'tomorrow' : ($date === $today ? 'today' : 'on ' . lao_day($date));
+  $dayWord = $date === $tomorrow ? 'for tomorrow' : ($date === $today ? 'for today' : 'for ' . lao_day($date));
   $manager = trim(setting('transport_manager')); $office = setting('nk_office', 'Office (The Trio Bar & Cafe)');
   $rows = all("SELECT b.*, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no FROM bookings b LEFT JOIN receipts r ON r.booking_id = b.id
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND (b.pickup_date = ? OR b.return_date = ?)" . ($onlyBooking !== null ? ' AND b.id = ?' : '') . ' ORDER BY b.submitted_at',
@@ -82,23 +82,27 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
     $lead = (string) val('SELECT full_name FROM travellers WHERE booking_id = ? ORDER BY n LIMIT 1', [$b['id']]) ?: $people[0]['name'];
     $first = $people[0]['first'] ?: explode(' ', $people[0]['name'])[0];
     $nk = $b['nk_pickup'] ?: $office; $train = (bool) $b['train_dropoff'];
-    [$upTime, $downTime] = transfer_times($b);
+    [$upTime, $downTime] = array_map('time_label', transfer_times($b));
     $team = team_message($people, $goesUp ? $b['pickup_date'] : null, $back ? $b['return_date'] : null, $train, $lead, $b['whatsapp'], $b['id'], $b['receipt_no'], $nk, $downTime);
     $base = ['booking_id' => $b['id'], 'receipt_no' => $b['receipt_no'], 'whatsapp' => $b['whatsapp'], 'lead' => $lead, 'remark' => $b['transport_remark'], 'wa' => wa_digits($b['whatsapp'])];
     $row = fn ($p, $i) => ['booking_id' => $b['id'], 'tour' => $b['tour'], 'receipt_no' => $b['receipt_no'], 'name' => $p['name'], 'pax' => $i === 0 ? count($people) : '', 'riders' => 1];
     // the passenger list the minivan carries: one row per guest riding that day, either way, with the passport details
     $ridesUp = $goesUp && $b['pickup_date'] === $date; $ridesDown = $back && $b['return_date'] === $date;
     if ($ridesUp || $ridesDown) foreach ($people as $p) $passengers[] = ['way' => $ridesUp && $ridesDown ? 'ຂຶ້ນ + ລົງ' : ($ridesUp ? 'ຂຶ້ນ' : 'ລົງ'), 'name' => $p['name'], 'passport' => $p['passport'],
-      'issued' => $p['issued'], 'expires' => $p['expires'], 'country' => $p['country'], 'place' => $ridesUp ? $p['place'] : $nk,
-      'pickup_date' => $goesUp ? $b['pickup_date'] : null, 'return_date' => $back ? $b['return_date'] : null, 'booking_id' => $b['id'], 'vehicle' => $ridesUp ? $b['vehicle_to_nk'] : $b['vehicle_to_lpb']];
+      'issued' => $p['issued'], 'expires' => $p['expires'], 'country' => $p['country'], 'place' => $ridesUp && $ridesDown ? $p['place'] . ' / back from ' . $nk : ($ridesUp ? $p['place'] : $nk),
+      'pickup_date' => $goesUp ? $b['pickup_date'] : null, 'return_date' => $back ? $b['return_date'] : null, 'booking_id' => $b['id'], 'vehicle' => $ridesUp && $ridesDown ? trim($b['vehicle_to_nk'] . ' / ' . $b['vehicle_to_lpb'], ' /') : ($ridesUp ? $b['vehicle_to_nk'] : $b['vehicle_to_lpb'])];
     if ($goesUp && $b['pickup_date'] === $date) {
       $stops = pickup_stops($people);
       foreach ($stops as $si => $g) {
         $place = $g[0]['place'] ?: 'your hotel';
-        $up[] = $base + ['key' => $g[0]['place'] . '|' . $b['id'] . '|' . $si, 'pax' => count($g), 'names' => array_column($g, 'name'), 'place' => $g[0]['place'], 'map' => $g[0]['map'],
+        // a stop without the person who booked: greet the guests of that stop, on their own WhatsApp when staff typed one
+        $leadHere = in_array(mb_strtolower(trim($lead)), array_map(fn ($x) => mb_strtolower(trim($x['name'])), $g), true);
+        $greet = $leadHere ? $first : ($g[0]['first'] ?: explode(' ', $g[0]['name'])[0]);
+        $own = $leadHere ? '' : (string) (array_values(array_filter(array_column($g, 'phone')))[0] ?? '');
+        $up[] = ($own !== '' ? ['wa' => wa_digits($own)] : []) + $base + ['key' => $g[0]['place'] . '|' . $b['id'] . '|' . $si, 'pax' => count($g), 'names' => array_column($g, 'name'), 'place' => $g[0]['place'], 'map' => $g[0]['map'],
           'time' => $upTime, 'vehicle' => $b['vehicle_to_nk'], 'stop' => count($stops) > 1 ? ($si + 1) . '/' . count($stops) : '',
           'team' => count($stops) === 1 ? $team : stop_message($g, $si, count($stops), $b['pickup_date'], $b['id'], $b['receipt_no'], $lead, $b['whatsapp']),
-          'guest' => guest_message($first, 'Nong Khiaw', $place, str_replace(' - ', ' and ', $upTime), $b['vehicle_to_nk'], 'Please wait at your hotel reception for the driver to pick you up.', $manager, $dayWord)];
+          'guest' => guest_message($greet, 'Nong Khiaw', $place, str_replace(' - ', ' and ', $upTime), $b['vehicle_to_nk'], 'Please wait at your hotel reception for the driver to pick you up.', $manager, $dayWord)];
       }
       foreach ($people as $i => $p) $upRows[] = $row($p, $i) + ['food' => $p['food'], 'date' => $b['pickup_date'], 'time' => $upTime, 'place' => $p['place'], 'map' => $p['map'],
         'lunch' => $p['lunch'], 'lunch_qty' => $p['lunch'] !== '' ? 1 : '', 'lunch_date' => $p['lunch'] !== '' ? ($b['tour_date'] ?? $b['pickup_date']) : '', 'vehicle' => $b['vehicle_to_nk'], 'remark' => $b['transport_remark']];
@@ -116,6 +120,7 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
   $byKey = fn ($a, $b) => strcmp($a['key'], $b['key']);
   usort($up, $byKey); usort($down, $byKey);
   // the way back, earliest minivan first; one summary line per leaving time
+  usort($upRows, fn ($a, $b) => time_sort($a['time']) <=> time_sort($b['time']));   // stable: a booking's guests stay together
   usort($downRows, fn ($a, $b) => [time_sort($a['time']), $a['booking_id']] <=> [time_sort($b['time']), $b['booking_id']]);
   $slots = [];
   foreach ($downRows as $r) { $slots[$r['time']] = $slots[$r['time']] ?? ['time' => $r['time'], 'pax' => 0, 'train' => 0]; $slots[$r['time']]['pax']++; $slots[$r['time']]['train'] += (int) $r['train']; }
@@ -131,11 +136,20 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
 }
 // "3:30 - 4:30 PM" -> minutes after midnight of the first time, so the lists sort by the clock. Unreadable times go last.
 function time_sort(string $t): int {
-  if (!preg_match('/(\d{1,2})(?::(\d{2}))?/', $t, $m)) return 9999;
-  $h = (int) $m[1] % 12; $pm = (bool) preg_match('/PM/i', $t);
-  if ($pm && !preg_match('/AM\s*-/i', $t)) $h += 12;
-  elseif (!preg_match('/AM|PM/i', $t) && $h < 7) $h += 12;   // "3:30 - 4:30" typed without AM or PM is the afternoon minivan
-  return $h * 60 + (int) ($m[2] ?? 0);
+  if (!preg_match('/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?(?:\s*[-–]\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?)?/i', $t, $m)) return 9999;
+  $h1 = (int) $m[1] % 12; $min = (int) ($m[2] ?? 0); $mk1 = strtolower($m[3] ?? ''); $mk2 = strtolower($m[6] ?? '');
+  if ($mk1 === 'pm') $h1 += 12;
+  elseif ($mk1 === '' && $mk2 !== '') {   // "11:30 - 12:30 PM": the marker comes after the dash, and the first time is the earlier one
+    $h2 = ((int) $m[4] % 12) + ($mk2 === 'pm' ? 12 : 0);
+    if ($mk2 === 'pm' && $h1 + 12 <= $h2) $h1 += 12;
+  } elseif ($mk1 === '' && $h1 < 7) $h1 += 12;   // "3:30 - 4:30" typed without AM or PM is the afternoon minivan
+  return $h1 * 60 + $min;
+}
+// A typed time without AM/PM gets the one time_sort() assumed, so "3:30 - 4:30" and "3:30 - 4:30 PM" are the same minivan.
+function time_label(string $t): string {
+  $t = trim($t);
+  if ($t === '' || preg_match('/am|pm/i', $t) || !preg_match('/^\d{1,2}([:.]\d{2})?(\s*[-–]\s*\d{1,2}([:.]\d{2})?)?$/u', $t)) return $t;
+  return $t . (time_sort($t) >= 12 * 60 ? ' PM' : ' AM');
 }
 
 // One plate number for everyone on the minivan that day in one direction. Returns how many bookings it was written on.

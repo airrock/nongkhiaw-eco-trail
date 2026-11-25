@@ -36,7 +36,16 @@
     clearTimeout(toast.timer); toast.timer = setTimeout(function () { t.className = ''; }, bad ? 6000 : 2500);
   }
   // Every failure is shown to the user; the promise rejects so the caller stops.
+  var pending = {};
   function api(action, body) {
+    var key = action + ' ' + JSON.stringify(body || {});
+    if (pending[key]) return pending[key];   // the same save clicked twice: one request, one result
+    document.body.classList.add('busy');
+    var p = pending[key] = send(action, body).then(function (d) { done(); return d; }, function (e) { done(); throw e; });
+    function done() { delete pending[key]; if (!Object.keys(pending).length) document.body.classList.remove('busy'); }
+    return p;
+  }
+  function send(action, body) {
     return fetch(API, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-NK': '1' },
       body: JSON.stringify(Object.assign({ action: action }, body || {})) })
       .then(function (r) { return r.json().catch(function () { return { error: 'The server did not answer properly (' + r.status + ').' }; }).then(function (d) { return { status: r.status, d: d }; }); },
@@ -97,7 +106,8 @@
           state.user.must_change_password = false; toast('Password changed'); state.tab = 'bookings'; render();
         }, function () {});
       } }, field(forced ? 'Temporary password' : 'Current password', oldP), h('p'), field('New password', newP), h('p'),
-        h('button', { class: 'btn', type: 'submit' }, 'Save password'))));
+        h('button', { class: 'btn', type: 'submit' }, 'Save password'),
+        forced ? [' ', h('button', { class: 'btn ghost', type: 'button', onclick: function () { api('logout').then(function () { state.user = null; render(); }, function () {}); } }, 'Sign out')] : null)));
   }
 
   /* ---------- frame ---------- */
@@ -164,7 +174,7 @@
         list.length ? h('button', { class: 'btn ghost small', onclick: function () { copyText(list.map(function (x) { return x.team; }).join('\n\n'), 'All team messages copied'); } }, 'Copy all team messages') : null));
       if (!list.length) card.appendChild(h('p', { class: 'muted' }, 'Nobody on this date.'));
       list.forEach(function (x) {
-        var vehicle = input(up ? 'vehicle_to_nk' : 'vehicle_to_lpb', x.vehicle), remark = input('transport_remark', x.remark), time = input(up ? 'pickup_time' : 'return_time', x.time);
+        var vehicle = input(up ? 'vehicle_to_nk' : 'vehicle_to_lpb', x.vehicle), remark = input('transport_remark', x.remark), time = input(up ? 'pickup_time' : 'return_time', x.time, { maxlength: 20 });
         var phone = input('whatsapp', x.whatsapp);
         var msg = h('details', {}, h('summary', {}, 'Message for the minivan team'), h('pre', { style: 'white-space:pre-wrap;font:inherit;margin:8px 0' }, x.team));
         card.appendChild(h('div', { class: 'trav' },
@@ -175,7 +185,9 @@
           h('div', { class: 'grid' }, field('Vehicle / plate no', vehicle), field(up ? 'Pickup time' : 'Time back', time), field('WhatsApp', phone), field('Remark', remark)),
           h('div', { class: 'bar', style: 'margin-top:10px' },
             h('button', { class: 'btn small', onclick: function () {
-              var f = {}; [vehicle, time, phone, remark].forEach(function (i) { f[i.name] = i.value; });
+              var was = { vehicle: x.vehicle, time: x.time, whatsapp: x.whatsapp, transport_remark: x.remark }, f = {};
+              [[vehicle, 'vehicle'], [time, 'time'], [phone, 'whatsapp'], [remark, 'transport_remark']].forEach(function (p) { if (p[0].value !== (was[p[1]] || '')) f[p[0].name] = p[0].value; });
+              if (!Object.keys(f).length) { toast('Nothing changed'); return; }
               api('booking_save', { id: x.booking_id, fields: f }).then(function () { toast('Saved'); load(); }, function () {});
             } }, 'Save'),
             x.wa.length >= 7 ? h('a', { class: 'btn ghost small', target: '_blank', rel: 'noopener', href: 'https://wa.me/' + x.wa + '?text=' + encodeURIComponent(x.guest) }, 'Message guest on WhatsApp')
@@ -254,14 +266,14 @@
     var form = h('div', { class: 'grid' },
       field('Tour date', input('tour_date', b.tour_date, { type: 'date' })),
       field('Tour code', input('tour', b.tour)), field('Tour name', input('tour_name', b.tour_name)),
-      field('Status', select('status', STATUSES, b.status)),
+      field('Status', select('status', STATUSES.filter(function (s) { return s !== 'Paid' || b.status === 'Paid'; }), b.status)),
       field('Minivan transfer', select('transfer', TRANSFERS, b.transfer)),
       field('Pickup date (Luang Prabang)', input('pickup_date', b.pickup_date, { type: 'date' })),
-      field('Pickup time', input('pickup_time', b.pickup_time)),
+      field('Pickup time', input('pickup_time', b.pickup_time, { maxlength: 20 })),
       field('Pickup place (Luang Prabang)', input('accommodation', b.accommodation)),
       field('Map link', input('maps_link', b.maps_link)),
       field('Date back', input('return_date', b.return_date, { type: 'date' })),
-      field('Time back', input('return_time', b.return_time)),
+      field('Time back', input('return_time', b.return_time, { maxlength: 20 })),
       field('Pickup place in Nong Khiaw', input('nk_pickup', b.nk_pickup)),
       field('Train station drop-off', yesno('train_dropoff', b.train_dropoff)),
       field('Vehicle to Nong Khiaw', input('vehicle_to_nk', b.vehicle_to_nk)), field('Vehicle to Luang Prabang', input('vehicle_to_lpb', b.vehicle_to_lpb)),
@@ -296,16 +308,26 @@
     var menu = (state.cfg && state.cfg.menu) || [];
     var dishes = [''].concat(menu.filter(function (m) { return Number(m.price_kip) > 0; }).map(function (m) { return m.dish; }));
     var tcard = h('div', { class: 'card noprint' }, h('h2', { style: 'margin-top:0' }, 'Travellers (' + d.travellers.length + ')'));
+    tcard.appendChild(h('datalist', { id: 'placelist' }, h('option', { value: 'No transfer' })));
+    var choicesOf = function (dish) { var m = menu.filter(function (x) { return x.dish === dish; })[0]; return m ? String(m.choices || '').split(',').map(function (c) { return c.trim(); }).filter(String) : []; };
     d.travellers.forEach(function (tr) {
       var signed = d.agreements.some(function (a) { return a.n === tr.n; });
+      var dishSel = select('lunch_dish', dishes, tr.lunch_dish), choiceSel = h('select', { name: 'lunch_choice' });
+      var fillChoices = function (keep) {
+        var cs = choicesOf(dishSel.value); choiceSel.textContent = '';
+        choiceSel.appendChild(h('option', { value: '' }, cs.length ? 'Choose…' : '-'));
+        cs.forEach(function (c) { choiceSel.appendChild(h('option', { value: c }, c)); });
+        choiceSel.value = cs.indexOf(keep) !== -1 ? keep : ''; choiceSel.disabled = !cs.length;
+      };
+      fillChoices(tr.lunch_choice); dishSel.addEventListener('change', function () { fillChoices(''); });
       var g = h('div', { class: 'grid', style: 'margin-top:8px' },
         field('First name', input('first_name', tr.first_name)), field('Last name', input('last_name', tr.last_name)),
         field('Full name', input('full_name', tr.full_name)), field('Nationality', input('country', tr.country)),
         field('Gender', input('gender', tr.gender)), field('Passport no', input('passport_no', tr.passport_no)),
         field('Passport issued', input('passport_issued', tr.passport_issued)), field('Passport expires', input('passport_expires', tr.passport_expires)),
         field('Food', select('food', [''].concat(FOODS), tr.food)),
-        field('Pickup place', input('pickup_place', tr.pickup_place)), field('Pickup map', input('pickup_map', tr.pickup_map)),
-        field('Lunch before the tour', select('lunch_dish', dishes, tr.lunch_dish)), field('Lunch choice', input('lunch_choice', tr.lunch_choice)),
+        field('Pickup place (or "No transfer")', input('pickup_place', tr.pickup_place, { list: 'placelist' })), field('Pickup map', input('pickup_map', tr.pickup_map)),
+        field('Lunch before the tour', dishSel), field('Lunch choice', choiceSel),
         field('Traveller status', select('status', ['', 'Cancelled', 'No-show'], tr.status)), field('Traveller WhatsApp', input('whatsapp', tr.whatsapp)));
       tcard.appendChild(h('details', { class: 'trav' },
         h('summary', {}, tr.n + '. ' + (tr.full_name || '(no name)') + (tr.status ? ' · ' + tr.status : '') + (signed ? ' · agreement signed' : '')),
@@ -330,6 +352,7 @@
     // money
     var amount = input('amount', '', { type: 'number', step: '0.01', placeholder: 'Amount' });
     var cur = select('currency', ['USD', 'LAK'], 'USD'), method = select('method', PAYS, b.payment_method || 'USD cash');
+    cur.addEventListener('change', function () { if (cur.value === 'LAK' && method.value === 'USD cash') method.value = 'Kip cash'; if (cur.value === 'USD' && method.value === 'Kip cash') method.value = 'USD cash'; });
     var paidOn = input('paid_on', '', { type: 'date' }), note = input('note', '', { placeholder: 'Note (optional)' });
     main.appendChild(h('div', { class: 'card noprint' }, h('h2', { style: 'margin-top:0' }, 'Payments'),
       h('div', { class: 'totals' },
@@ -338,7 +361,8 @@
         h('span', {}, 'Lunch before the tour'), h('span', {}), h('span', { class: 'right' }, money(t.lunch_kip) + ' kip'),
         h('span', { class: 'b' }, 'Total'), h('span', { class: 'right b' }, '$' + money(t.total_usd, 2)), h('span', { class: 'right b' }, money(t.total_kip) + ' kip'),
         h('span', {}, 'Paid'), h('span', { class: 'right' }, '$' + money(t.paid_usd, 2)), h('span', {}),
-        h('span', { class: 'b' }, 'Still to pay'), h('span', { class: 'right b' }, '$' + money(t.balance_usd, 2)), h('span', { class: 'right b' }, money(t.balance_kip) + ' kip')),
+        t.balance_usd < -0.005 ? [h('span', { class: 'b' }, 'Overpaid, to give back'), h('span', { class: 'right b' }, '$' + money(-t.balance_usd, 2)), h('span', { class: 'right b' }, money(-t.balance_kip) + ' kip')]
+          : [h('span', { class: 'b' }, 'Still to pay'), h('span', { class: 'right b' }, '$' + money(t.balance_usd, 2)), h('span', { class: 'right b' }, money(t.balance_kip) + ' kip')]),
       h('p', { class: 'muted' }, '1 USD = ' + money(t.rate) + ' kip'),
       d.payments.length ? h('div', { class: 'scroll' }, h('table', {}, h('tr', {}, h('th', {}, 'Date'), h('th', { class: 'num' }, 'Amount'), h('th', {}, 'Method'), h('th', {}, 'Taken by'), h('th', {}, 'Note'), h('th', {})),
         d.payments.map(function (p) {
@@ -420,18 +444,26 @@
     var stops = (d.summary.pickups ? d.summary.pickups.split('; ') : []).filter(function (x) { return !/^No transfer:/.test(x); });
     var places = stops.length === 1 ? stops[0].replace(/: [\d, ]+$/, '') : stops.join('; ');
     var join = function (parts) { return parts.filter(Boolean).join('  |  '); };
-    var tourLine = o.tour || (b.tour === 'T00' || !b.tour ? b.tour_name : 'Code: ' + b.tour + ' – ' + b.tour_name) + (Number(b.private_tour) ? ' (Private tour)' : '');
-    var pickupLine = o.transport || (b.transfer && b.transfer !== 'No' ? join([b.transfer, places, up && b.pickup_date ? day(b.pickup_date) + ' ' + (b.pickup_time || '') : '']) : '');
-    var returnLine = !o.transport && back ? join(['Nong Khiaw → Luang Prabang', b.return_date ? day(b.return_date) + ' ' + (b.return_time || '') : '', L.dropoff + ': ' + (Number(b.train_dropoff) ? L.train : L.citycenter)]) : '';
+    var tourLine = o.tour || (b.tour === 'T00' || !b.tour ? b.tour_name : L.code + ': ' + b.tour + ' – ' + b.tour_name) + (Number(b.private_tour) ? ' (' + L['private'] + ')' : '');
+    // "Transport line" in Edit wording replaces the words of the transfer; the places, dates and times stay
+    var word = o.transport || b.transfer;
+    var pickupLine = up ? join([word, places, b.pickup_date ? day(b.pickup_date) + ' ' + (b.pickup_time || '') : '']) : '';
+    var returnLine = back ? join([(up ? '' : word + '  |  ') + L.nklpb + (b.nk_pickup ? ' (' + b.nk_pickup + ')' : ''), b.return_date ? day(b.return_date) + ' ' + (b.return_time || '') : '',
+      L.dropoff + ': ' + (Number(b.train_dropoff) ? L.train : L.citycenter)]) : '';
+    if (!up && !back && o.transport) pickupLine = o.transport;
     var row = function (label, value, label2, value2) {
       return h('tr', {}, h('th', {}, label ? label + ':' : ''), h('td', { colspan: label2 === undefined ? 3 : 1 }, value),
         label2 === undefined ? null : h('th', { class: 'r' }, label2 + ':'), label2 === undefined ? null : h('td', {}, value2));
     };
     // what each person pays: the tour per person, their share of the transport if they ride, and their own lunch
-    var each = function (x) {
-      var kip = Math.round(t.tour_usd / people.length * t.rate + (riders.length ? (x.pickup_place !== 'No transfer' ? t.transfer_kip / riders.length : 0) : t.transfer_kip / people.length) + Number(x.lunch_kip || 0));
-      return money(kip / t.rate, 2) + ' / ' + money(kip);
-    };
+    var shares = people.map(function (x) {
+      return Math.round(t.tour_usd / people.length * t.rate + (riders.length ? (x.pickup_place !== 'No transfer' ? t.transfer_kip / riders.length : 0) : t.transfer_kip / people.length) + Number(x.lunch_kip || 0));
+    });
+    // rounding: the first person takes the last kip and the last cent, so the column adds up to the total exactly
+    shares[0] += t.total_kip - shares.reduce(function (a, k) { return a + k; }, 0);
+    var usd = shares.map(function (k) { return Math.round(k / t.rate * 100) / 100; });
+    usd[0] = Math.round((usd[0] + t.total_usd - usd.reduce(function (a, u) { return a + u; }, 0)) * 100) / 100;
+    var each = function (x, i) { return money(usd[i], 2) + ' / ' + money(shares[i]); };
     return h('div', { class: 'receipt' },
       h('div', { class: 'head' }, h('div', {}, h('h2', {}, s.business_name || 'Nong Khiaw Eco-Trail'), h('div', { class: 'muted' }, s.business_address || ''), h('div', { class: 'muted' }, s.business_contact || '')),
         h('div', { class: 'right' }, h('div', { class: 'rtitle' }, L.receipt), h('div', {}, L.no + ' ', h('strong', { class: 'rno' }, r.no)))),
@@ -445,13 +477,13 @@
         o.note ? row('', o.note) : null)),
       h('div', { class: 'scroll' }, h('table', { class: 'rtab' }, h('tr', {}, h('th', {}, L.no), h('th', {}, L.name), h('th', {}, L.passport), h('th', {}, L.food), h('th', {}, L.lunch),
           people.length > 1 ? h('th', { class: 'num' }, L.perperson + ' (USD / ' + L.kip + ')') : null),
-        people.map(function (x) {
-          return h('tr', {}, h('td', {}, x.n), h('td', {}, x.full_name), h('td', {}, x.passport_no), h('td', {}, x.food || 'Regular'),
-            h('td', {}, x.lunch_dish + (x.lunch_choice ? ' (' + x.lunch_choice + ')' : '')), people.length > 1 ? h('td', { class: 'num' }, each(x)) : null);
+        people.map(function (x, i) {
+          return h('tr', {}, h('td', {}, x.n), h('td', {}, x.full_name), h('td', {}, x.passport_no), h('td', {}, !x.food || x.food === 'Regular' ? L.regular : x.food),
+            h('td', {}, x.lunch_dish + (x.lunch_choice ? ' (' + x.lunch_choice + ')' : '')), people.length > 1 ? h('td', { class: 'num' }, each(x, i)) : null);
         }))),
       h('div', { class: 'scroll' }, h('table', { class: 'rtab', style: 'margin-top:12px' }, h('tr', {}, h('th', {}, L.item), h('th', {}, L.details), h('th', { class: 'num' }, 'USD'), h('th', { class: 'num' }, L.kip)),
-        h('tr', {}, h('td', {}, L.tour), h('td', {}, people.length + ' ' + L.people), h('td', { class: 'num' }, money(t.tour_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.tour_usd * t.rate)))),
-        t.transfer_kip ? h('tr', {}, h('td', {}, L.transport), h('td', {}, o.transport || b.transfer + (Number(b.train_dropoff) ? ' + ' + L.train : '')), h('td', { class: 'num' }, money(t.transfer_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.transfer_kip))) : null,
+        b.tour === 'T00' && !Number(t.tour_usd) ? null : h('tr', {}, h('td', {}, L.tour), h('td', {}, people.length + ' ' + (people.length === 1 ? L.person : L.people)), h('td', { class: 'num' }, money(t.tour_usd, 2)), h('td', { class: 'num' }, money(Math.round(t.tour_usd * t.rate)))),
+        t.transfer_kip ? h('tr', {}, h('td', {}, L.transport), h('td', {}, word + (Number(b.train_dropoff) && back ? ' + ' + L.train : '')), h('td', { class: 'num' }, money(t.transfer_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.transfer_kip))) : null,
         t.lunch_kip ? h('tr', {}, h('td', {}, L.lunch), h('td', {}, d.summary.lunch), h('td', { class: 'num' }, money(t.lunch_kip / t.rate, 2)), h('td', { class: 'num' }, money(t.lunch_kip))) : null,
         h('tr', { class: 'rtotal' }, h('td', { colspan: 2 }, L.total), h('td', { class: 'num' }, money(t.total_usd, 2)), h('td', { class: 'num' }, money(t.total_kip))),
         h('tr', {}, h('td', { colspan: 2 }, paid ? L.paid : L.deposit), h('td', { class: 'num' }, money(t.paid_usd, 2)), h('td', { class: 'num' }, money(t.paid_kip))),
@@ -470,10 +502,10 @@
       field('Minivan transfer', select('transfer', TRANSFERS, 'No')), field('Pickup date in Luang Prabang', input('pickupDate', '', { type: 'date' })),
       field('Pickup place', input('hotel', '')), field('Map link', input('map', '')), field('Date back', input('returnDate', '', { type: 'date' })),
       field('Pickup place in Nong Khiaw', input('nkPickup', '')), field('Train station drop-off', select('train', ['No', 'Yes'], 'No')),
-      field('WhatsApp', input('phone', '')), field('Payment method', select('payment', PAYS, 'USD cash')), field('Status', select('status', STATUSES, 'Confirmed')),
+      field('WhatsApp', input('phone', '')), field('Payment method', select('payment', PAYS, 'USD cash')), field('Status', select('status', STATUSES.filter(function (s) { return s !== 'Paid'; }), 'Confirmed')),
       field('Private tour', select('private', ['No', 'Yes'], 'No')), field('Booking ID (empty = automatic)', input('id', '')),
-      field('Tour price USD per person (empty = price list)', input('priceUsd', '', { type: 'number', step: '0.01' })),
-      field('Transport kip in total (empty = price list)', input('transferKip', '', { type: 'number', step: '1' })));
+      field('Tour price USD per person (empty = price list)', input('priceUsd', '', { type: 'number', step: '0.01', min: '0' })),
+      field('Transport kip in total (empty = price list)', input('transferKip', '', { type: 'number', step: '1', min: '0' })));
     var note = field('Note', h('textarea', { name: 'note' }));
     var people = h('div', {});
     function addPerson() {
@@ -537,7 +569,7 @@
           h('div', { style: 'flex:1 1 200px' }, field('Name', input('name', t.name))), field('USD per person', input('price_usd', t.price_usd, { type: 'number', step: '0.01', style: 'width:130px' })));
         row.appendChild(h('button', { class: 'btn small', onclick: function () {
           var v = {}; row.querySelectorAll('[name]').forEach(function (i) { v[i.name] = i.value; });
-          api('tour_save', { code: v.code, name: v.name, price_usd: v.price_usd, sort: t.sort }).then(function () { toast('Saved'); render(); }, function () {});
+          api('tour_save', { code: v.code, name: v.name, price_usd: v.price_usd, sort: t.sort, is_new: !!t.isNew }).then(function () { toast('Saved'); render(); }, function () {});
         } }, t.isNew ? 'Add tour' : 'Save'));
         tt.appendChild(row);
       });
@@ -574,7 +606,8 @@
         card.appendChild(h('div', { class: 'bar' }, h('div', { style: 'flex:1 1 160px' }, field('Name', name)), h('div', { style: 'flex:1 1 200px' }, field('Email', input('email', u.email, { disabled: true }))),
           field('Role (staff = office staff)', role), h('label', { class: 'f' }, 'Active', h('br'), active),
           h('button', { class: 'btn small', onclick: function () {
-            api('user_save', { id: u.id, name: name.value, role: role.value, active: active.checked }).then(function () { toast('Saved'); render(); }, function () { render(); });
+            api('user_save', { id: u.id, name: name.value, role: role.value, active: active.checked }).then(function () { toast('Saved'); return api('me'); })
+              .then(function (d) { if (d) { state.user = d.user; } render(); }, function () { render(); });
           } }, 'Save'),
           h('button', { class: 'btn ghost small', onclick: function () {
             var p = window.prompt('New temporary password for ' + u.name + ' (8 characters or more). They must change it when they sign in.');
@@ -674,6 +707,8 @@
     } }, 'Download as an Excel file')));
     return wrap;
   }
+  // "2026-11-25 03:10:00" in UTC (as stored) -> "25/11/2026 10:10" in Laos
+  function laoTime(utc) { var d = new Date(String(utc).replace(' ', 'T') + 'Z'); if (isNaN(d)) return utc; d = new Date(d.getTime() + 7 * 3600 * 1000); return day(d.toISOString().slice(0, 10)) + ' ' + d.toISOString().slice(11, 16); }
   function tomorrow() { return new Date(Date.now() + 31 * 3600 * 1000).toISOString().slice(0, 10); }   // tomorrow in Laos (UTC+7)
   function openBooking(id) { return h('button', { class: 'btn ghost small', onclick: function () { state.tab = 'booking'; state.id = id; render(); } }, id); }
 
@@ -683,6 +718,7 @@
     var run = 0;
     function load() {
       var mine = ++run, stale = function () { if (mine !== run) throw new Error('stale'); };
+      if (!date.value) { date.value = state.reportDate || tomorrow(); }   // an emptied date goes back to the last one shown
       state.reportDate = date.value; body.textContent = '';
       api('tour_report', { date: date.value }).then(function (tr) {
         stale();
@@ -804,7 +840,7 @@
             var pic = new Image(), url = URL.createObjectURL(file.files[0]);
             pic.onload = function () {   // made smaller here (1600 px at most) so a phone photo uploads fast
               var k = Math.min(1, 1600 / Math.max(pic.width, pic.height)), c = h('canvas', { width: Math.round(pic.width * k), height: Math.round(pic.height * k) });
-              c.getContext('2d').drawImage(pic, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+              var cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height); cx.drawImage(pic, 0, 0, c.width, c.height);   // see-through parts white, not black URL.revokeObjectURL(url);
               api('tour_photo', { code: t.code, data: c.toDataURL('image/jpeg', 0.82) }).then(function (x) { img.src = x.photo; img.hidden = false; toast('Photo saved'); }, function () {});
             };
             pic.onerror = function () { toast('That file is not a photo.', true); };
@@ -915,7 +951,11 @@
             r.agreement_id ? h('span', { class: 'pill ' + (Number(r.photo_permission) ? 'Paid' : 'Cancelled') }, Number(r.photo_permission) ? 'Photos allowed' : 'NO photos') : null,
             h('span', { class: 'muted' }, day(r.tour_date) + ' · tour ' + r.tour), openBooking(r.booking_id)),
             r.agreement_id ? h('p', { style: 'margin:8px 0 0' }, 'Medical / allergies: ' + (r.medical || 'none') + ' · Emergency contact: ' + r.ec_name + ' ' + r.ec_phone +
-              (r.insurance ? ' · Insurance: ' + r.insurance : '') + ' · Signed as: ' + r.signed_name + ' ', h('label', {}, ok, ' checked by staff'))
+              (r.insurance ? ' · Insurance: ' + r.insurance : '') + ' · Signed as: ' + r.signed_name + ' ', h('label', {}, ok, ' checked by staff'),
+              isAdmin() ? [' ', h('button', { class: 'btn ghost small danger', onclick: function () {
+                if (!window.confirm('Delete the signed agreement of ' + (r.full_name || 'traveller ' + r.n) + '? The guest can then sign again.')) return;
+                api('agreement_delete', { id: r.agreement_id }).then(function () { toast('Agreement deleted'); load(); }, function () {});
+              } }, 'Delete agreement')] : null)
               : (r.form_key ? h('p', { style: 'margin:8px 0 0' }, h('a', { href: site + 'agreement/?k=' + r.form_key + '&lang=' + (r.language || 'en') + '&n=' + r.n, target: '_blank', rel: 'noopener' }, 'Agreement link for this guest'))
                 : h('p', { class: 'muted', style: 'margin:8px 0 0' }, 'Issue the receipt first: the agreement link comes with it.'))));
         });
@@ -937,10 +977,14 @@
         d.rows.forEach(function (r) {
           var st = select('status', ['New', 'Replied', 'Booked', 'Closed'], r.status), notes = input('staff_notes', r.staff_notes);
           body.appendChild(h('div', { class: 'card' }, h('div', { class: 'bar', style: 'margin-bottom:4px' }, h('strong', {}, r.name || '(no name)'), h('span', { class: 'pill' }, r.status),
-            h('span', { class: 'muted' }, r.submitted_at.slice(0, 16) + ' UTC · ' + r.contact + (r.tour ? ' · tour ' + r.tour : '') + ' · ' + r.site_language)),
+            h('span', { class: 'muted' }, laoTime(r.submitted_at) + ' · ' + r.contact + (r.tour ? ' · tour ' + r.tour : '') + ' · ' + r.site_language)),
             h('p', { style: 'white-space:pre-wrap' }, r.question),
             h('div', { class: 'bar' }, field('Status', st), h('div', { style: 'flex:1 1 200px' }, field('Staff notes', notes)),
-              h('button', { class: 'btn small', onclick: function () { api('inquiry_save', { id: r.id, fields: { status: st.value, staff_notes: notes.value } }).then(function () { toast('Saved'); load(); }, function () {}); } }, 'Save'))));
+              h('button', { class: 'btn small', onclick: function () { api('inquiry_save', { id: r.id, fields: { status: st.value, staff_notes: notes.value } }).then(function () { toast('Saved'); load(); }, function () {}); } }, 'Save'),
+              isAdmin() ? h('button', { class: 'btn ghost small danger', onclick: function () {
+                if (!window.confirm('Delete this question from ' + (r.name || 'the website') + '?')) return;
+                api('inquiry_delete', { id: r.id }).then(function () { toast('Deleted'); load(); }, function () {});
+              } }, 'Delete') : null)));
         });
       }, function () {});
     }
@@ -973,6 +1017,16 @@
           r.addEventListener('input', total); rowsEl.appendChild(r);
         }
         lines.forEach(addLine); income.addEventListener('input', total);
+        // guests changed: lines counted per person or per "2 people" follow, as when the tour is arranged
+        guests.addEventListener('input', function () {
+          var g = Number(guests.value || 0);
+          rowsEl.querySelectorAll('.bar').forEach(function (r) {
+            var per = String(r.querySelector('[name=counted_per]').value).trim().toLowerCase(), m = /^(\d+)\s*(people|persons?|pax)$/.exec(per);
+            if (/^(person|pax|guest)/.test(per)) r.querySelector('[name=qty]').value = g;
+            else if (m) r.querySelector('[name=qty]').value = Math.ceil(g / Math.max(1, Number(m[1])));
+          });
+          total();
+        });
         body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Tour ' + a.tour + ' on ' + day(a.date) + (a.saved ? ' (saved)' : '')),
           h('p', { class: 'muted' }, a.guests + ' guests booked' + (a.receipt_nos ? ' · receipts ' + a.receipt_nos : '') + (a.booking_ids ? ' · ' + a.booking_ids : '')),
           h('div', { class: 'bar' }, field('Guests counted', guests), field('Income kip', income)), rowsEl,
@@ -993,22 +1047,33 @@
         stale();
         var f = {}; ['tour_date', 'booking_id', 'tour', 'guests', 'sending_agency', 'receiving_agency', 'price_usd', 'sender_usd', 'guide_name', 'guide_whatsapp', 'notes'].forEach(function (k) {
           f[k] = input(k, '', k === 'tour_date' ? { type: 'date' } : {}); });
+        var editing = 0, addBtn = h('button', { class: 'btn', onclick: function () {
+          var v = {}; Object.keys(f).forEach(function (k) { v[k] = f[k].value; }); if (editing) v.id = editing;
+          api('agency_save', v).then(function () { toast('Saved'); load(); }, function () {});
+        } }, 'Add row');
         var label = { tour_date: 'Tour date', booking_id: 'Booking ID', tour: 'Tour code', guests: 'Guests', sending_agency: 'Sending agency', receiving_agency: 'Receiving agency',
           price_usd: 'Price per person USD (empty = price list)', sender_usd: 'Sender gets per person USD', guide_name: 'Guide name', guide_whatsapp: 'Guide WhatsApp', notes: 'Notes' };
         body.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Agency share'),
           table([['Tour date', function (r) { return day(r.tour_date); }], ['Booking', 'booking_id'], ['Tour', 'tour'], ['Guests', 'guests'], ['Sending agency', 'sending_agency'],
             ['Receiving agency', 'receiving_agency'], ['Total USD', 'total_usd', 'num', 2], ['Sender gets USD', 'sender_gets_usd', 'num', 2], ['Receiver keeps USD', 'receiver_keeps_usd', 'num', 2],
             ['Guide', 'guide_name'], ['Notes', 'notes']], x.rows, 'agency-share'),
+          x.rows.length ? h('div', { class: 'noprint', style: 'margin:6px 0' }, h('p', { class: 'muted', style: 'margin:0 0 4px' }, 'Change or delete a row:'), x.rows.map(function (r) {
+            return h('div', { class: 'bar', style: 'margin:2px 0' }, h('span', { style: 'flex:1 1 200px' }, day(r.tour_date) + ' · ' + r.tour + ' · ' + r.guests + ' guests · ' + (r.sending_agency || '') + ' → ' + (r.receiving_agency || '')),
+              h('button', { class: 'btn ghost small', onclick: function () {
+                Object.keys(f).forEach(function (k) { f[k].value = r[k] == null ? '' : r[k]; }); editing = r.id; addBtn.textContent = 'Save changes'; f.tour_date.scrollIntoView({ block: 'center' });
+              } }, 'Change'),
+              h('button', { class: 'btn ghost small danger', onclick: function () {
+                if (!window.confirm('Delete this agency share row?')) return;
+                api('agency_delete', { id: r.id }).then(function () { toast('Deleted'); load(); }, function () {});
+              } }, 'Delete'));
+          })) : null,
           h('h3', { style: 'margin-top:14px' }, 'Add a group passed between agencies'), h('div', { class: 'grid' }, Object.keys(f).map(function (k) { return field(label[k], f[k]); })), h('p'),
-          h('button', { class: 'btn', onclick: function () {
-            var v = {}; Object.keys(f).forEach(function (k) { v[k] = f[k].value; });
-            api('agency_save', v).then(function () { toast('Saved'); load(); }, function () {});
-          } }, 'Add row')));
+          addBtn));
       }, function () {});
     }
     date.addEventListener('change', load); tour.addEventListener('change', load);
     main.appendChild(h('div', { class: 'card' }, h('div', { class: 'bar' }, h('h1', {}, 'Tour costs'), field('Tour date', date), field('Tour', tour)),
-      h('p', { class: 'muted', style: 'margin:0' }, 'Cost lines come from the tour\'s cost list (Prices and settings). Admins only.')));
+      h('p', { class: 'muted', style: 'margin:0' }, 'Cost lines come from the tour\'s cost list (Tour plans). Admins only.')));
     main.appendChild(body); load();
   }
 

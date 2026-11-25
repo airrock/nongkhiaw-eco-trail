@@ -45,7 +45,7 @@ def refused(res, what, code=None):
     assert res[0] >= 400 and (code is None or res[0] == code), f'FAILED {what}: was allowed {res}'
 
 sql("SET FOREIGN_KEY_CHECKS=0; TRUNCATE travellers; TRUNCATE payments; TRUNCATE receipts; TRUNCATE agreements; TRUNCATE bookings; TRUNCATE inquiries;"
-    "TRUNCATE change_log; TRUNCATE users; TRUNCATE lunch_menu; TRUNCATE country_aliases; TRUNCATE tour_addons; SET FOREIGN_KEY_CHECKS=1;"
+    "TRUNCATE change_log; TRUNCATE users; TRUNCATE lunch_menu; TRUNCATE country_aliases; TRUNCATE tour_addons; TRUNCATE agency_share; TRUNCATE tour_accounts; TRUNCATE day_guides; SET FOREIGN_KEY_CHECKS=1;"
     "UPDATE settings SET value='1' WHERE `key`='receipt_next'; UPDATE settings SET value='22500' WHERE `key`='kip_per_usd';"
     "INSERT INTO lunch_menu (dish, choices, price_kip) VALUES ('Fried rice','Chicken, Tofu',40000),('Hidden','',0);"
     "INSERT INTO tour_addons VALUES ('102','Kayak',2); INSERT INTO country_aliases VALUES ('netherlands','Netherlands');")
@@ -162,7 +162,7 @@ tr = office.ok('transport', date='2030-02-01')
 eq((tr['up_pax'], tr['down_pax'], [(u['place'], u['pax'], u['stop']) for u in tr['up']]), (2, 0, [('Sunset Hostel', 1, '1/2'), ('Villa Maly', 1, '2/2')]), 'two pickup stops on the way up')
 eq(tr['up'][0]['team'].split('\n')[:4], ['Booking id: SELFTEST-A1', 'Receipt no: 001', 'ຈຸດຮັບ 1/2: 1pax', '- SELFTEST-Ann One  WhatsApp: +1 555 0100 https://wa.me/15550100'], 'team message per stop')
 eq('booked by SELFTEST-Ann One' in tr['up'][1]['team'], True, 'second stop names who booked')
-eq(tr['up'][0]['guest'].split('\n')[:3], ['Hello SELFTEST-Ann! Your minivan to Nong Khiaw is booked for on 01/02/2030.', 'Pickup at Sunset Hostel between 7:30 and 8:00 AM.', 'The plate number is AB 1234.'], 'guest message')
+eq(tr['up'][0]['guest'].split('\n')[:3], ['Hello SELFTEST-Ann! Your minivan to Nong Khiaw is booked for 01/02/2030.', 'Pickup at Sunset Hostel between 7:30 and 8:00 AM.', 'The plate number is AB 1234.'], 'guest message')
 tr = office.ok('transport', date='2030-02-03')
 eq((tr['up_pax'], tr['down_pax'], tr['down'][0]['drop'], tr['down'][0]['place']), (0, 2, 'Luang Prabang train station', 'Office (The Trio Bar & Cafe)'), 'way back')
 eq('ລົງ: 03/02 3:30 - 4:30 PM ສົ່ງສະຖານີລົດໄຟ' in tr['down'][0]['team'], True, 'team message: time from the remark, train station')
@@ -278,7 +278,7 @@ eq((dn['down_rows'][0]['notes'], dn['down_slots']), ('Leave at 3:30 - 4:30 PM, d
 
 rep = office.ok('tour_report', date='2030-02-01')
 eq((rep['pax'], [(r['no'], r['tour'], r['receipt_no'], r['pax']) for r in rep['rows']], [(x['tour'], x['pax']) for x in rep['lines']]),
-   (3, [(1, '102', '000001', 3), (2, '102', '000001', ''), (3, '102', '000001', '')], [('101', 3), ('102', 3)]), 'tour report: the group line counts everyone, each package its own')
+   (3, [(1, '102 (PRIVATE)', '000001', 3), (2, '102 (PRIVATE)', '000001', ''), (3, '102 (PRIVATE)', '000001', '')], [('101', 3), ('102', 3)]), 'tour report: the group line counts everyone, each package its own')
 office.ok('guide_save', date='2030-02-01', tour='101', guide='Mr Boun Mee')
 eq(office.ok('tour_report', date='2030-02-01')['lines'][0]['guide'], 'Mr Boun Mee', 'guide of the day saved')
 office.ok('guide_save', date='2030-02-01', tour='101', guide='')
@@ -312,4 +312,105 @@ eq(site({"type": "booking", "id": bid, "tour": "201", "date": "2030-03-01", "tra
 eq(sqlval(f"SELECT CONCAT(tour_name, '|', est_tour_usd) FROM bookings WHERE id='{bid}'"), 'Waterfall day|25.00', 'the new tour is priced from the price list')
 admin.ok('tour_web', code='201', show=False)
 eq(site(query='?config=1')[1]['tours'], [], 'unticked: off the website again')
+
+# ---------- fixes after the 10-agent test round (2026-11-26) ----------
+def nb(**kw):
+    b = {"tour": "101", "date": "2031-01-10", "transfer": "No", "payment": "USD cash", "status": "Confirmed", "travellers": [{"first": "SELFTEST-Z", "last": "One"}]}
+    b.update(kw); return b
+ids = [admin.ok('booking_new', booking=nb(travellers=[{"first": "SELFTEST-Auto%d" % i}]))['booking']['id'] for i in range(3)]
+eq((len(set(ids)), [sqlval(f"SELECT full_name FROM travellers WHERE booking_id='{i}'") for i in ids]), (3, ['SELFTEST-Auto0', 'SELFTEST-Auto1', 'SELFTEST-Auto2']), 'three bookings without an ID in the same second stay three bookings')
+refused(admin.call('booking_new', booking=nb(id=ids[0])), 'staff typing an ID that exists is told, nothing saved')
+refused(admin.call('booking_new', booking=nb(id='A B')), 'a typed ID that is not valid is refused')
+refused(admin.call('booking_new', booking=nb(priceUsd=-5)), 'negative tour price refused')
+refused(admin.call('booking_new', booking=nb(transfer='Round trip', hotel='H')), 'round trip without dates refused')
+refused(admin.call('booking_new', booking=nb(transfer='Round trip', hotel='H', pickupDate='2031-01-10', returnDate='2031-01-09')), 'date back before pickup refused')
+eq(admin.ok('booking_new', booking=nb(tour='T00', private=True, transfer='One way to Luang Prabang', returnDate='2031-01-10'))['booking']['private_tour'], 0, 'transport only is never private')
+refused(site({"type": "booking", "id": "SELFTEST-BADTOUR", "tour": "ZZZ", "travellers": [{"first": "X"}]}), 'website booking for an unknown tour refused')
+site({"type": "booking", "id": "SELFTEST-JS", "tour": "101", "date": "2031-01-10", "transfer": "Round trip", "pickupDate": "2031-01-10", "returnDate": "2031-01-11", "hotel": "H",
+      "map": "javascript:alert(1)", "travellers": [{"first": "SELFTEST-J"}, {"first": "SELFTEST-K", "pickup": "other", "pkPlace": "P", "pkMap": "javascript:x"}]})
+eq(sqlval("SELECT CONCAT(maps_link, '|', (SELECT GROUP_CONCAT(pickup_map) FROM travellers WHERE booking_id='SELFTEST-JS')) FROM bookings WHERE id='SELFTEST-JS'"), '|,', 'map links that are not web addresses are dropped')
+refused(site({"type": "inquiry"}), 'empty website question refused')
+eq(site({"type": "nonsense"})[0], 400, 'unknown website request answers 400')
+
+# travellers change the amounts
+G = admin.ok('booking_new', booking=nb(id='SELFTEST-G1', transfer='Round trip', hotel='H', pickupDate='2031-01-10', returnDate='2031-01-11',
+     travellers=[{"first": "SELFTEST-G", "last": "One"}, {"first": "SELFTEST-G", "last": "Two"}]))
+eq((G['totals']['tour_usd'], G['totals']['transfer_kip']), (60.0, 1000000.0), 'two travellers: tour 60, transport 1,000,000')
+g = admin.ok('traveller_add', booking_id='SELFTEST-G1', fields={'first_name': 'SELFTEST-G', 'last_name': 'Three'})
+eq((g['totals']['tour_usd'], g['totals']['transfer_kip'], g['travellers'][2]['full_name']), (90.0, 1500000.0, 'SELFTEST-G Three'), 'a traveller added: tour, transport and full name follow')
+g = admin.ok('traveller_save', booking_id='SELFTEST-G1', n=3, fields={'status': 'Cancelled'})
+eq((g['totals']['tour_usd'], g['totals']['transfer_kip']), (60.0, 1000000.0), 'a cancelled traveller pays no tour or transport')
+g = admin.ok('traveller_save', booking_id='SELFTEST-G1', n=3, fields={'status': ''})
+eq((g['totals']['tour_usd'], g['totals']['transfer_kip']), (90.0, 1500000.0), 'and back again')
+g = admin.ok('traveller_remove', booking_id='SELFTEST-G1', n=3)
+eq((g['totals']['tour_usd'], g['totals']['transfer_kip']), (60.0, 1000000.0), 'a traveller removed: tour and transport follow')
+g = admin.ok('traveller_save', booking_id='SELFTEST-G1', n=2, fields={'pickup_place': 'no transfer'})
+eq((g['travellers'][1]['pickup_place'], g['totals']['transfer_kip']), ('No transfer', 500000.0), '"no transfer" typed in lower case counts as no transfer')
+refused(admin.call('traveller_save', booking_id='SELFTEST-G1', n=1, fields={'lunch_dish': 'Fried rice', 'lunch_choice': 'Beef'}), 'a lunch choice that is not on the list is refused')
+refused(admin.call('traveller_save', booking_id='SELFTEST-G1', n=1, fields={'lunch_dish': 'Fried rice', 'lunch_choice': ''}), 'a dish with choices needs one')
+admin.ok('traveller_save', booking_id='SELFTEST-G1', n=1, fields={'lunch_dish': 'Fried rice', 'lunch_choice': 'Tofu'})
+
+# money
+t = admin.ok('booking', id='SELFTEST-G1')['totals']
+admin.ok('payment_add', booking_id='SELFTEST-G1', amount=50, currency='USD', method='USD cash')
+t = admin.ok('booking', id='SELFTEST-G1')['totals']
+g = admin.ok('payment_add', booking_id='SELFTEST-G1', amount=t['balance_kip'], currency='LAK', method='Kip cash')
+eq((g['totals']['balance_usd'], g['totals']['balance_kip'], g['booking']['status']), (0.0, 0.0, 'Paid'), 'paying the kip balance shown makes the booking Paid')
+g = admin.ok('payment_add', booking_id='SELFTEST-G1', amount=10, currency='USD', method='USD cash')
+eq((g['totals']['balance_usd'], g['totals']['balance_kip'] < 0), (-10.0, True), 'an overpayment shows on both sides')
+refused(admin.call('payment_add', booking_id='SELFTEST-G1', amount=1, currency='USD', paid_on='2031-02-30'), 'a payment date that does not exist is refused')
+refused(admin.call('payment_add', booking_id='SELFTEST-G1', amount=1e15, currency='LAK'), 'a huge amount is refused')
+H = admin.ok('booking_new', booking=nb(id='SELFTEST-H1'))
+refused(admin.call('booking_save', id='SELFTEST-H1', fields={'status': 'Paid'}), 'Paid cannot be chosen while money is owed')
+for f, v, what in [('pickup_time', 'x' * 21, 'a too long time'), ('est_tour_usd', '', 'an emptied amount'), ('est_tour_usd', -1, 'a negative amount'),
+                   ('tour_date', 'garbage', 'a date that is not a date'), ('transfer', 'Teleport', 'an unknown transfer'), ('maps_link', 'javascript:x', 'a map link that is not a web address')]:
+    code, d = admin.call('booking_save', id='SELFTEST-H1', fields={f: v})
+    eq((code, 'went wrong' in d.get('error', '')), (400, False), f'{what} gets a clear message')
+eq(admin.ok('booking_save', id='SELFTEST-H1', fields={'tour': '102'})['booking']['tour_name'], '2 days 1 night', 'a new tour code brings its name')
+
+# deleted bookings and office staff
+admin.ok('booking_new', booking=nb(id='SELFTEST-DEL', travellers=[{"first": "SELFTEST-D1"}, {"first": "SELFTEST-D2"}]))
+rno = admin.ok('receipt_issue', booking_id='SELFTEST-DEL', language='en')['receipt']['no']
+admin.ok('booking_delete', id='SELFTEST-DEL')
+refused(office.call('traveller_remove', booking_id='SELFTEST-DEL', n=2), 'office staff cannot remove a traveller from a deleted booking')
+eq(sqlval("SELECT COUNT(*) FROM travellers WHERE booking_id='SELFTEST-DEL'"), '2', 'and nothing was removed')
+refused(office.call('history', id='SELFTEST-DEL'), 'office staff cannot read the history of a deleted booking')
+refused(office.call('receipt_save', no=rno, overrides={'note': 'x'}), 'office staff cannot change the receipt of a deleted booking')
+refused(admin.call('receipt_issue', booking_id='SELFTEST-H1', language='xx'), 'an unknown receipt language is refused')
+
+# admin screens
+refused(admin.call('tour_save', code='101', name='X', price_usd=99, is_new=True), '"Add tour" with a code that exists is refused')
+eq(sqlval("SELECT price_usd FROM tours WHERE code='101'"), '30.00', 'and the price did not change')
+refused(admin.call('tour_delete', code='101'), 'an original tour cannot be deleted')
+admin.ok('tour_save', code='Z9', name='SELFTEST tour', price_usd=5, is_new=True); admin.ok('plan_save', tour='Z9', days=['a', 'b'], addon='', costs=[{'item': 'c', 'unit_kip': 1}])
+refused(admin.call('plan_save', tour='Z9', days=['a', '', 'c']), 'an empty day in the middle is refused')
+refused(admin.call('plan_save', tour='Z9', days=['a'], addon='Kayak', addon_day=5), 'an add-on starting after the tour is refused')
+admin.ok('tour_delete', code='Z9')
+eq(sqlval("SELECT (SELECT COUNT(*) FROM tour_days WHERE tour='Z9') + (SELECT COUNT(*) FROM tour_costs WHERE tour='Z9')"), '0', 'deleting a tour removes its days and costs')
+refused(admin.call('tour_delete', code='102'), 'a tour that bookings use cannot be deleted')
+was = sqlval("SELECT value FROM settings WHERE `key`='transfer_one_kip'")
+refused(admin.call('settings_save', settings={'transfer_one_kip': 260000, 'train_extra_kip': -1}), 'settings with one wrong value')
+eq(sqlval("SELECT value FROM settings WHERE `key`='transfer_one_kip'"), was, 'nothing is saved when one value is wrong')
+refused(admin.call('menu_save', dish='Fried rice', price_kip=1000, show=True), 'a dish already on the menu is refused')
+refused(admin.call('menu_save', dish='SELFTEST dish', price_kip=0, show=True), 'a dish needs a price')
+refused(admin.call('agency_save', tour_date='2031-01-10', tour='101', guests='abc'), 'agency share needs a number of guests')
+
+# lists
+mins = lambda: [x['time'] for x in office.ok('transport', date='2031-01-11')['down_slots']]
+admin.ok('booking_new', booking=nb(id='SELFTEST-T1', transfer='One way to Luang Prabang', returnDate='2031-01-11'))
+admin.ok('booking_save', id='SELFTEST-T1', fields={'return_time': '11:30 - 12:30 PM'})
+admin.ok('booking_new', booking=nb(id='SELFTEST-T2', transfer='One way to Luang Prabang', returnDate='2031-01-11'))
+admin.ok('booking_save', id='SELFTEST-T2', fields={'return_time': '3:30 - 4:30'})
+eq(mins()[-2:], ['11:30 - 12:30 PM', '3:30 - 4:30 PM'], 'times sort by the clock and a time without PM gets it')
+eq('is booked for 11/01/2031' in office.ok('transport', date='2031-01-11')['down'][0]['guest'], True, 'guest message reads "booked for <date>"')
+admin.ok('booking_new', booking=nb(id='SELFTEST-NS', date='2031-01-12', travellers=[{"first": "SELFTEST-NS1"}]))
+admin.ok('traveller_save', booking_id='SELFTEST-NS', n=1, fields={'status': 'No-show'})
+eq((office.ok('trip_sheet', date='2031-01-12')['bookings'], office.ok('collect_report', **{'from': '2031-01-12', 'to': '2031-01-12'})['rows']), (0, []), 'a booking where everyone is a no-show is on no list')
+k = admin.ok('receipt_issue', booking_id='SELFTEST-G1', language='en')['receipt']['form_key']
+admin.ok('traveller_add', booking_id='SELFTEST-G1', fields={'first_name': 'SELFTEST-Gone'}); admin.ok('traveller_save', booking_id='SELFTEST-G1', n=3, fields={'status': 'Cancelled'})
+eq([x['n'] for x in site(query='?agreement=' + k)[1]['travellers']], [1, 2], 'the agreement page leaves out a cancelled traveller')
+eq(site({"type": "agreement", "key": k, "people": [{"n": 3, "photo": "yes", "ecName": "x", "ecPhone": "1", "signedName": "xx", "accept": True}]})[1], {'saved': 0}, 'a cancelled traveller cannot sign')
+eq(site({"type": "lunch", "key": k, "people": [{"n": 3, "lunch": "Fried rice", "choice": "Tofu"}]})[1], {'saved': 0}, 'nor order a lunch')
+refused(admin.call('change_password', old='admin-pass-2', new='admin-pass-2'), 'the new password must differ')
+refused(admin.call('user_password', id=99999, password='whatever-1'), 'resetting the password of an unknown user')
 print(f'all {n} checks passed')

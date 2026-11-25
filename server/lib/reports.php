@@ -11,7 +11,7 @@ function guide_report(string $date): array {
   $rows = [];
   $bookings = all("SELECT b.*, r.no AS receipt_no, r.issued_on FROM bookings b LEFT JOIN receipts r ON r.booking_id = b.id
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND b.tour <> ? AND b.tour_date IS NOT NULL AND b.tour_date <= ?
-      AND b.tour_date >= ? ORDER BY b.tour, b.tour_date, b.submitted_at", [TRANSPORT_ONLY, $date, add_days($date, -30)]);
+      AND b.tour_date >= ? ORDER BY b.tour, b.tour_date, b.submitted_at, b.id", [TRANSPORT_ONLY, $date, add_days($date, -30)]);
   foreach ($bookings as $b) {
     $len = tour_length($b['tour']);
     $dayNo = (int) (new DateTime($b['tour_date']))->diff(new DateTime($date))->days + 1;
@@ -37,7 +37,7 @@ function lunch_report(string $date): array {
       (SELECT COUNT(*) FROM travellers x WHERE x.booking_id = b.id AND x.status = '') AS pax
     FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND t.lunch_dish <> '' AND COALESCE(b.tour_date, b.pickup_date) = ?
-    ORDER BY b.submitted_at, t.n", [$date]);
+    ORDER BY b.submitted_at, b.id, t.n", [$date]);
   $out = []; $count = []; $lines = [];
   foreach ($rows as $i => $r) {
     $item = trim($r['lunch_dish'] . ' ' . $r['lunch_choice']);
@@ -60,11 +60,12 @@ function day_month_r(string $ymd): string { return substr($ymd, 8, 2) . '/' . su
 function collect_report(string $from, string $to): array {
   $rate = setting_num('kip_per_usd', 22500); $rows = [];
   $bookings = all("SELECT b.*, r.no AS receipt_no, COALESCE(b.pickup_date, b.tour_date) AS arrive FROM bookings b LEFT JOIN receipts r ON r.booking_id = b.id
-    WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND COALESCE(b.pickup_date, b.tour_date) BETWEEN ? AND ? ORDER BY arrive, b.submitted_at", [$from, $to]);
+    WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND COALESCE(b.pickup_date, b.tour_date) BETWEEN ? AND ?
+      AND EXISTS (SELECT 1 FROM travellers x WHERE x.booking_id = b.id AND x.status = '') ORDER BY arrive, b.submitted_at, b.id", [$from, $to]);
   foreach ($bookings as $b) {
     $t = booking_totals($b['id']);
     $rows[] = ['arrive' => $b['arrive'], 'booking_id' => $b['id'], 'receipt_no' => $b['receipt_no'], 'tour' => $b['tour'],
-      'name' => (string) val('SELECT full_name FROM travellers WHERE booking_id = ? ORDER BY n LIMIT 1', [$b['id']]),
+      'name' => (string) val("SELECT full_name FROM travellers WHERE booking_id = ? AND status = '' ORDER BY n LIMIT 1", [$b['id']]),
       'pax' => (int) val("SELECT COUNT(*) FROM travellers WHERE booking_id = ? AND status = ''", [$b['id']]),
       'tour_usd' => $t['tour_usd'], 'lunch_kip' => $t['lunch_kip'], 'transfer_kip' => $t['transfer_kip'], 'total_usd' => $t['total_usd'], 'total_kip' => $t['total_kip'],
       'paid_usd' => $t['paid_usd'], 'due_usd' => max(0, $t['balance_usd']), 'due_kip' => max(0, $t['balance_kip']), 'status' => $b['status']];
@@ -96,23 +97,30 @@ function arrange_tour(string $date, string $tour): array {
 
 /* ---------- trip sheet: everyone on a tour that starts on one day ---------- */
 function trip_sheet(string $date): array {
-  $rows = all("SELECT b.tour, b.tour_name, t.full_name, t.country, t.gender, t.food, t.lunch_dish, t.lunch_choice, t.pickup_place, t.pickup_map, t.booking_id,
+  $rows = all("SELECT b.tour, b.tour_name, b.pickup_date, t.full_name, t.country, t.gender, t.food, t.lunch_dish, t.lunch_choice, t.lunch_kip, t.pickup_place, t.pickup_map, t.booking_id,
       COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no
     FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND b.tour_date = ?
-    ORDER BY (COALESCE(r.no, NULLIF(b.receipt_ref, '')) IS NULL), receipt_no, t.full_name", [$date]);
-  $food = []; $riders = 0;
+    ORDER BY (COALESCE(r.no, NULLIF(b.receipt_ref, '')) IS NULL), receipt_no, b.tour, b.submitted_at, b.id, t.n", [$date]);
+  $food = []; $riders = 0; $lunch = 0;
   foreach ($rows as &$r) {
     $f = $r['food'] !== '' ? $r['food'] : 'Regular'; $food[$f] = ($food[$f] ?? 0) + 1;
-    if ($r['pickup_place'] !== '' && $r['pickup_place'] !== 'No transfer') $riders++;
-    else $r['pickup_place'] = 'Staying in Nong Khiaw';
+    $lunch += (float) $r['lunch_kip'];   // the same lunches as the Food report
+    // taking the minivan up today (someone who came up on another day is not counted again)
+    if ($r['pickup_place'] !== '' && $r['pickup_place'] !== 'No transfer' && $r['pickup_date'] === $date) $riders++;
+    elseif ($r['pickup_place'] === '' || $r['pickup_place'] === 'No transfer') $r['pickup_place'] = 'Staying in Nong Khiaw';
     $r['lunch'] = $r['lunch_dish'] . ($r['lunch_choice'] !== '' ? ' (' . $r['lunch_choice'] . ')' : '');
-    $r['tour'] = trim($r['tour'] . ' ' . $r['tour_name']);
+    $r['tour'] = $r['tour_name'] === '' || $r['tour_name'] === $r['tour'] ? $r['tour'] : trim($r['tour'] . ' ' . $r['tour_name']);
+    unset($r['lunch_kip'], $r['pickup_date']);
   }
   unset($r);
-  $ids = array_column(all("SELECT id FROM bookings WHERE deleted_at IS NULL AND status NOT IN ('Cancelled','No-show') AND tour_date = ?", [$date]), 'id');
-  $due = 0; $transfer = 0; $lunch = 0;
-  foreach ($ids as $id) { $t = booking_totals($id); $due += max(0, $t['tour_usd'] - $t['paid_usd']); $transfer += $t['transfer_kip']; $lunch += $t['lunch_kip']; }
+  $ids = array_column(all("SELECT b.id FROM bookings b WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND b.tour_date = ?
+    AND EXISTS (SELECT 1 FROM travellers x WHERE x.booking_id = b.id AND x.status = '')", [$date]), 'id');
+  $due = 0; $transfer = 0;
+  foreach ($ids as $id) {
+    $t = booking_totals($id); $due += max(0, $t['tour_usd'] - $t['paid_usd']);
+    if (val('SELECT pickup_date FROM bookings WHERE id = ?', [$id]) === $date) $transfer += $t['transfer_kip'];
+  }
   arsort($food);
   return ['date' => $date, 'bookings' => count($ids), 'travellers' => count($rows), 'riders' => $riders, 'food' => (object) $food,
     'tour_due_usd' => round($due, 2), 'transfer_kip' => $transfer, 'lunch_kip' => $lunch, 'rows' => $rows];
@@ -122,15 +130,15 @@ function trip_sheet(string $date): array {
 // Packages that start together are one group (101, 102, 103 all begin with the overnight camping): the group's first package
 // carries the head count of the whole group, the others their own. The guide of each line is typed by staff (day_guides).
 function tour_report(string $date): array {
-  $rows = all("SELECT t.booking_id, b.tour, b.tour_name, b.note, t.full_name, t.food, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no,
+  $rows = all("SELECT t.booking_id, b.tour, b.tour_name, b.note, b.private_tour, t.full_name, t.food, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no,
       (SELECT COUNT(*) FROM travellers x WHERE x.booking_id = b.id AND x.status = '') AS pax
     FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND b.tour <> ? AND b.tour_date = ?
-    ORDER BY b.tour, b.submitted_at, b.id, t.n", [TRANSPORT_ONLY, $date]);
+    ORDER BY b.tour, b.private_tour, b.submitted_at, b.id, t.n", [TRANSPORT_ONLY, $date]);
   $out = []; $count = []; $last = '';
   foreach ($rows as $i => $r) {
     $first = $r['booking_id'] !== $last; $last = $r['booking_id'];
-    $out[] = ['no' => $i + 1, 'booking_id' => $r['booking_id'], 'tour' => $r['tour'], 'receipt_no' => $r['receipt_no'], 'name' => $r['full_name'],
+    $out[] = ['no' => $i + 1, 'booking_id' => $r['booking_id'], 'tour' => $r['tour'] . ($r['private_tour'] ? ' (PRIVATE)' : ''), 'receipt_no' => $r['receipt_no'], 'name' => $r['full_name'],
       'pax' => $first ? (int) $r['pax'] : '', 'food' => ($r['food'] !== '' ? $r['food'] : 'Regular'), 'note' => $first ? $r['note'] : ''];
     $count[$r['tour']] = ($count[$r['tour']] ?? 0) + 1;
   }
@@ -160,7 +168,7 @@ function overview(): array {
       'Confirmed or paid' => (int) val("SELECT COUNT(*) FROM bookings b WHERE $live AND b.status IN ('Confirmed','Paid')"),
       'Travellers' => (int) val("SELECT COUNT(*) FROM travellers t JOIN bookings b ON b.id = t.booking_id WHERE $counted AND t.status = ''"),
       'Received (USD)' => round((float) val("SELECT COALESCE(SUM(p.amount_usd), 0) FROM payments p JOIN bookings b ON b.id = p.booking_id WHERE $live"), 2),
-      'Confirmed, not yet paid (tour USD)' => round((float) val("SELECT COALESCE(SUM(b.est_tour_usd), 0) FROM bookings b WHERE $live AND b.status = 'Confirmed'"), 2),
+      'Confirmed, tour still to collect (USD)' => round((float) val("SELECT COALESCE(SUM(GREATEST(0, b.est_tour_usd - COALESCE(p.paid, 0))), 0) FROM bookings b LEFT JOIN $paidBy ON p.booking_id = b.id WHERE $live AND b.status = 'Confirmed'"), 2),
       'Inquiries' => (int) val('SELECT COUNT(*) FROM inquiries'),
     ],
     'by_month' => $num(all("SELECT DATE_FORMAT(b.tour_date, '%Y-%m') month, COUNT(*) bookings,

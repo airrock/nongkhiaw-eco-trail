@@ -10,13 +10,13 @@ window.parseWhatsAppBooking = function (text) {
     var y = m[3].length === 2 ? '20' + m[3] : m[3];
     return y + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
   };
-  var ref = find(/^Booking ref:\s*([A-Za-z0-9-]+)/), tour = find(/^(?:Package|Tour)\s+(\d{3})\b/);
+  var ref = find(/^Booking ref:\s*([A-Za-z0-9-]+)/), tour = find(/^(?:Package|Tour)\s+([A-Za-z0-9]*\d[A-Za-z0-9]*):/) || find(/^(?:Package|Tour)\s+(\d{3})\b/);
   var only = find(/^Transport only/i);
   if (!ref) return { error: 'No "Booking ref" in the message: paste the whole message, from "Hello! I would like to book".' };
   if (!tour && !only) return { error: 'The tour (Package 101, 102, 103, Tour 001 or Transport only) is missing in the message.' };
   var date = find(/^Date:\s*(\S+)/), transfer = find(/^Minivan transfer:\s*(.+)$/);
   var t = transfer ? transfer[1].trim() : 'No';
-  if (TRANSFERS.indexOf(t) === -1) t = 'No';
+  if (TRANSFERS.indexOf(t) === -1) return { error: 'The minivan transfer "' + t + '" is not one of: ' + TRANSFERS.join(', ') + '. Correct that line and import again.' };
   var back = find(/^Date back[^:]*:\s*(\S+)(.*)$/), pick = find(/^Pickup date[^:]*:\s*(\S+)/);
   var hotel = find(/^Accommodation(?: in Nong Khiaw)?:\s*(.+)$/), map = find(/^Google Maps:\s*(\S+)/);
   var nk = find(/^Pickup in Nong Khiaw \(way back\):\s*(.+)$/), drop = find(/^Drop-off in Luang Prabang:\s*(.+)$/);
@@ -37,6 +37,14 @@ window.parseWhatsAppBooking = function (text) {
     else if (/^(Takeaway lunch total|Lunch before the tour total|Note):/.test(l)) cur = null;
   });
   if (!people.length) return { error: 'No travellers ("Traveller 1: ...") in the message.' };
+  // "Pickups:" block: travellers picked up somewhere else than the group, or taking no minivan
+  var at = lines.indexOf('Pickups:');
+  if (at !== -1) for (var i = at + 1; i < lines.length && !/^Traveller \d+:/.test(lines[i]); i++) {
+    var nums = function (s) { return s.split(/[,\s]+/).filter(String).map(Number); }, m;
+    if ((m = /^No transfer:\s*Travell?ers?\s+([\d,\s]+)$/.exec(lines[i]))) nums(m[1]).forEach(function (n) { if (people[n - 1]) people[n - 1].pickup = 'none'; });
+    else if ((m = /^(.+?) \(Travell?ers? ([\d,\s]+)\):\s*(\S*)$/.exec(lines[i])) && (!hotel || m[1].trim() !== hotel[1].trim()))
+      nums(m[2]).forEach(function (n) { if (people[n - 1]) { people[n - 1].pickup = 'other'; people[n - 1].pkPlace = m[1].trim(); people[n - 1].pkMap = m[3] || ''; } });
+  }
   var dt = ymd(date && date[1]);
   if (!only && !dt) return { error: 'The tour date ("Date: dd/mm/yy") is missing in the message.' };
   var plan = back && /last day of the tour/i.test(back[2]) ? 'end' : back && /10:30/.test(back[2]) ? 'later' : '';

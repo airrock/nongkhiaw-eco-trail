@@ -1,6 +1,11 @@
 /* Receipt labels in the 8 languages (from RECEIPT_TEXT in the old sheet script). Translations are machine-made; fix them here. */
 window.RECEIPT_TEXT = {
  "en": {
+  "code": "Code",
+  "private": "Private tour",
+  "regular": "Regular",
+  "nklpb": "Nong Khiaw → Luang Prabang",
+  "person": "person",
   "receipt": "RECEIPT",
   "no": "No.",
   "name": "Name",
@@ -37,6 +42,11 @@ window.RECEIPT_TEXT = {
   "perperson": "Each pays"
  },
  "lo": {
+  "code": "ລະຫັດ",
+  "private": "ທົວສ່ວນຕົວ",
+  "regular": "ທຳມະດາ",
+  "nklpb": "ໜອງຂຽວ → ຫຼວງພະບາງ",
+  "person": "ຄົນ",
   "receipt": "ໃບຮັບເງິນ",
   "no": "ເລກທີ",
   "name": "ຊື່",
@@ -73,6 +83,11 @@ window.RECEIPT_TEXT = {
   "perperson": "ແຕ່ລະຄົນຈ່າຍ"
  },
  "th": {
+  "code": "รหัส",
+  "private": "ทัวร์ส่วนตัว",
+  "regular": "ปกติ",
+  "nklpb": "น้ำเกี๋ยว → หลวงพระบาง",
+  "person": "คน",
   "receipt": "ใบเสร็จรับเงิน",
   "no": "เลขที่",
   "name": "ชื่อ",
@@ -109,6 +124,11 @@ window.RECEIPT_TEXT = {
   "perperson": "แต่ละคนจ่าย"
  },
  "zh": {
+  "code": "代码",
+  "private": "私人团",
+  "regular": "普通",
+  "nklpb": "南凯 → 琅勃拉邦",
+  "person": "人",
   "receipt": "收据",
   "no": "编号",
   "name": "姓名",
@@ -145,6 +165,11 @@ window.RECEIPT_TEXT = {
   "perperson": "每人应付"
  },
  "ko": {
+  "code": "코드",
+  "private": "프라이빗 투어",
+  "regular": "일반",
+  "nklpb": "농키아우 → 루앙프라방",
+  "person": "명",
   "receipt": "영수증",
   "no": "번호",
   "name": "이름",
@@ -181,6 +206,11 @@ window.RECEIPT_TEXT = {
   "perperson": "1인당 금액"
  },
  "ja": {
+  "code": "コード",
+  "private": "プライベートツアー",
+  "regular": "通常",
+  "nklpb": "ノンキャウ → ルアンパバーン",
+  "person": "名",
   "receipt": "領収書",
   "no": "番号",
   "name": "氏名",
@@ -217,6 +247,11 @@ window.RECEIPT_TEXT = {
   "perperson": "1人あたり"
  },
  "fr": {
+  "code": "Code",
+  "private": "Excursion privée",
+  "regular": "Normal",
+  "nklpb": "Nong Khiaw → Luang Prabang",
+  "person": "personne",
   "receipt": "REÇU",
   "no": "N°",
   "name": "Nom",
@@ -253,6 +288,11 @@ window.RECEIPT_TEXT = {
   "perperson": "Par personne"
  },
  "de": {
+  "code": "Code",
+  "private": "Private Tour",
+  "regular": "Normal",
+  "nklpb": "Nong Khiaw → Luang Prabang",
+  "person": "Person",
   "receipt": "QUITTUNG",
   "no": "Nr.",
   "name": "Name",

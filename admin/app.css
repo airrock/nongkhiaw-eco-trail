@@ -85,3 +85,12 @@ details>summary{cursor:pointer}
 .red{color:#c0392b}
 .tourphoto{width:150px;height:100px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
 @media print{.receipt .rtab th{background:#e8f0ea !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.receipt .rbalance td{background:#fff2a8 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+body.busy, body.busy button{cursor:progress}
+@media (max-width:540px){
+  .receipt .head{flex-wrap:wrap}
+  .receipt .rinfo, .receipt .rinfo tbody, .receipt .rinfo tr{display:block}
+  .receipt .rinfo th, .receipt .rinfo td{display:inline-block;padding:2px 8px 2px 0}
+  .receipt .rinfo th.r{text-align:left;padding-left:0}
+  .receipt .rinfo tr{margin-bottom:4px}
+}

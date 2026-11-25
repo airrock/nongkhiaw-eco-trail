@@ -11,6 +11,21 @@ function clean($v, int $max): string { return mb_substr(trim(is_scalar($v) ? (st
 function date_or_null($s): ?string {
   return is_string($s) && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m) && checkdate((int) $m[2], (int) $m[3], (int) $m[1]) ? $s : null;
 }
+// A map link: only web addresses are kept (a "javascript:" link typed on the website must never reach a staff click).
+function web_link($v): string { $v = clean($v, 300); return preg_match('~^https?://~i', $v) ? $v : ''; }
+// Transport after the travellers changed (one added, removed, cancelled or set to no transfer): worked out again for the
+// riders. Then Paid / Confirmed follows.
+function recount_booking(string $id): void {
+  $b = one('SELECT transfer, train_dropoff FROM bookings WHERE id = ?', [$id]);
+  q('UPDATE bookings SET est_transfer_kip = ? WHERE id = ?', [transfer_kip($b['transfer'], (bool) $b['train_dropoff'], riders($id)), $id]);
+  sync_paid_status($id);
+}
+// One traveller more (+1) or fewer (-1): the tour amount keeps the booking's own price per person.
+function scale_tour(string $id, int $delta): void {
+  $people = (int) val("SELECT COUNT(*) FROM travellers WHERE booking_id = ? AND status <> 'Cancelled'", [$id]);
+  $usd = (float) val('SELECT est_tour_usd FROM bookings WHERE id = ?', [$id]);
+  if ($people > 0 && $people + $delta >= 0) q('UPDATE bookings SET est_tour_usd = ? WHERE id = ?', [round($usd / $people * ($people + $delta), 2), $id]);
+}
 function goes_up(string $t): bool { return (bool) preg_match('/round/i', $t) || (preg_match('/one way/i', $t) && !preg_match('/luang prabang/i', $t)); }
 function goes_down(string $t): bool { return (bool) preg_match('/round/i', $t) || (bool) preg_match('/to luang prabang/i', $t); }
 function tour_length(string $tour): int { return max(1, (int) val('SELECT COALESCE(MAX(day), 1) FROM tour_days WHERE tour = ?', [$tour])); }
@@ -50,7 +65,7 @@ function transfer_kip(string $transfer, bool $train, int $riders): float {
   return ($base + ($train && goes_down($transfer) ? setting_num('train_extra_kip', 70000) : 0)) * $riders;
 }
 function riders(string $bookingId): int {
-  return (int) val("SELECT COUNT(*) FROM travellers WHERE booking_id = ? AND pickup_place <> 'No transfer'", [$bookingId]);
+  return (int) val("SELECT COUNT(*) FROM travellers WHERE booking_id = ? AND pickup_place <> 'No transfer' AND status <> 'Cancelled'", [$bookingId]);
 }
 
 // dish => ['price' => kip, 'choices' => [...]] for dishes with a price
@@ -81,17 +96,35 @@ function save_booking(array $d, ?array $user = null): string {
     if ($tour === TRANSPORT_ONLY) { $tourName = 'Transport only'; $price = 0.0; }
     else {
       $t = one('SELECT name, price_usd FROM tours WHERE code = ?', [$tour]);
+      if (!$t && !$user) throw new Refused('unknown tour');
       $tourName = $t ? $t['name'] : $tour; $price = $t ? (float) $t['price_usd'] : 0.0;
     }
     if (isset($d['priceUsd']) && is_numeric($d['priceUsd']) && $user) $price = (float) $d['priceUsd'];   // staff override, per person
+    if ($price < 0 || (isset($d['transferKip']) && is_numeric($d['transferKip']) && (float) $d['transferKip'] < 0)) throw new Refused('Amounts cannot be below 0.');
     $transfer = clean($d['transfer'] ?? '', 40) ?: 'No';
     $up = goes_up($transfer); $down = goes_down($transfer); $legs = (int) $up + (int) $down;
-    $hotel = clean($d['hotel'] ?? '', 120); $map = clean($d['map'] ?? '', 300);
+    $hotel = clean($d['hotel'] ?? '', 120); $map = web_link($d['map'] ?? '');
+    if ($user && ($up || $down)) {   // the website checks these itself; the dashboard form does not
+      $pu = date_or_null($d['pickupDate'] ?? null); $rd = date_or_null($d['returnDate'] ?? null);
+      if ($up && !$pu) throw new Refused('Type the pickup date in Luang Prabang.');
+      if ($down && !$rd) throw new Refused('Type the date back to Luang Prabang.');
+      if ($up && $down && $rd < $pu) throw new Refused('The date back is before the pickup date.');
+    }
     $nk = clean($d['nkPickup'] ?? '', 120) ?: ((!$up ? $hotel : '') ?: setting('nk_office', 'Office (The Trio Bar & Cafe)'));
     $train = $down && ($d['train'] ?? false) === true;
     $id = clean($d['id'] ?? '', 20);
-    if (!preg_match('/^[A-Za-z0-9-]{4,20}$/', $id)) $id = 'NK' . (new DateTime('now', new DateTimeZone('Asia/Vientiane')))->format('ymdHis');
-    if (val('SELECT 1 FROM bookings WHERE id = ?', [$id])) return $id;   // sent twice: the second copy is not saved
+    if ($id !== '' && !preg_match('/^[A-Za-z0-9-]{4,20}$/', $id)) {
+      if ($user) throw new Refused('Booking ID: 4 to 20 letters, digits or "-", or leave it empty.');
+      $id = '';
+    }
+    if ($id === '') {   // a new ID nobody has, with random letters so two bookings saved in the same second never share one
+      do { $id = 'NK' . (new DateTime('now', new DateTimeZone('Asia/Vientiane')))->format('ymd') . '-' . strtoupper(bin2hex(random_bytes(2))); }
+      while (val('SELECT 1 FROM bookings WHERE id = ?', [$id]));
+    } elseif (val('SELECT 1 FROM bookings WHERE id = ?', [$id])) {
+      // the website sends a booking again when the guest retries: the second copy is not saved. Staff are told.
+      if ($user) throw new Refused("Booking $id already exists" . (val('SELECT 1 FROM bookings WHERE id = ? AND deleted_at IS NOT NULL', [$id]) ? ' (deleted: an admin can restore it)' : '') . '. Nothing new was saved.');
+      return $id;
+    }
 
     $plan = $d['returnPlan'] ?? '';
     q('INSERT INTO bookings (id, submitted_at, tour_date, tour, tour_name, transfer, pickup_date, return_date, train_dropoff, accommodation,
@@ -102,9 +135,9 @@ function save_booking(array $d, ?array $user = null): string {
        $up ? date_or_null($d['pickupDate'] ?? null) : null, $down ? date_or_null($d['returnDate'] ?? null) : null, (int) $train,
        $up ? $hotel : '', $up ? $map : '', $down ? $nk : '', clean($d['payment'] ?? '', 40), clean($d['phone'] ?? '', 40),
        clean($d['source'] ?? '', 40) ?: 'Not given', clean($d['referrer'] ?? '', 120), clean($d['lang'] ?? '', 5), clean($d['note'] ?? '', 1000),
-       $price * count($people), (string) (val('SELECT addon FROM tour_addons WHERE tour = ?', [$tour]) ?? ''), (int) (($d['private'] ?? false) === true),
+       $price * count($people), (string) (val('SELECT addon FROM tour_addons WHERE tour = ?', [$tour]) ?? ''), (int) (($d['private'] ?? false) === true && $tour !== TRANSPORT_ONLY),
        $plan === 'end' ? 'Back after the tour, about 3:30-4:30 PM' : ($plan === 'later' ? 'Back on another day, minivan about 10:30 AM' : ''),
-       in_array($d['status'] ?? '', STATUSES, true) && $user ? $d['status'] : 'Requested', '']);
+       in_array($d['status'] ?? '', STATUSES, true) && $user && $d['status'] !== 'Paid' ? $d['status'] : ($user ? 'Confirmed' : 'Requested'), '']);
 
     $menu = lunch_map(); $riders = 0;
     foreach ($people as $i => $p) {
@@ -115,7 +148,7 @@ function save_booking(array $d, ?array $user = null): string {
       $mode = $legs === 0 ? 'none' : ($i > 0 && in_array($p['pickup'] ?? '', ['other', 'none'], true) ? $p['pickup'] : 'same');
       if ($mode === 'other' && clean($p['pkPlace'] ?? '', 120) === '') $mode = 'same';
       $place = $mode === 'none' ? ($legs === 0 ? '' : 'No transfer') : ($mode === 'other' ? clean($p['pkPlace'], 120) : ($up ? $hotel : $nk));
-      $pmap = $mode === 'none' ? '' : ($mode === 'other' ? clean($p['pkMap'] ?? '', 300) : $map);
+      $pmap = $mode === 'none' ? '' : ($mode === 'other' ? web_link($p['pkMap'] ?? '') : $map);
       if ($mode !== 'none') $riders++;
       // lunch is priced here from the menu: the page's numbers are never trusted
       $dish = clean($p['lunch'] ?? '', 80); $choice = ''; $kip = 0;
@@ -137,6 +170,7 @@ function save_booking(array $d, ?array $user = null): string {
 }
 
 function save_inquiry(array $d): void {
+  if (clean($d['name'] ?? '', 80) === '' || clean($d['contact'] ?? '', 120) === '' || clean($d['question'] ?? '', 2000) === '') throw new Refused('inquiry: name, contact and question are needed');
   q("INSERT INTO inquiries (submitted_at, name, contact, tour, question, source, referrer, site_language, staff_notes) VALUES (UTC_TIMESTAMP(),?,?,?,?,?,?,?,'')",
     [clean($d['name'] ?? '', 80), clean($d['contact'] ?? '', 120), clean($d['tour'] ?? '', 20), clean($d['question'] ?? '', 2000),
      clean($d['source'] ?? '', 40) ?: 'Not given', clean($d['referrer'] ?? '', 120), clean($d['lang'] ?? '', 5)]);
@@ -167,7 +201,7 @@ function upload_url(string $file): string {
 }
 function reviews_json(): array {
   return array_map(fn ($r) => ['name' => trim($r['name']), 'text' => trim($r['review'])],
-    all("SELECT name, review FROM reviews WHERE `show` = 1 AND TRIM(review) <> '' ORDER BY review_date IS NULL, review_date DESC, id LIMIT 8"));
+    all("SELECT name, review FROM reviews WHERE `show` = 1 AND TRIM(review) <> '' ORDER BY review_date IS NULL, review_date DESC, id DESC LIMIT 8"));
 }
 
 /* ---------- summaries and totals ---------- */
@@ -188,7 +222,7 @@ function booking_summary(string $id, ?array $trav = null): array {
     'traveller_names' => implode(', ', array_column($trav, 'full_name')),
     'countries' => implode(', ', array_values(array_unique(array_filter(array_column($trav, 'country'), 'strlen')))),
     'food' => $count(array_map(fn ($t) => $t['food'] ?: 'Regular', $trav), ', ', ' '),
-    'lunch' => $count(array_map(fn ($t) => $t['lunch_dish'] === '' ? '' : $t['lunch_dish'] . ($t['lunch_choice'] !== '' ? " ({$t['lunch_choice']})" : ''), $trav), '; ', ' '),
+    'lunch' => $count(array_map(fn ($t) => $t['lunch_dish'] === '' || $t['status'] === 'Cancelled' ? '' : $t['lunch_dish'] . ($t['lunch_choice'] !== '' ? " ({$t['lunch_choice']})" : ''), $trav), '; ', ' '),
     'lunch_kip' => array_sum(array_map(fn ($t) => (float) $t['lunch_kip'], $trav)),
     'pickups' => implode('; ', $pick),
   ];
@@ -199,7 +233,7 @@ function booking_totals(string $id): array {
   $b = one('SELECT est_tour_usd, est_transfer_kip FROM bookings WHERE id = ?', [$id]);
   if (!$b) throw new Refused("no booking $id");
   $rate = setting_num('kip_per_usd', 22500);
-  $lunch = (float) val('SELECT COALESCE(SUM(lunch_kip), 0) FROM travellers WHERE booking_id = ?', [$id]);
+  $lunch = (float) val("SELECT COALESCE(SUM(lunch_kip), 0) FROM travellers WHERE booking_id = ? AND status <> 'Cancelled'", [$id]);   // a cancelled guest pays no lunch
   $paid = (float) val('SELECT COALESCE(SUM(amount_usd), 0) FROM payments WHERE booking_id = ?', [$id]);
   $tour = (float) $b['est_tour_usd']; $transfer = (float) $b['est_transfer_kip'];
   $totalUsd = round($tour + ($transfer + $lunch) / $rate, 2);
@@ -207,7 +241,8 @@ function booking_totals(string $id): array {
   // Kip side: money taken in kip counts as typed, money taken in USD at today's rate. The kip balance is the kip total minus
   // that, never the rounded USD balance converted back (that drifted by a few kip), and it is 0 once the USD balance is.
   $paidKip = (float) val("SELECT COALESCE(SUM(CASE WHEN currency = 'LAK' THEN amount ELSE ROUND(amount_usd * ?) END), 0) FROM payments WHERE booking_id = ?", [$rate, $id]);
-  if ($totalUsd > 0 && $balanceUsd <= 0.005) $paidKip = $totalKip;
+  // Settled when either side is within a cent: kip paid to the last kip leaves a rounding cent on the USD side, and the other way round.
+  if ($totalUsd > 0 && (abs($balanceUsd) <= 0.005 || abs($totalKip - $paidKip) < $rate / 100)) { $paidKip = $totalKip; $balanceUsd = 0.0; $paid = $totalUsd; }
   return ['tour_usd' => $tour, 'transfer_kip' => $transfer, 'lunch_kip' => $lunch, 'rate' => $rate, 'total_usd' => $totalUsd,
     'total_kip' => $totalKip, 'paid_usd' => round($paid, 2), 'balance_usd' => $balanceUsd, 'paid_kip' => $paidKip, 'balance_kip' => $totalKip - $paidKip];
 }
@@ -239,13 +274,15 @@ function issue_receipt(string $bookingId, string $language, array $user): array 
 // After any change of payments: paid in full becomes Paid; no longer paid in full goes back to Confirmed.
 function sync_paid_status(string $bookingId): void {
   $t = booking_totals($bookingId);
-  if ($t['total_usd'] > 0 && $t['balance_usd'] <= 0.005) q("UPDATE bookings SET status = 'Paid' WHERE id = ? AND status IN ('Requested','Confirmed')", [$bookingId]);
+  if ($t['total_usd'] > 0 && $t['balance_usd'] <= 0.005) q("UPDATE bookings SET status = 'Paid' WHERE id = ? AND status IN ('Requested','Confirmed')", [$bookingId]);   // also overpaid
   else q("UPDATE bookings SET status = 'Confirmed' WHERE id = ? AND status = 'Paid'", [$bookingId]);
 }
 
 // Records money received; the rate of the day is kept with it.
 function add_payment(string $bookingId, $amount, string $currency, string $method, string $note, ?string $paidOn, array $user): array {
   if (!is_numeric($amount) || (float) $amount == 0.0) throw new Refused('Type the amount.');
+  if (abs((float) $amount) > 100000000) throw new Refused('That amount is too large.');
+  if ($paidOn !== null && $paidOn !== '' && !date_or_null($paidOn)) throw new Refused('The payment date is not a real date.');
   if (!in_array($currency, ['USD', 'LAK'], true)) throw new Refused('Currency must be USD or LAK.');
   return tx(function () use ($bookingId, $amount, $currency, $method, $note, $paidOn, $user) {
     if (!one('SELECT id FROM bookings WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [$bookingId])) throw new Refused("no booking $bookingId");
@@ -277,7 +314,7 @@ function agreement_json($key): array {
   $b = one('SELECT tour_date, tour, tour_name FROM bookings WHERE id = ?', [$r['booking_id']]);
   $trav = array_map(fn ($t) => ['n' => (int) $t['n'], 'first' => $t['first_name'], 'last' => $t['last_name'], 'full' => $t['full_name'],
       'gender' => $t['gender'], 'nat' => $t['country'], 'pass' => $t['passport_no'], 'issued' => show_date($t['passport_issued']), 'expires' => show_date($t['passport_expires'])],
-    all('SELECT * FROM travellers WHERE booking_id = ? ORDER BY n', [$r['booking_id']]));
+    all("SELECT * FROM travellers WHERE booking_id = ? AND status <> 'Cancelled' ORDER BY n", [$r['booking_id']]));
   $signed = array_map('intval', array_column(all('SELECT n FROM agreements WHERE booking_id = ? ORDER BY n', [$r['booking_id']]), 'n'));
   return ['receipt' => $r['no'], 'date' => lao_day($b['tour_date']), 'tour' => $b['tour'], 'tourName' => $b['tour_name'], 'travellers' => $trav, 'signed' => $signed];
 }
@@ -290,7 +327,7 @@ function save_agreement(array $d): int {
     $saved = 0;
     foreach (is_array($d['people'] ?? null) ? $d['people'] : [] as $p) {
       if (!is_array($p)) continue;
-      $t = one('SELECT * FROM travellers WHERE booking_id = ? AND n = ?', [$r['booking_id'], (int) ($p['n'] ?? 0)]);
+      $t = one("SELECT * FROM travellers WHERE booking_id = ? AND n = ? AND status <> 'Cancelled'", [$r['booking_id'], (int) ($p['n'] ?? 0)]);
       if (!$t || val('SELECT 1 FROM agreements WHERE booking_id = ? AND n = ?', [$r['booking_id'], $t['n']])) continue;   // each traveller signs once
       $signed = clean($p['signedName'] ?? '', 80); $ecName = clean($p['ecName'] ?? '', 80); $ecPhone = clean($p['ecPhone'] ?? '', 40);
       if (($p['accept'] ?? false) !== true || !in_array($p['photo'] ?? '', ['yes', 'no'], true) || mb_strlen($signed) < 2 || $ecName === '' || $ecPhone === '') continue;
@@ -321,7 +358,7 @@ function save_lunch(array $d): int {
     $menu = lunch_map(); $saved = 0;
     foreach (array_slice(is_array($d['people'] ?? null) ? $d['people'] : [], 0, 30) as $p) {
       if (!is_array($p)) continue;
-      if (!val('SELECT 1 FROM travellers WHERE booking_id = ? AND n = ?', [$r['booking_id'], (int) ($p['n'] ?? 0)])) continue;
+      if (!val("SELECT 1 FROM travellers WHERE booking_id = ? AND n = ? AND status <> 'Cancelled'", [$r['booking_id'], (int) ($p['n'] ?? 0)])) continue;
       $saved++;
       set_lunch($r['booking_id'], (int) $p['n'], clean($p['lunch'] ?? '', 80), clean($p['choice'] ?? '', 40), $menu);
     }

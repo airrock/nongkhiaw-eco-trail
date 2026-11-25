@@ -61,6 +61,7 @@
   ];
   function menuItem(dish) { return MENU.filter(function (m) { return m.dish === dish; })[0]; }
 
+  var EXTRA_TOURS = [];
   function applyConfig(cfg) {
     if (!cfg || typeof cfg !== 'object') return;
     if (Array.isArray(cfg.menu) && cfg.menu.length) {
@@ -69,6 +70,10 @@
       });
     }
     if (cfg.prices) Object.keys(cfg.prices).forEach(function (c) { var n = Number(cfg.prices[c]); if (n > 0) CONFIG.prices[c] = n; });
+    // tours the team added in the dashboard; a code the site already has built in is never replaced
+    if (Array.isArray(cfg.tours)) EXTRA_TOURS = cfg.tours.filter(function (x) {
+      return x && /^[A-Za-z0-9]{1,5}$/.test(String(x.code)) && ['101', '102', '103', '001', 'T00'].indexOf(String(x.code)) === -1 && Number(x.price) > 0;
+    }).slice(0, 30);
     if (cfg.kip) ['one', 'round', 'train'].forEach(function (k) { var n = Number(cfg.kip[k]); if (n > 0) CONFIG.kip[k] = n; });
     if (cfg.content) Object.keys(cfg.content).forEach(function (lang) {
       if (!DICT[lang]) return;
@@ -80,10 +85,55 @@
   }
 
   /* ---------- language ---------- */
+  // A card with the other tours and a line in both tour lists for each tour the team added. Built again on every language
+  // change and config load; text is set with textContent, never as HTML. What the team typed shows as typed in every language.
+  function renderExtraTours() {
+    var grid = $('.tgrid'); if (!grid) return;
+    var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+    var keep = {}; ['fTour', 'qTour'].forEach(function (id) { var sel = document.getElementById(id); if (sel) keep[id] = sel.value; });
+    $$('[data-extra]').forEach(function (n) { n.parentNode.removeChild(n); });
+    EXTRA_TOURS.forEach(function (x) {
+      var code = String(x.code), title = String(x.title || x.name || code), price = Number(x.price);
+      CONFIG.prices[code] = price; TOUR_NAMES[code] = 'Package ' + code + ': ' + String(x.name || title);
+      var card = el('article', 'tcard reveal in'); card.id = 't' + code; card.setAttribute('data-extra', '');
+      var pic = el('div', 'tcard-img'), img = el('img'); img.src = /^https:\/\//.test(String(x.photo || '')) ? x.photo : 'images/camp-sea-of-clouds.jpg'; img.alt = title; img.loading = 'lazy';
+      var chip = el('span', 'chip'), pk = el('span', '', 'Package'); pk.setAttribute('data-i18n', 'pkg'); chip.appendChild(pk); chip.appendChild(document.createTextNode(' ' + code));
+      pic.appendChild(img); pic.appendChild(chip); card.appendChild(pic);
+      var body = el('div', 'tcard-body'), meta = el('p', 'tmeta');
+      if (x.duration) meta.appendChild(el('span', '', String(x.duration)));
+      if (x.level) { var lv = el('span', 'lvl ' + (x.level === 'Easy' ? 'lvl-easy' : 'lvl-mod'), String(x.level)); if (x.level === 'Easy' || x.level === 'Moderate') lv.setAttribute('data-i18n', x.level === 'Easy' ? 'lvl_easy' : 'lvl_mod'); meta.appendChild(lv); }
+      body.appendChild(meta); body.appendChild(el('h3', '', title));
+      if (x.summary) body.appendChild(el('p', 'tsum', String(x.summary)));
+      var pr = el('div', 'price'), left = el('div'), num = el('span', 'price-num', 'USD ' + price), per = el('span', 'price-per', 'per person'), book = el('a', 'btn btn-sun', 'Book this tour');
+      num.setAttribute('data-price', code); per.setAttribute('data-i18n', 'per_person'); book.href = '#booking-form'; book.setAttribute('data-tour', code); book.setAttribute('data-i18n', 'book_this');
+      bindTourLink(book); left.appendChild(num); left.appendChild(per); pr.appendChild(left); pr.appendChild(book); body.appendChild(pr);
+      var days = Array.isArray(x.days) ? x.days.filter(function (d) { return String(d || '').trim(); }) : [];
+      if (days.length || x.included) {
+        var plan = el('details', 'plan'), sum = el('summary', '', 'See the plan'); sum.setAttribute('data-i18n', 'see_plan'); plan.appendChild(sum);
+        days.forEach(function (d, i) {
+          var row = el('div', 'day'); row.appendChild(el('span', 'daychip', (t('d1l') || 'Day 1').replace(/\d+/, String(i + 1)))); row.appendChild(el('p', '', String(d))); plan.appendChild(row);
+        });
+        if (x.included) {
+          var lists = el('div', 'lists'), list = el('div', 'list'), hh = el('h4', '', 'Included'); hh.setAttribute('data-i18n', 'inc_h');
+          list.appendChild(hh); list.appendChild(el('p', '', String(x.included))); lists.appendChild(list); plan.appendChild(lists);
+        }
+        body.appendChild(plan);
+      }
+      card.appendChild(body); grid.appendChild(card);
+      ['fTour', 'qTour'].forEach(function (id) {
+        var sel = document.getElementById(id); if (!sel) return;
+        var op = el('option', '', code + ' · ' + title + ' (USD ' + price + ')'); op.value = code; op.setAttribute('data-extra', '');
+        sel.insertBefore(op, sel.querySelector('option[value="T00"]'));
+      });
+    });
+    Object.keys(keep).forEach(function (id) { var sel = document.getElementById(id); if (sel.querySelector('option[value="' + keep[id] + '"]')) sel.value = keep[id]; });
+  }
+
   function applyLang(code) {
     if (!DICT[code]) code = 'en';
     current = code;
     document.documentElement.lang = code;
+    renderExtraTours();
 
     $$('.price-num[data-price]').forEach(function (el) { el.textContent = 'USD ' + CONFIG.prices[el.getAttribute('data-price')]; });
     $$('[data-i18n]').forEach(function (el) {
@@ -312,7 +362,8 @@
   function tourLabel(code) {
     return TOUR_NAMES[code] ? TOUR_NAMES[code] + (CONFIG.prices[code] ? ' (USD ' + CONFIG.prices[code] + ')' : '') : code;
   }
-  $$('[data-tour]').forEach(function (a) {
+  $$('[data-tour]').forEach(bindTourLink);
+  function bindTourLink(a) {
     a.addEventListener('click', function () {
       var sel = $('#fTour');
       if (sel) { sel.value = a.getAttribute('data-tour'); sel.dispatchEvent(new Event('change')); }
@@ -321,7 +372,7 @@
       // focusing a date field on a phone opens the picker over the page, so only do it with a mouse
       if (window.matchMedia('(hover: hover)').matches) setTimeout(function () { dateInput.focus({ preventScroll: true }); }, 700);
     });
-  });
+  }
   /* one block of passport fields per guest; typed values survive count changes */
   var travBox = $('#travellers');
   function field(key, html) {
@@ -577,7 +628,7 @@
       var dish = menuItem(v('lunch')), lunchLine = '';
       if (dish) {
         lunchKip += dish.price;
-        lunchLine = '\n- Takeaway lunch: ' + dish.dish + (v('lunchchoice') ? ' (' + v('lunchchoice') + ')' : '') + ', ' +
+        lunchLine = '\n- Lunch before the tour: ' + dish.dish + (v('lunchchoice') ? ' (' + v('lunchchoice') + ')' : '') + ', ' +
           String(dish.price).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' kip';
       }
       return '\nTraveller ' + (i + 1) + ': ' + v('first') + ' ' + v('last') +
@@ -598,7 +649,7 @@
       (g.up ? '\nAccommodation: ' + hotel + (mapLink ? '\nGoogle Maps: ' + mapLink : '') : '') +
       (g.down ? '\nPickup in Nong Khiaw (way back): ' + (nkPick || 'our office inside The Trio Bar & Cafe') : '') + pickupLines + '\n' +
       people.join('\n') +
-      (lunchKip ? '\n\nTakeaway lunch total: ' + String(lunchKip).replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
+      (lunchKip ? '\n\nLunch before the tour total: ' + String(lunchKip).replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
         ' kip (not included in the tour price, paid separately)' : '') +
       (note ? '\n\nNote: ' + note : '');
     window.open('https://wa.me/' + WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');

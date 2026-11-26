@@ -123,7 +123,7 @@
     var main = h('main', {});
     app.appendChild(h('div', { class: 'top' },
       h('div', { class: 'row' }, h('img', { class: 'top-logo', src: 'logo-white.png', alt: '', width: 46, height: 23 }), h('strong', {}, 'Nong Khiaw Eco-Trail'),
-        h('div', { class: 'who' }, state.user.name, h('br'), isAdmin() ? 'Admin' : 'Office staff')),
+        h('button', { class: 'who', type: 'button', title: 'My account: change your password, sign out', onclick: function () { state.tab = 'account'; render(); } }, state.user.name, h('br'), (isAdmin() ? 'Admin' : 'Office staff') + ' · ', h('u', {}, 'My account'))),
       h('div', { class: 'tabs' }, tabs.map(function (t) {
         return h('button', { class: state.tab === t[0] || (state.tab === 'booking' && t[0] === 'bookings') ? 'on' : '', onclick: function () { state.tab = t[0]; render(); } }, t[1]);
       }))));

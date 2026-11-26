@@ -30,9 +30,21 @@ function goes_up(string $t): bool { return (bool) preg_match('/round/i', $t) || 
 function goes_down(string $t): bool { return (bool) preg_match('/round/i', $t) || (bool) preg_match('/to luang prabang/i', $t); }
 function tour_length(string $tour): int { return max(1, (int) val('SELECT COALESCE(MAX(day), 1) FROM tour_days WHERE tour = ?', [$tour])); }
 
+// When a tour's guests can ride the minivan (Tour plans): its length, the minivan back on its last day
+// ('morning' 10:00 - 10:30 AM, 'afternoon' 3:30 - 4:30 PM, 'next' = none that day, the next morning) and whether the guests must
+// come up the day before (the tour starts before the minivan from Luang Prabang arrives, about 11 AM - 12 PM).
+function tour_timing(string $tour): array {
+  $t = one('SELECT back_slot, up_day_before FROM tours WHERE code = ?', [$tour]) ?: ['back_slot' => 'morning', 'up_day_before' => 0];
+  return ['days' => tour_length($tour), 'back' => $t['back_slot'], 'up_before' => (bool) $t['up_day_before']];
+}
+function tour_last_day(array $b): ?string {
+  if (empty($b['tour_date']) || $b['tour'] === TRANSPORT_ONLY) return null;
+  return (new DateTime($b['tour_date']))->modify('+' . (tour_length((string) $b['tour']) - 1) . ' day')->format('Y-m-d');
+}
+
 // The minivan times of a booking: [pickup in Luang Prabang, back from Nong Khiaw]. A time typed on the booking wins.
 // Otherwise the pickup is 7:30 - 8:00 AM; the way back is 10:00 - 10:30 AM, or 3:30 - 4:30 PM on the day the tour ends for a
-// tour whose last day is over by then (tours.back_afternoon: 103; 101 is back in Nong Khiaw about 9:30 AM).
+// tour whose last day is over by then (Tour plans: 103; 101 is back in Nong Khiaw about 9:30 AM).
 const PICKUP_TIME = '7:30 - 8:00 AM';
 const RETURN_MORNING = '10:00 - 10:30 AM';
 const RETURN_AFTER_TOUR = '3:30 - 4:30 PM';
@@ -45,13 +57,29 @@ function transfer_times(array $b): array {
     // note is a guess made when the guest booked and would stay wrong after the date back moves; other remarks are not times
     if (preg_match('/^\s*minivan back\s+(\d{1,2}(?::\d{2})?\s*(?:-\s*\d{1,2}(?::\d{2})?\s*)?(?:AM|PM))/i', $remark, $m)) $down = preg_replace('/\s*-\s*/', ' - ', $m[1]);
     else {
-      $ends = !empty($b['tour_date']) && $b['tour'] !== TRANSPORT_ONLY ? (new DateTime($b['tour_date']))->modify('+' . (tour_length((string) $b['tour']) - 1) . ' day')->format('Y-m-d') : null;
-      // back on the day the tour ends: the afternoon minivan only for a tour that is over by then (Tour plans, per tour)
-      $down = $ends !== null && $ends === $b['return_date'] && (int) val('SELECT back_afternoon FROM tours WHERE code = ?', [(string) $b['tour']]) === 1
-        ? RETURN_AFTER_TOUR : RETURN_MORNING;
+      $ends = tour_last_day($b);
+      $down = $ends !== null && $ends === $b['return_date'] && tour_timing((string) $b['tour'])['back'] === 'afternoon' ? RETURN_AFTER_TOUR : RETURN_MORNING;
     }
   }
   return [$up, $down];
+}
+
+// Dates that do not fit the tour, in words for staff (shown on the booking and on Pickups; nothing is refused,
+// staff may know better, e.g. a guest who leaves the tour early or a private minivan at another time).
+function transfer_checks(array $b): array {
+  $out = [];
+  if (empty($b['tour_date']) || $b['tour'] === TRANSPORT_ONLY) return $out;
+  $tm = tour_timing((string) $b['tour']); $last = tour_last_day($b); $code = 'Tour ' . $b['tour'];
+  $up = goes_up((string) $b['transfer']) && !empty($b['pickup_date']);
+  $down = !empty($b['return_date']) && (goes_down((string) $b['transfer']) || $b['transfer'] === 'Round trip');
+  if ($up && $b['pickup_date'] > $b['tour_date']) $out[] = 'The pickup in Luang Prabang (' . lao_day($b['pickup_date']) . ') is after the tour starts (' . lao_day($b['tour_date']) . ').';
+  elseif ($up && $tm['up_before'] && $b['pickup_date'] === $b['tour_date'] && trim((string) $b['pickup_time']) === '')
+    $out[] = "$code starts before the minivan from Luang Prabang arrives (about 11 AM - 12 PM): pick the guests up the day before.";
+  if ($down && $b['return_date'] < $last) $out[] = 'The date back (' . lao_day($b['return_date']) . ') is during the tour, which ends ' . lao_day($last) . '.';
+  elseif ($down && $b['return_date'] === $last && $tm['back'] === 'next' && trim((string) $b['return_time']) === '')
+    $out[] = "$code ends about 4:30 - 5:30 PM: no minivan back that day. The earliest is " . lao_day((new DateTime($last))->modify('+1 day')->format('Y-m-d')) . ', 10:00 - 10:30 AM.';
+  if ($up && $down && $b['return_date'] < $b['pickup_date']) $out[] = 'The date back is before the pickup date.';
+  return $out;
 }
 
 function country_name($raw): string {

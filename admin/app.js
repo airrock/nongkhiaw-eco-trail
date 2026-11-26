@@ -195,6 +195,7 @@
         var phone = input('whatsapp', x.whatsapp);
         var msg = h('details', {}, h('summary', {}, 'Message for the minivan team'), h('pre', { style: 'white-space:pre-wrap;font:inherit;margin:8px 0' }, x.team));
         card.appendChild(h('div', { class: 'trav' },
+          x.checks && x.checks.length ? h('p', { class: 'red', style: 'margin:0 0 6px;font-weight:700' }, '⚠ ' + x.checks.join(' ')) : null,
           h('div', { class: 'bar', style: 'margin-bottom:6px' }, h('strong', {}, x.names.join(', ')), h('span', { class: 'pill' }, x.pax + ' pax'), x.stop ? h('span', { class: 'pill' }, 'stop ' + x.stop) : null),
           h('p', { style: 'margin:0 0 8px' }, (up ? 'Pickup: ' : 'Pickup in Nong Khiaw: ') + (x.place || '(no place)') + (x.drop ? ' · drop-off: ' + x.drop : ''),
             x.map ? [' · ', h('a', { href: x.map, target: '_blank', rel: 'noopener' }, 'Map')] : null,
@@ -306,11 +307,17 @@
     main.appendChild(h('p', { class: 'muted' }, 'Loading…'));
     api('booking', { id: state.id }).then(function (d) { drawBooking(main, d); }, function () { state.tab = 'bookings'; render(); });
   }
+  // dates that do not fit the tour: shown, never blocking (staff may know better)
+  function checkBox(list) {
+    return h('div', { class: 'card noprint', style: 'border-color:#c0392b;background:#fdf1ef' }, h('strong', { class: 'red' }, 'Check the minivan dates'),
+      h('ul', { style: 'margin:6px 0 0;padding-left:20px' }, list.map(function (x) { return h('li', {}, x); })));
+  }
   function drawBooking(main, d) {
     main.textContent = '';
     var b = d.booking, t = d.totals, gone = !!b.deleted_at;
     function redraw(x) { toast('Saved'); drawBooking(main, x); }
     main.appendChild(h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () { state.tab = 'bookings'; render(); } }, '← All bookings')));
+    if (d.checks && d.checks.length) main.appendChild(checkBox(d.checks));
 
     // details
     var form = h('div', { class: 'grid' },
@@ -887,7 +894,12 @@
       res[0].tours.forEach(function (t) {
         var days = p.days.filter(function (x) { return x.tour === t.code; }), addon = p.addons.filter(function (x) { return x.tour === t.code; })[0] || {};
         var costs = p.costs.filter(function (x) { return x.tour === t.code; });
-        var backPm = h('input', { type: 'checkbox', name: 'back_afternoon' }); backPm.checked = !!Number(t.back_afternoon);
+        var backSel = h('select', { name: 'back_slot' });
+        [['morning', 'Last day: back in time for the morning minivan (10:00 - 10:30 AM)'], ['afternoon', 'Last day: back in time for the afternoon minivan (3:30 - 4:30 PM)'],
+          ['next', 'Last day: ends too late for a minivan; back the next morning (10:00 - 10:30 AM)']].forEach(function (o) {
+          var op = h('option', { value: o[0] }, o[1]); if ((t.back_slot || 'morning') === o[0]) op.selected = true; backSel.appendChild(op);
+        });
+        var upBefore = h('input', { type: 'checkbox', name: 'up_day_before' }); upBefore.checked = !!Number(t.up_day_before);
         var dayBox = h('div', {}), costBox = h('div', {});
         var addDay = function (text) { var n = dayBox.children.length + 1; dayBox.appendChild(h('label', { class: 'f' }, 'Day ' + n, h('textarea', { name: 'day', rows: 3 }, text || ''))); };
         days.forEach(function (x) { addDay(x.plan); }); if (!days.length) addDay('');
@@ -933,11 +945,12 @@
         }
         main.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, t.code + ' · ' + t.name), web, dayBox,
           h('p', {}, h('button', { class: 'btn ghost small', onclick: function () { addDay(''); } }, '+ Add a day')),
-          h('label', { style: 'display:block;margin:10px 0' }, backPm, ' On the last day the guests are back in Nong Khiaw in time for the afternoon minivan (3:30 - 4:30 PM). Not ticked: the morning minivan (10:00 - 10:30 AM).'),
+          h('h3', {}, 'Minivan'), field('Minivan back on the last day', backSel),
+          h('label', { style: 'display:block;margin:8px 0 12px' }, upBefore, ' The tour starts before the minivan from Luang Prabang arrives (about 11 AM - 12 PM): guests come up the day before'),
           h('div', { class: 'bar' }, h('div', { style: 'flex:1 1 220px' }, field('Additional package (empty = none)', ad)), field('Starts on day', adDay)),
           h('h3', {}, 'Cost lines'), costBox, h('p', {}, h('button', { class: 'btn ghost small', onclick: function () { addCost(); } }, '+ Add a cost line')),
           h('button', { class: 'btn', onclick: function () {
-            var body = { tour: t.code, addon: ad.value, addon_day: adDay.value, back_afternoon: backPm.checked ? 1 : 0,
+            var body = { tour: t.code, addon: ad.value, addon_day: adDay.value, back_slot: backSel.value, up_day_before: upBefore.checked ? 1 : 0,
               days: [].map.call(dayBox.querySelectorAll('textarea'), function (x) { return x.value; }),
               costs: [].map.call(costBox.querySelectorAll('.costline'), function (row) { var c = {}; row.querySelectorAll('[name]').forEach(function (i) { c[i.name] = i.value; }); return c; }) };
             while (body.days.length && !body.days[body.days.length - 1].trim()) body.days.pop();

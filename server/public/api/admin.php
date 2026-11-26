@@ -81,6 +81,7 @@ function booking_full(string $id, array $user): array {
   if (!$b || ($b['deleted_at'] && $user['role'] !== 'admin')) throw new Refused('Booking not found.');
   $trav = all('SELECT * FROM travellers WHERE booking_id = ? ORDER BY n', [$id]);
   // times nobody typed show the usual ones (they are stored only when staff change them)
+  $checks = $b['deleted_at'] ? [] : transfer_checks($b);   // before the usual times are filled in: a typed time is a choice
   [$upTime, $downTime] = transfer_times($b);
   if (trim($b['pickup_time']) === '') $b['pickup_time'] = $upTime;
   if (trim($b['return_time']) === '') $b['return_time'] = $downTime;
@@ -90,7 +91,7 @@ function booking_full(string $id, array $user): array {
     if (!$day) continue;
     foreach (transport_day($day, $id)[$dir] as $x) $minivan[] = ['dir' => $dir, 'date' => $day, 'wa' => $x['wa'], 'guest' => $x['guest'], 'place' => $x['place'], 'stop' => $x['stop'], 'vehicle' => $x['vehicle'], 'team' => $x['team']];
   }
-  return ['booking' => $b, 'minivan' => $minivan, 'tour_days' => tour_length((string) $b['tour']), 'travellers' => $trav, 'summary' => booking_summary($id, $trav), 'totals' => booking_totals($id),
+  return ['booking' => $b, 'checks' => $checks, 'minivan' => $minivan, 'tour_days' => tour_length((string) $b['tour']), 'travellers' => $trav, 'summary' => booking_summary($id, $trav), 'totals' => booking_totals($id),
     'payments' => all('SELECT * FROM payments WHERE booking_id = ? ORDER BY paid_on, id', [$id]),
     'receipt' => one('SELECT * FROM receipts WHERE booking_id = ?', [$id]),
     'agreements' => all('SELECT * FROM agreements WHERE booking_id = ? ORDER BY n', [$id])];
@@ -551,7 +552,8 @@ try {
         throw new Refused('Cost lines cannot be below 0.');
       tx(function () use ($tour, $in, $user) {
         q('DELETE FROM tour_days WHERE tour = ?', [$tour]); q('DELETE FROM tour_addons WHERE tour = ?', [$tour]); q('DELETE FROM tour_costs WHERE tour = ?', [$tour]);
-        if (isset($in['back_afternoon'])) q('UPDATE tours SET back_afternoon = ? WHERE code = ?', [!empty($in['back_afternoon']) ? 1 : 0, $tour]);
+        if (isset($in['back_slot']) && in_array($in['back_slot'], ['morning', 'afternoon', 'next'], true)) q('UPDATE tours SET back_slot = ? WHERE code = ?', [$in['back_slot'], $tour]);
+        if (isset($in['up_day_before'])) q('UPDATE tours SET up_day_before = ? WHERE code = ?', [!empty($in['up_day_before']) ? 1 : 0, $tour]);
         foreach (array_values((array) ($in['days'] ?? [])) as $i => $plan) if (clean($plan, 2000) !== '') q('INSERT INTO tour_days (tour, day, plan) VALUES (?,?,?)', [$tour, $i + 1, clean($plan, 2000)]);
         if (clean($in['addon'] ?? '', 200) !== '') q('INSERT INTO tour_addons (tour, addon, starts_day) VALUES (?,?,?)', [$tour, clean($in['addon'], 200), is_numeric($in['addon_day'] ?? null) ? (int) $in['addon_day'] : null]);
         foreach ((array) ($in['costs'] ?? []) as $c) if (clean($c['item'] ?? '', 200) !== '')

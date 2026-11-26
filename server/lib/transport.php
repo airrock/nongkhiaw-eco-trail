@@ -89,7 +89,8 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
     $nk = $b['nk_pickup'] ?: $office; $train = (bool) $b['train_dropoff'];
     [$upTime, $downTime] = array_map('time_label', transfer_times($b));
     $team = team_message($people, $goesUp ? $b['pickup_date'] : null, $back ? $b['return_date'] : null, $train, $lead, $b['whatsapp'], $b['id'], $b['receipt_no'], $nk, $downTime);
-    $base = ['booking_id' => $b['id'], 'receipt_no' => $b['receipt_no'], 'whatsapp' => $b['whatsapp'], 'lead' => $lead, 'remark' => $b['transport_remark'], 'wa' => wa_digits($b['whatsapp'])];
+    $base = ['booking_id' => $b['id'], 'receipt_no' => $b['receipt_no'], 'whatsapp' => $b['whatsapp'], 'lead' => $lead, 'remark' => $b['transport_remark'], 'wa' => wa_digits($b['whatsapp']),
+      'checks' => transfer_checks($b)];
     $row = fn ($p, $i) => ['booking_id' => $b['id'], 'tour' => $b['tour'], 'receipt_no' => $b['receipt_no'], 'name' => $p['name'], 'pax' => $i === 0 ? count($people) : '', 'riders' => 1];
     // the passenger list for the local government: one row per guest and route riding that day, with the passport details
     $ridesUp = $goesUp && $b['pickup_date'] === $date; $ridesDown = $back && $b['return_date'] === $date;

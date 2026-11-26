@@ -254,7 +254,7 @@ eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '2 PM', 'a t
 admin.ok('booking_save', id='SELFTEST-A1', fields={'return_time': ''})
 eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '10:00 - 10:30 AM', 'back on a later day: morning minivan')
 admin.ok('booking_save', id='SELFTEST-A1', fields={'return_date': '2030-02-02'})
-eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '3:30 - 4:30 PM', 'back on the day the tour ends: afternoon minivan')
+eq(admin.ok('booking', id='SELFTEST-A1')['booking']['return_time'], '10:00 - 10:30 AM', 'back on the day 102 ends: morning minivan unless Tour plans ticks the afternoon one')
 admin.ok('booking_save', id='SELFTEST-A1', fields={'return_date': '2030-02-03', 'transport_remark': 'Back after the tour, about 3:30-4:30 PM'})
 eq([m['dir'] for m in bk['minivan']], ['up', 'up', 'down'], 'booking carries the minivan messages for the guest')
 eq('Pickup at Sunset Hostel between 7:30 and 8:00am.' in bk['minivan'][0]['guest'], True, 'minivan message names place and time')
@@ -430,7 +430,12 @@ W = {"type": "booking", "id": "SELFTEST-W1", "tour": "101", "date": "2032-03-01"
      "returnPlan": "end", "hotel": "Old Hotel", "map": "https://maps.example/old", "payment": "USD cash", "phone": "+44 7000 000000", "lang": "en",
      "travellers": [{"first": "SELFTEST-W", "last": "Lead"}, {"first": "SELFTEST-W", "last": "Two"}]}
 site(W)
-eq(office.ok('booking', id='SELFTEST-W1')['booking']['return_time'] or office.ok('transport', date='2032-03-02')['down'][0]['time'], '3:30 - 4:30 PM', 'back on the day the tour ends: 3:30 - 4:30 PM')
+eq(office.ok('transport', date='2032-03-02')['down'][0]['time'], '10:00 - 10:30 AM', 'bug 005: 101 is back about 9:30 AM, so the morning minivan on its last day')
+site(dict(W, id='SELFTEST-W3', tour='103', date='2032-04-01', pickupDate='2032-04-01', returnDate='2032-04-03'))
+eq([d['time'] for d in office.ok('transport', date='2032-04-03')['down'] if d['booking_id'] == 'SELFTEST-W3'], ['3:30 - 4:30 PM'], '103 ends in the afternoon: the 3:30 - 4:30 PM minivan on its last day')
+admin.ok('plan_save', tour='103', days=[x['plan'] for x in admin.ok('plans')['days'] if x['tour'] == '103'] or ['d1', 'd2', 'd3'], back_afternoon=0)
+eq([d['time'] for d in office.ok('transport', date='2032-04-03')['down'] if d['booking_id'] == 'SELFTEST-W3'], ['10:00 - 10:30 AM'], 'the afternoon minivan is a per-tour choice in Tour plans')
+admin.ok('plan_save', tour='103', days=[x['plan'] for x in admin.ok('plans')['days'] if x['tour'] == '103'], back_afternoon=1)
 office.ok('booking_save', id='SELFTEST-W1', fields={'return_date': '2032-03-05'})
 eq(office.ok('transport', date='2032-03-05')['down'][0]['time'], '10:00 - 10:30 AM', "the website's 'back after the tour' note does not hold the time once the date back moves")
 office.ok('booking_save', id='SELFTEST-W1', fields={'transport_remark': 'Driver call at 7 AM'})

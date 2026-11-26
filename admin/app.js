@@ -887,6 +887,7 @@
       res[0].tours.forEach(function (t) {
         var days = p.days.filter(function (x) { return x.tour === t.code; }), addon = p.addons.filter(function (x) { return x.tour === t.code; })[0] || {};
         var costs = p.costs.filter(function (x) { return x.tour === t.code; });
+        var backPm = h('input', { type: 'checkbox', name: 'back_afternoon' }); backPm.checked = !!Number(t.back_afternoon);
         var dayBox = h('div', {}), costBox = h('div', {});
         var addDay = function (text) { var n = dayBox.children.length + 1; dayBox.appendChild(h('label', { class: 'f' }, 'Day ' + n, h('textarea', { name: 'day', rows: 3 }, text || ''))); };
         days.forEach(function (x) { addDay(x.plan); }); if (!days.length) addDay('');
@@ -932,10 +933,11 @@
         }
         main.appendChild(h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, t.code + ' · ' + t.name), web, dayBox,
           h('p', {}, h('button', { class: 'btn ghost small', onclick: function () { addDay(''); } }, '+ Add a day')),
+          h('label', { style: 'display:block;margin:10px 0' }, backPm, ' On the last day the guests are back in Nong Khiaw in time for the afternoon minivan (3:30 - 4:30 PM). Not ticked: the morning minivan (10:00 - 10:30 AM).'),
           h('div', { class: 'bar' }, h('div', { style: 'flex:1 1 220px' }, field('Additional package (empty = none)', ad)), field('Starts on day', adDay)),
           h('h3', {}, 'Cost lines'), costBox, h('p', {}, h('button', { class: 'btn ghost small', onclick: function () { addCost(); } }, '+ Add a cost line')),
           h('button', { class: 'btn', onclick: function () {
-            var body = { tour: t.code, addon: ad.value, addon_day: adDay.value,
+            var body = { tour: t.code, addon: ad.value, addon_day: adDay.value, back_afternoon: backPm.checked ? 1 : 0,
               days: [].map.call(dayBox.querySelectorAll('textarea'), function (x) { return x.value; }),
               costs: [].map.call(costBox.querySelectorAll('.costline'), function (row) { var c = {}; row.querySelectorAll('[name]').forEach(function (i) { c[i.name] = i.value; }); return c; }) };
             while (body.days.length && !body.days[body.days.length - 1].trim()) body.days.pop();

@@ -31,7 +31,8 @@ function goes_down(string $t): bool { return (bool) preg_match('/round/i', $t) |
 function tour_length(string $tour): int { return max(1, (int) val('SELECT COALESCE(MAX(day), 1) FROM tour_days WHERE tour = ?', [$tour])); }
 
 // The minivan times of a booking: [pickup in Luang Prabang, back from Nong Khiaw]. A time typed on the booking wins.
-// Otherwise the pickup is 7:30 - 8:00 AM; the way back is 3:30 - 4:30 PM on the day the tour ends, else 10:00 - 10:30 AM.
+// Otherwise the pickup is 7:30 - 8:00 AM; the way back is 10:00 - 10:30 AM, or 3:30 - 4:30 PM on the day the tour ends for a
+// tour whose last day is over by then (tours.back_afternoon: 103; 101 is back in Nong Khiaw about 9:30 AM).
 const PICKUP_TIME = '7:30 - 8:00 AM';
 const RETURN_MORNING = '10:00 - 10:30 AM';
 const RETURN_AFTER_TOUR = '3:30 - 4:30 PM';
@@ -45,7 +46,9 @@ function transfer_times(array $b): array {
     if (preg_match('/^\s*minivan back\s+(\d{1,2}(?::\d{2})?\s*(?:-\s*\d{1,2}(?::\d{2})?\s*)?(?:AM|PM))/i', $remark, $m)) $down = preg_replace('/\s*-\s*/', ' - ', $m[1]);
     else {
       $ends = !empty($b['tour_date']) && $b['tour'] !== TRANSPORT_ONLY ? (new DateTime($b['tour_date']))->modify('+' . (tour_length((string) $b['tour']) - 1) . ' day')->format('Y-m-d') : null;
-      $down = $ends !== null && $ends === $b['return_date'] ? RETURN_AFTER_TOUR : RETURN_MORNING;
+      // back on the day the tour ends: the afternoon minivan only for a tour that is over by then (Tour plans, per tour)
+      $down = $ends !== null && $ends === $b['return_date'] && (int) val('SELECT back_afternoon FROM tours WHERE code = ?', [(string) $b['tour']]) === 1
+        ? RETURN_AFTER_TOUR : RETURN_MORNING;
     }
   }
   return [$up, $down];

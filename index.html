@@ -83,7 +83,7 @@
 
 <!-- HERO -->
 <section class="hero">
-  <img class="hero-img" src="images/bridge-aerial.jpg" alt="The Nam Ou river and bridge at Nong Khiaw, seen from above, between steep green mountains" fetchpriority="high">
+  <img class="hero-img" data-photo="hero" src="images/bridge-aerial.jpg" alt="The Nam Ou river and bridge at Nong Khiaw, seen from above, between steep green mountains" fetchpriority="high">
   <div class="hero-shade"></div>
   <div class="wrap hero-inner">
     <p class="kicker" data-i18n="kicker">Nong Khiaw &middot; Northern Laos</p>
@@ -120,7 +120,7 @@
     </header>
     <div class="tgrid">
     <article class="tcard reveal" id="t101">
-      <div class="tcard-img"><img src="images/camp-sea-of-clouds.jpg" alt="Tents above a sea of clouds at sunrise" loading="lazy"><span class="chip"><span data-i18n="pkg">Package</span> 101</span></div>
+      <div class="tcard-img"><img data-photo="tour_101" src="images/camp-sea-of-clouds.jpg" alt="Tents above a sea of clouds at sunrise" loading="lazy"><span class="chip"><span data-i18n="pkg">Package</span> 101</span></div>
       <div class="tcard-body">
         <p class="tmeta"><span data-i18n="dur_1n">1n</span><span class="lvl lvl-mod" data-i18n="lvl_mod">Moderate</span></p>
         <h3 data-i18n="p101_t">title</h3>
@@ -139,7 +139,7 @@
       </div>
     </article>
     <article class="tcard reveal" id="t102">
-      <div class="tcard-img"><img src="images/sunset-tents.jpg" alt="Tents on the ridge at sunset" loading="lazy" style="object-position:50% 55%"><span class="chip"><span data-i18n="pkg">Package</span> 102</span></div>
+      <div class="tcard-img"><img data-photo="tour_102" src="images/sunset-tents.jpg" alt="Tents on the ridge at sunset" loading="lazy" style="object-position:50% 55%"><span class="chip"><span data-i18n="pkg">Package</span> 102</span></div>
       <div class="tcard-body">
         <p class="tmeta"><span data-i18n="dur_1n">1n</span><span class="lvl lvl-mod" data-i18n="lvl_mod">Moderate</span></p>
         <h3 data-i18n="p102_t">title</h3>
@@ -158,7 +158,7 @@
       </div>
     </article>
     <article class="tcard reveal" id="t103">
-      <div class="tcard-img"><img src="images/village-house.jpg" alt="A village house near Nong Khiaw" loading="lazy"><span class="chip"><span data-i18n="pkg">Package</span> 103</span></div>
+      <div class="tcard-img"><img data-photo="tour_103" src="images/village-house.jpg" alt="A village house near Nong Khiaw" loading="lazy"><span class="chip"><span data-i18n="pkg">Package</span> 103</span></div>
       <div class="tcard-body">
         <p class="tmeta"><span data-i18n="dur_2n">2n</span><span class="lvl lvl-mod" data-i18n="lvl_mod">Moderate</span></p>
         <h3 data-i18n="p103_t">title</h3>
@@ -177,7 +177,7 @@
       </div>
     </article>
     <article class="tcard reveal" id="t001">
-      <div class="tcard-img"><img src="images/tad-mok-waterfall.jpg" alt="Travellers at Tad Mok waterfall" loading="lazy"><span class="chip" data-i18n="code_day">Tour code 001</span></div>
+      <div class="tcard-img"><img data-photo="tour_001" src="images/tad-mok-waterfall.jpg" alt="Travellers at Tad Mok waterfall" loading="lazy"><span class="chip" data-i18n="code_day">Tour code 001</span></div>
       <div class="tcard-body">
         <p class="tmeta"><span data-i18n="dur_1d">1d</span></p>
         <h3 data-i18n-html="t_title">title</h3>
@@ -224,7 +224,9 @@
       <p class="tag reveal" data-i18n="prv_tag">Private tour</p>
       <h2 class="reveal" data-i18n="prv_h">Just your group.</h2>
       <p class="reveal" data-i18n="prv_sub">Your own guide, your own pace.</p>
+      <p class="reveal prv-body" data-i18n-html="prv_body" data-optional hidden></p>
     </div>
+    <img class="sec-photo reveal" data-photo="private" alt="" loading="lazy" hidden>
     <div class="prv-actions reveal">
       <a class="btn btn-sun" href="#booking-form" data-tour="101" data-private="1" data-i18n="prv_book">Book a private tour</a>
       <a class="btn btn-line" href="https://wa.me/8562058975057?text=Hello!%20I%20would%20like%20a%20private%20tour." target="_blank" rel="noopener" data-i18n="prv_ask">Ask on WhatsApp</a>
@@ -243,7 +245,7 @@
     <ul class="how-steps trn-cards">
       <li class="reveal"><div class="hs-body"><h3 data-i18n="trn_shuttle_t">Shuttle minivan</h3><p data-i18n="trn_shuttle_p">Luang Prabang ⇄ Nong Khiaw</p>
         <a class="btn btn-sun" href="#booking-form" data-tour="T00" data-i18n="trn_shuttle_b">Book the shuttle</a></div></li>
-      <li class="reveal"><div class="hs-body"><h3 data-i18n="trn_private_t">Private minivan</h3><p data-i18n="trn_private_p">A minivan just for your group.</p>
+      <li class="reveal"><img class="trn-photo" data-photo="transport_private" alt="" loading="lazy" hidden><div class="hs-body"><h3 data-i18n="trn_private_t">Private minivan</h3><p data-i18n="trn_private_p">A minivan just for your group.</p><p class="trn-body" data-i18n-html="trn_private_body" data-optional hidden></p>
         <a class="btn btn-line" href="https://wa.me/8562058975057?text=Hello!%20I%20would%20like%20a%20private%20minivan." target="_blank" rel="noopener" data-i18n="trn_ask">Ask on WhatsApp</a></div></li>
       <li class="reveal"><div class="hs-body"><h3 data-i18n="trn_train_t">Train</h3><p data-i18n="trn_train_p">Travelling on by train?</p>
         <a class="btn btn-line" href="https://wa.me/8562058975057?text=Hello!%20I%20would%20like%20help%20with%20the%20train." target="_blank" rel="noopener" data-i18n="trn_ask">Ask on WhatsApp</a></div></li>
@@ -255,7 +257,7 @@
 
 <!-- STORY -->
 <section class="story" id="story">
-  <img class="story-bg" src="images/mountain-panorama.jpg" alt="" loading="lazy">
+  <img class="story-bg" data-photo="story" src="images/mountain-panorama.jpg" alt="" loading="lazy">
   <div class="story-shade"></div>
   <div class="wrap story-inner">
     <p class="tag tag-light reveal" data-i18n="story_tag">Why &ldquo;Eco-Trail&rdquo;</p>
@@ -279,22 +281,22 @@
     <h2 class="reveal" data-i18n="gal_h">From the trail</h2>
     <p class="gal-sub reveal" data-i18n="gal_sub">Tap any photo to see it larger.</p>
     <div class="masonry" id="masonry">
-      <button type="button" class="g" data-full="images/sunset-valley.jpg"><img src="images/sunset-valley.jpg" alt="Sunset glowing over a green valley near Nong Khiaw" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/camp-sea-of-clouds.jpg"><img src="images/camp-sea-of-clouds.jpg" alt="Tents above a sea of clouds at sunrise" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/boat-view.jpg"><img src="images/boat-view.jpg" alt="View from inside a wooden boat on the brown Nam Ou river" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/nong-khiaw-aerial.jpg"><img src="images/nong-khiaw-aerial.jpg" alt="Aerial view of Nong Khiaw town and its main road" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/sunset-tent.jpg"><img src="images/sunset-tent.jpg" alt="Sun setting behind a camping tent" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/weaving.jpg"><img src="images/weaving.jpg" alt="A villager weaving under a wooden house" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/river-boat.jpg"><img src="images/river-boat.jpg" alt="A blue long-tail boat on calm green water" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/lao-flag-clouds.jpg"><img src="images/lao-flag-clouds.jpg" alt="The Lao flag flying above the clouds" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/photographer-clouds.jpg"><img src="images/photographer-clouds.jpg" alt="A traveller photographing a sea of clouds" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/mountain-panorama.jpg"><img src="images/mountain-panorama.jpg" alt="Panorama of the mountains and the Nam Ou valley" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/sunset-camp-friends.jpg"><img src="images/sunset-camp-friends.jpg" alt="Friends relaxing at camp at golden hour" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/trail-walkers.jpg"><img src="images/trail-walkers.jpg" alt="Hikers walking a dirt trail toward misty mountains" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/camp-clouds-wide.jpg"><img src="images/camp-clouds-wide.jpg" alt="Wide view of camp tents above the clouds" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/night-dinner.jpg"><img src="images/night-dinner.jpg" alt="Guests and a guide sharing a Lao dinner at night" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/sunset-tents.jpg"><img src="images/sunset-tents.jpg" alt="A row of tents at sunset" loading="lazy"></button>
-      <button type="button" class="g" data-full="images/village-house.jpg"><img src="images/village-house.jpg" alt="Smiling children and travellers on the steps of a village house" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_01" data-full="images/sunset-valley.jpg"><img src="images/sunset-valley.jpg" alt="Sunset glowing over a green valley near Nong Khiaw" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_02" data-full="images/camp-sea-of-clouds.jpg"><img src="images/camp-sea-of-clouds.jpg" alt="Tents above a sea of clouds at sunrise" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_03" data-full="images/boat-view.jpg"><img src="images/boat-view.jpg" alt="View from inside a wooden boat on the brown Nam Ou river" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_04" data-full="images/nong-khiaw-aerial.jpg"><img src="images/nong-khiaw-aerial.jpg" alt="Aerial view of Nong Khiaw town and its main road" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_05" data-full="images/sunset-tent.jpg"><img src="images/sunset-tent.jpg" alt="Sun setting behind a camping tent" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_06" data-full="images/weaving.jpg"><img src="images/weaving.jpg" alt="A villager weaving under a wooden house" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_07" data-full="images/river-boat.jpg"><img src="images/river-boat.jpg" alt="A blue long-tail boat on calm green water" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_08" data-full="images/lao-flag-clouds.jpg"><img src="images/lao-flag-clouds.jpg" alt="The Lao flag flying above the clouds" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_09" data-full="images/photographer-clouds.jpg"><img src="images/photographer-clouds.jpg" alt="A traveller photographing a sea of clouds" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_10" data-full="images/mountain-panorama.jpg"><img src="images/mountain-panorama.jpg" alt="Panorama of the mountains and the Nam Ou valley" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_11" data-full="images/sunset-camp-friends.jpg"><img src="images/sunset-camp-friends.jpg" alt="Friends relaxing at camp at golden hour" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_12" data-full="images/trail-walkers.jpg"><img src="images/trail-walkers.jpg" alt="Hikers walking a dirt trail toward misty mountains" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_13" data-full="images/camp-clouds-wide.jpg"><img src="images/camp-clouds-wide.jpg" alt="Wide view of camp tents above the clouds" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_14" data-full="images/night-dinner.jpg"><img src="images/night-dinner.jpg" alt="Guests and a guide sharing a Lao dinner at night" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_15" data-full="images/sunset-tents.jpg"><img src="images/sunset-tents.jpg" alt="A row of tents at sunset" loading="lazy"></button>
+      <button type="button" class="g" data-photo="gallery_16" data-full="images/village-house.jpg"><img src="images/village-house.jpg" alt="Smiling children and travellers on the steps of a village house" loading="lazy"></button>
     </div>
   </div>
 </section>

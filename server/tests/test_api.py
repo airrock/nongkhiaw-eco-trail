@@ -535,4 +535,43 @@ admin.ok('site_photo_reset', slot='hero'); admin.ok('site_photo_reset', slot=add
 c = site(query='?config=1')[1]
 eq((dict(c['photos']), c['hidden'], c['gallery']), ({'private': prv}, [], []), 'back to the built-in photo, added photo deleted, gallery photo back on')
 admin.ok('site_photo_reset', slot='private')
+# ---------- sheet round of 27/11/2026 (2): features 0020, 0021 ----------
+# 0021: a food request typed next to the food type, shown with it wherever the food is shown
+D = '2035-04-10'
+admin.ok('booking_new', booking=nb(id='SELFTEST-F21', tour='102', date=D, transfer='Round trip', pickupDate=D, returnDate='2035-04-12', hotel='SELFTEST-Hostel',
+    travellers=[{"first": "SELFTEST-Fa", "food": "Vegetarian", "foodNote": "no egg", "lunch": "Fried rice", "lunchChoice": "Tofu"}, {"first": "SELFTEST-Fb", "food": "Regular"}]))
+eq(sqlval("SELECT CONCAT(food, '|', food_note) FROM travellers WHERE booking_id='SELFTEST-F21' AND n=1"), 'Vegetarian|no egg', 'new booking: food request saved')
+g = admin.ok('traveller_save', booking_id='SELFTEST-F21', n=2, fields={'food_note': 'no fish'})
+eq([(t['food'], t['food_note']) for t in g['travellers']], [('Vegetarian', 'no egg'), ('Regular', 'no fish')], 'a booking: food request saved next to the food')
+refused(admin.call('traveller_save', booking_id='SELFTEST-F21', n=2, fields={'food_note': 'x' * 121}), 'food request: 120 characters at most')
+tr = [r for r in admin.ok('tour_report', date=D)['rows'] if r['booking_id'] == 'SELFTEST-F21']
+eq([r['food'] for r in tr], ['Vegetarian, no egg', 'Regular, no fish'], 'tour report: food with the request')
+lr = [r for r in admin.ok('lunch_report', date=D)['rows'] if r['booking_id'] == 'SELFTEST-F21']
+eq((lr[0]['food'], lr[0]['special'].startswith('Vegetarian, no egg')), ('Vegetarian, no egg', True), 'food report for the kitchen: the request')
+ts = admin.ok('trip_sheet', date=D)
+eq(([r['food'] for r in ts['rows'] if r['booking_id'] == 'SELFTEST-F21'], ts['food'].get('Vegetarian'), 'food_note' in ts['rows'][0]),
+   (['Vegetarian, no egg', 'Regular, no fish'], 1, False), 'trip sheet: request on the line, counted by kind')
+up = [r for r in admin.ok('transport', date=D)['up_rows'] if r['booking_id'] == 'SELFTEST-F21']
+eq([r['food'] for r in up], ['Vegetarian, no egg', 'Regular, no fish'], 'pickups (way up): food with the request')
+gr = [r for r in admin.ok('guide_report', date=D)['rows'] if r['booking_id'] == 'SELFTEST-F21'][0]
+eq(gr['food'], 'Vegetarian, no egg 1; Regular, no fish 1', 'guide report: the requests, kinds parted with ;')
+admin.ok('traveller_save', booking_id='SELFTEST-F21', n=2, fields={'food_note': ''})
+eq([r['food'] for r in admin.ok('tour_report', date=D)['rows'] if r['booking_id'] == 'SELFTEST-F21'][1], 'Regular', 'request removed: the food alone')
+
+# 0020: the website's contact section from the dashboard
+refused(office.call('settings_save', settings={'contact_email': 'a@b.co'}), 'office cannot change the website contact', 403)
+c = site(query='?config=1')[1]['contact']
+eq((c['whatsapp'], c['instagram'], c['email'], c['map_link'].startswith('https://www.google.com/maps')), ('+856 20 5897 5057', '@noynongkhiaw', 'nongkhiawlaos@gmail.com', True), 'config: contact as the website shows it today')
+refused(admin.call('settings_save', settings={'contact_whatsapp': ''}), 'WhatsApp cannot be empty')
+refused(admin.call('settings_save', settings={'contact_whatsapp': 'call us'}), 'WhatsApp must be a number')
+refused(admin.call('settings_save', settings={'contact_instagram_link': 'www.instagram.com/x'}), 'a link must start with https://')
+refused(admin.call('settings_save', settings={'contact_facebook_link': 'javascript:alert(1)'}), 'no script links')
+refused(admin.call('settings_save', settings={'contact_email': 'not an email'}), 'email must be an email')
+refused(admin.call('settings_save', settings={'contact_youtube': 'SELFTEST', 'contact_email': 'bad'}), 'one wrong value: nothing saved')
+eq(sqlval("SELECT value FROM settings WHERE `key`='contact_youtube'"), '@NoyNongKhiaw', 'nothing saved when one value is wrong')
+admin.ok('settings_save', settings={'contact_whatsapp': '+856 20 1111 2222', 'contact_youtube': '', 'contact_instagram': 'SELFTEST-ig', 'contact_instagram_link': 'https://www.instagram.com/selftest/'})
+c = site(query='?config=1')[1]['contact']
+eq((c['whatsapp'], c['youtube'], c['instagram'], c['instagram_link']), ('+856 20 1111 2222', '', 'SELFTEST-ig', 'https://www.instagram.com/selftest/'), 'config: saved contact, YouTube taken off')
+sql("UPDATE settings SET value = CASE `key` WHEN 'contact_whatsapp' THEN '+856 20 5897 5057' WHEN 'contact_youtube' THEN '@NoyNongKhiaw' WHEN 'contact_instagram' THEN '@noynongkhiaw' "
+    "WHEN 'contact_instagram_link' THEN 'https://www.instagram.com/noynongkhiaw/' ELSE value END WHERE `key` LIKE 'contact%'")
 print(f'all {n} checks passed')

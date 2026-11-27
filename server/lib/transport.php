@@ -81,7 +81,7 @@ function transport_day(string $date, ?string $onlyBooking = null): array {
     if (!$goesUp && !$back) continue;
     $people = array_map(fn ($t) => ['n' => (int) $t['n'], 'name' => $t['full_name'], 'first' => $t['first_name'], 'place' => $t['pickup_place'], 'map' => $t['pickup_map'], 'phone' => $t['whatsapp'],
         'passport' => $t['passport_no'], 'issued' => show_date($t['passport_issued']), 'expires' => show_date($t['passport_expires']), 'country' => $t['country'],
-        'food' => $t['food'] !== '' ? $t['food'] : 'Regular', 'lunch' => trim($t['lunch_dish'] . ($t['lunch_choice'] !== '' ? ' (' . $t['lunch_choice'] . ')' : ''))],
+        'food' => food_label($t), 'lunch' => trim($t['lunch_dish'] . ($t['lunch_choice'] !== '' ? ' (' . $t['lunch_choice'] . ')' : ''))],
       all("SELECT * FROM travellers WHERE booking_id = ? AND pickup_place <> 'No transfer' AND status = '' ORDER BY n", [$b['id']]));
     if (!$people) continue;
     $lead = (string) val("SELECT full_name FROM travellers WHERE booking_id = ? AND status = '' ORDER BY n LIMIT 1", [$b['id']]) ?: $people[0]['name'];   // a no-show is not the customer

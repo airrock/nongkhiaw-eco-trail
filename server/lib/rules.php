@@ -211,9 +211,9 @@ function save_booking(array $d, ?array $user = null): string {
         if (in_array($c, $menu[$dish]['choices'], true)) $choice = $c;
       } else $dish = '';
       q('INSERT INTO travellers (booking_id, n, first_name, last_name, full_name, country, gender, passport_no, passport_issued,
-           passport_expires, food, pickup_place, pickup_map, lunch_dish, lunch_choice, lunch_kip) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           passport_expires, food, food_note, pickup_place, pickup_map, lunch_dish, lunch_choice, lunch_kip) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         [$id, $i + 1, $first, $last, $full, country_name($p['nat'] ?? ''), clean($p['gender'] ?? '', 10), mb_strtoupper(clean($p['pass'] ?? '', 40)),
-         clean($p['issued'] ?? '', 10), clean($p['expires'] ?? '', 10), clean($p['food'] ?? '', 20), $place, $pmap, $dish, $choice, $kip]);
+         clean($p['issued'] ?? '', 10), clean($p['expires'] ?? '', 10), clean($p['food'] ?? '', 20), clean($p['foodNote'] ?? '', 120), $place, $pmap, $dish, $choice, $kip]);
     }
     $kipTotal = isset($d['transferKip']) && is_numeric($d['transferKip']) && $user ? (float) $d['transferKip'] : transfer_kip($transfer, $train, $riders);
     q('UPDATE bookings SET est_transfer_kip = ? WHERE id = ?', [$kipTotal, $id]);
@@ -242,9 +242,36 @@ function config_json(): array {
       'level' => $r['web_level'], 'included' => $r['web_included'], 'photo' => $r['web_photo'] !== '' ? upload_url($r['web_photo']) : '', 'price' => (float) $r['price_usd'],
       'days' => array_column(all('SELECT plan FROM tour_days WHERE tour = ? ORDER BY day', [$r['code']]), 'plan')];
   }
-  return ['content' => (object) $content, 'prices' => (object) $prices, 'tours' => $tours] + site_photos_json() + [
+  return ['content' => (object) $content, 'prices' => (object) $prices, 'tours' => $tours, 'contact' => (object) contact_json()] + site_photos_json() + [
     'kip' => ['one' => $one, 'round' => setting_num('transfer_round_kip', $one * 2), 'train' => setting_num('train_extra_kip', 70000)],
     'menu' => lunch_menu_json()];
+}
+// The website's Contact section (sheet 0020), edited in Website > Website contact: setting key => what the website shows today.
+// The website reads them from its config; an empty value takes that line off the website (WhatsApp cannot be empty).
+const CONTACT_KEYS = ['contact_whatsapp', 'contact_instagram', 'contact_instagram_link', 'contact_email', 'contact_facebook', 'contact_facebook_link',
+  'contact_youtube', 'contact_youtube_link', 'contact_website', 'contact_website_link', 'contact_map_link'];
+// Why a contact value cannot be saved ('' = fine).
+function contact_problem(string $k, string $v): string {
+  if ($k === 'contact_whatsapp') {
+    $d = preg_replace('/\D/', '', $v);
+    return strlen($d) < 8 || strlen($d) > 15 || !preg_match('/^\+?[\d\s().-]+$/', $v) ? 'WhatsApp: type the number with the country code, like +856 20 5897 5057.' : '';
+  }
+  if ($v === '') return '';
+  if (mb_strlen($v) > 200) return 'A contact line is too long (200 characters at most).';
+  if ($k === 'contact_email') return filter_var($v, FILTER_VALIDATE_EMAIL) ? '' : 'Email: that is not an email address.';
+  if (str_ends_with($k, '_link')) return preg_match('#^https://[^\s"\'<>]+$#i', $v) ? '' : 'A link must start with https:// (copy it from the address bar).';
+  return '';
+}
+// The contact part of the website's config: what the team saved, in the website's names (instagram, instagram_link, ...).
+function contact_json(): array {
+  $c = [];
+  foreach (all('SELECT `key`, value FROM settings WHERE `key` LIKE \'contact\\_%\'') as $r) if (in_array($r['key'], CONTACT_KEYS, true)) $c[substr($r['key'], 8)] = $r['value'];
+  return $c;
+}
+// Food as the team and the kitchen read it: the type ("Regular" when none) and the request typed next to it ("Regular, no egg").
+function food_label(array $t): string {
+  $f = ($t['food'] ?? '') !== '' ? $t['food'] : 'Regular';
+  return trim((string) ($t['food_note'] ?? '')) !== '' ? $f . ', ' . trim($t['food_note']) : $f;
 }
 // Places on the website that have a photo the team can change (Website > Website photos): slot => [what it is, built-in photo
 // on the website ('' = no photo until one is uploaded)]. The website marks each place with data-photo="<slot>".
@@ -325,7 +352,8 @@ function booking_summary(string $id, ?array $trav = null): array {
     'people' => count($trav), 'lead_name' => (array_values(array_filter($trav, fn ($t) => $t['status'] !== 'Cancelled'))[0] ?? $trav[0] ?? [])['full_name'] ?? '',   // a cancelled first guest is not the name on the receipt
     'traveller_names' => implode(', ', array_column($trav, 'full_name')),
     'countries' => implode(', ', array_values(array_unique(array_filter(array_column($trav, 'country'), 'strlen')))),
-    'food' => $count(array_map(fn ($t) => $t['food'] ?: 'Regular', $trav), ', ', ' '),
+    // a food request ("Vegetarian, no egg") has a comma of its own, so the kinds are then parted with ';'
+    'food' => $count(array_map('food_label', $trav), array_filter(array_column($trav, 'food_note'), fn ($x) => trim((string) $x) !== '') ? '; ' : ', ', ' '),
     'lunch' => $count(array_map(fn ($t) => $t['lunch_dish'] === '' || $t['status'] === 'Cancelled' ? '' : $t['lunch_dish'] . ($t['lunch_choice'] !== '' ? " ({$t['lunch_choice']})" : ''), $trav), '; ', ' '),
     'lunch_kip' => array_sum(array_map(fn ($t) => (float) $t['lunch_kip'], $trav)),
     'pickups' => implode('; ', $pick),

@@ -38,7 +38,7 @@ function allergy(?string $m): string {
 }
 
 function lunch_report(string $date): array {
-  $rows = all("SELECT t.booking_id, COALESCE(b.tour_date, b.pickup_date) AS day, b.tour, t.full_name, t.lunch_dish, t.lunch_choice, t.lunch_kip, t.food, t.pickup_place,
+  $rows = all("SELECT t.booking_id, COALESCE(b.tour_date, b.pickup_date) AS day, b.tour, t.full_name, t.lunch_dish, t.lunch_choice, t.lunch_kip, t.food, t.food_note, t.pickup_place,
       b.note, b.pickup_date, b.transport_remark, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no, a.medical,
       (SELECT COUNT(*) FROM travellers x WHERE x.booking_id = b.id AND x.status = '') AS pax
     FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id LEFT JOIN agreements a ON a.booking_id = t.booking_id AND a.n = t.n
@@ -49,9 +49,9 @@ function lunch_report(string $date): array {
     $item = trim($r['lunch_dish'] . ' ' . $r['lunch_choice']);
     $rides = $r['pickup_place'] !== '' && $r['pickup_place'] !== 'No transfer' && $r['pickup_date'] === $r['day'];
     $alg = allergy($r['medical']);
-    $special = implode(' | ', array_filter([$r['food'] !== '' && $r['food'] !== 'Regular' ? $r['food'] : '', $alg !== '' ? 'Allergy / medical: ' . $alg : '', $r['note']]));
+    $special = implode(' | ', array_filter([food_label($r) !== 'Regular' ? food_label($r) : '', $alg !== '' ? 'Allergy / medical: ' . $alg : '', $r['note']]));
     $out[] = ['no' => $i + 1, 'booking_id' => $r['booking_id'], 'tour' => $r['tour'], 'receipt_no' => $r['receipt_no'], 'name' => $r['full_name'], 'pax' => (int) $r['pax'],
-      'food' => ($r['food'] !== '' ? $r['food'] : 'Regular') . ($alg !== '' ? ' · allergy: ' . $alg : ''), 'alert' => $alg !== '', 'item' => $item, 'qty' => 1, 'day' => $r['day'],
+      'food' => food_label($r) . ($alg !== '' ? ' · allergy: ' . $alg : ''), 'alert' => $alg !== '', 'item' => $item, 'qty' => 1, 'day' => $r['day'],
       'ready_by' => ($rides ? 'When the minivan from Luang Prabang arrives' : 'Before the tour starts') . ($r['transport_remark'] !== '' ? " ({$r['transport_remark']})" : ''),
       'special' => $special, 'kip' => (float) $r['lunch_kip']];
     $count[$item] = ($count[$item] ?? 0) + 1;
@@ -104,21 +104,22 @@ function arrange_tour(string $date, string $tour): array {
 
 /* ---------- trip sheet: everyone on a tour that starts on one day ---------- */
 function trip_sheet(string $date): array {
-  $rows = all("SELECT b.tour, b.tour_name, b.pickup_date, t.full_name, t.country, t.gender, t.food, t.lunch_dish, t.lunch_choice, t.lunch_kip, t.pickup_place, t.pickup_map, t.booking_id,
+  $rows = all("SELECT b.tour, b.tour_name, b.pickup_date, t.full_name, t.country, t.gender, t.food, t.food_note, t.lunch_dish, t.lunch_choice, t.lunch_kip, t.pickup_place, t.pickup_map, t.booking_id,
       COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no
     FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND b.tour_date = ?
     ORDER BY (COALESCE(r.no, NULLIF(b.receipt_ref, '')) IS NULL), receipt_no, b.tour, b.submitted_at, b.id, t.n", [$date]);
   $food = []; $riders = 0; $lunch = 0;
   foreach ($rows as &$r) {
-    $f = $r['food'] !== '' ? $r['food'] : 'Regular'; $food[$f] = ($food[$f] ?? 0) + 1;
+    $f = $r['food'] !== '' ? $r['food'] : 'Regular'; $food[$f] = ($food[$f] ?? 0) + 1;   // counted by kind; the request shows on the person's line
+    $r['food'] = food_label($r);
     $lunch += (float) $r['lunch_kip'];   // the same lunches as the Food report
     // taking the minivan up today (someone who came up on another day is not counted again)
     if ($r['pickup_place'] !== '' && $r['pickup_place'] !== 'No transfer' && $r['pickup_date'] === $date) $riders++;
     elseif ($r['pickup_place'] === '' || $r['pickup_place'] === 'No transfer') $r['pickup_place'] = 'Staying in Nong Khiaw';
     $r['lunch'] = $r['lunch_dish'] . ($r['lunch_choice'] !== '' ? ' (' . $r['lunch_choice'] . ')' : '');
     $r['tour'] = $r['tour_name'] === '' || $r['tour_name'] === $r['tour'] ? $r['tour'] : trim($r['tour'] . ' ' . $r['tour_name']);
-    unset($r['lunch_kip'], $r['pickup_date']);
+    unset($r['lunch_kip'], $r['pickup_date'], $r['food_note']);
   }
   unset($r);
   $ids = array_column(all("SELECT b.id FROM bookings b WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND b.tour_date = ?
@@ -137,7 +138,7 @@ function trip_sheet(string $date): array {
 // One line per package ("Package 101 <name> – 5 pax", as the team asked on 2026-11-25), then the total of everyone starting
 // that day when there is more than one package. The guide of each line is typed by staff (day_guides).
 function tour_report(string $date): array {
-  $rows = all("SELECT t.booking_id, b.tour, b.tour_name, b.note, b.private_tour, t.full_name, t.food, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no, a.medical,
+  $rows = all("SELECT t.booking_id, b.tour, b.tour_name, b.note, b.private_tour, t.full_name, t.food, t.food_note, COALESCE(r.no, NULLIF(b.receipt_ref, '')) AS receipt_no, a.medical,
       (SELECT COUNT(*) FROM travellers x WHERE x.booking_id = b.id AND x.status = '') AS pax
     FROM travellers t JOIN bookings b ON b.id = t.booking_id LEFT JOIN receipts r ON r.booking_id = b.id LEFT JOIN agreements a ON a.booking_id = t.booking_id AND a.n = t.n
     WHERE b.deleted_at IS NULL AND b.status NOT IN ('Cancelled','No-show') AND t.status = '' AND b.tour <> ? AND b.tour_date = ?
@@ -146,7 +147,7 @@ function tour_report(string $date): array {
   foreach ($rows as $i => $r) {
     $first = $r['booking_id'] !== $last; $last = $r['booking_id'];
     $out[] = ['no' => $i + 1, 'booking_id' => $r['booking_id'], 'tour' => $r['tour'] . ($r['private_tour'] ? ' (PRIVATE)' : ''), 'receipt_no' => $r['receipt_no'], 'name' => $r['full_name'],
-      'pax' => $first ? (int) $r['pax'] : '', 'food' => ($r['food'] !== '' ? $r['food'] : 'Regular') . (allergy($r['medical']) !== '' ? ' · allergy: ' . allergy($r['medical']) : ''),
+      'pax' => $first ? (int) $r['pax'] : '', 'food' => food_label($r) . (allergy($r['medical']) !== '' ? ' · allergy: ' . allergy($r['medical']) : ''),
       'alert' => allergy($r['medical']) !== '', 'note' => $first ? $r['note'] : ''];
     $count[$r['tour']] = ($count[$r['tour']] ?? 0) + 1;
     $bookedName[$r['tour']] = $bookedName[$r['tour']] ?? $r['tour_name'];   // a package missing from Prices and settings keeps the booking's name

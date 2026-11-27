@@ -20,10 +20,10 @@ const BOOKING_FIELDS = ['tour_date', 'tour', 'tour_name', 'transfer', 'pickup_da
   'nk_pickup', 'payment_method', 'source', 'note', 'est_tour_usd', 'est_transfer_kip', 'status', 'staff_notes', 'whatsapp', 'vehicle_to_nk',
   'vehicle_to_lpb', 'transport_remark', 'pickup_time', 'return_time', 'viewpoint', 'addon_package', 'private_tour'];
 const TRAVELLER_FIELDS = ['first_name', 'last_name', 'full_name', 'country', 'gender', 'passport_no', 'passport_issued', 'passport_expires',
-  'food', 'pickup_place', 'pickup_map', 'status', 'whatsapp'];
+  'food', 'food_note', 'pickup_place', 'pickup_map', 'status', 'whatsapp'];
 const DATE_FIELDS = ['tour_date', 'pickup_date', 'return_date'];
 const SETTING_KEYS = ['transfer_one_kip', 'transfer_round_kip', 'train_extra_kip', 'kip_per_usd', 'nk_office', 'business_name',
-  'business_address', 'business_contact', 'logo_url', 'transport_manager'];
+  'business_address', 'business_contact', 'logo_url', 'transport_manager', ...CONTACT_KEYS];
 
 // Names staff see, for messages about a field.
 const FIELD_LABELS = ['tour_date' => 'Tour date', 'tour' => 'Tour code', 'tour_name' => 'Tour name', 'pickup_date' => 'Pickup date', 'return_date' => 'Date back',
@@ -31,7 +31,7 @@ const FIELD_LABELS = ['tour_date' => 'Tour date', 'tour' => 'Tour code', 'tour_n
   'est_tour_usd' => 'Tour amount USD', 'est_transfer_kip' => 'Transport amount kip', 'staff_notes' => 'Staff notes', 'whatsapp' => 'WhatsApp', 'vehicle_to_nk' => 'Vehicle to Nong Khiaw',
   'vehicle_to_lpb' => 'Vehicle to Luang Prabang', 'transport_remark' => 'Transport remark', 'pickup_time' => 'Pickup time', 'return_time' => 'Time back', 'viewpoint' => 'Viewpoint',
   'addon_package' => 'Additional package', 'first_name' => 'First name', 'last_name' => 'Last name', 'full_name' => 'Full name', 'country' => 'Nationality', 'gender' => 'Gender',
-  'passport_no' => 'Passport no', 'passport_issued' => 'Passport issued', 'passport_expires' => 'Passport expires', 'food' => 'Food', 'pickup_place' => 'Pickup place',
+  'passport_no' => 'Passport no', 'passport_issued' => 'Passport issued', 'passport_expires' => 'Passport expires', 'food' => 'Food', 'food_note' => 'Food request', 'pickup_place' => 'Pickup place',
   'pickup_map' => 'Pickup map', 'web_title' => 'Title', 'web_summary' => 'Description', 'web_duration' => 'Length', 'web_included' => 'Included'];
 // Each typed value must fit its column: a clear message names the field instead of a server error.
 function check_value(string $table, string $f, $v) {
@@ -333,6 +333,7 @@ try {
         if (isset($names[$k]) && (!is_numeric($v) || (float) $v <= 0)) throw new Refused($names[$k] . ' must be a number above 0. Nothing was saved.');
         if (mb_strlen((string) $v) > 500) throw new Refused("$k is too long. Nothing was saved.");
         if ($k === 'logo_url' && trim((string) $v) !== '' && !preg_match('#^https?://\S+$#i', trim((string) $v))) throw new Refused('Logo link must start with https://. Nothing was saved.');
+        if (in_array($k, CONTACT_KEYS, true) && ($why = contact_problem($k, trim((string) $v))) !== '') throw new Refused($why . ' Nothing was saved.');
       }
       tx(function () use ($todo, $user) { foreach ($todo as $k => $v) update_row('settings', '`key` = ?', [$k], ['value'], ['value' => trim((string) $v)], $k, $user); });
       out(['ok' => true]);

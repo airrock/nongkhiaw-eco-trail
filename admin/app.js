@@ -391,7 +391,7 @@
         field('Full name', input('full_name', tr.full_name)), field('Nationality', input('country', tr.country)),
         field('Gender', input('gender', tr.gender)), field('Passport no', input('passport_no', tr.passport_no)),
         field('Passport issued (DD-MM-YY)', input('passport_issued', trv.passport_issued, { placeholder: 'DD-MM-YY' })), field('Passport expires (DD-MM-YY)', input('passport_expires', trv.passport_expires, { placeholder: 'DD-MM-YY' })),
-        field('Food', select('food', [''].concat(FOODS), tr.food)),
+        field('Food', select('food', [''].concat(FOODS), tr.food)), field('Food request', input('food_note', tr.food_note, { maxlength: 120, placeholder: 'e.g. no egg' })),
         field('Pickup place (or "No transfer")', input('pickup_place', tr.pickup_place, { list: 'placelist' })), field('Pickup map', input('pickup_map', tr.pickup_map)),
         field('Lunch before the tour starts', dishSel), field('Lunch choice', choiceSel),
         field('Traveller status', select('status', ['', 'Cancelled', 'No-show'], tr.status)), field('Traveller WhatsApp', input('whatsapp', tr.whatsapp)));
@@ -553,7 +553,7 @@
       h('div', { class: 'scroll' }, h('table', { class: 'rtab' }, h('tr', {}, h('th', {}, L.no), h('th', {}, L.name), h('th', {}, L.passport), h('th', {}, L.food), h('th', {}, L.lunch),
           people.length > 1 ? h('th', { class: 'num' }, L.perperson + ' (USD / ' + L.kip + ')') : null),
         people.map(function (x, i) {
-          return h('tr', {}, h('td', {}, x.n), h('td', {}, x.full_name), h('td', {}, x.passport_no), h('td', {}, !x.food || x.food === 'Regular' ? L.regular : x.food),
+          return h('tr', {}, h('td', {}, x.n), h('td', {}, x.full_name), h('td', {}, x.passport_no), h('td', {}, (!x.food || x.food === 'Regular' ? L.regular : x.food) + (x.food_note ? ', ' + x.food_note : '')),
             h('td', {}, x.lunch_dish + (x.lunch_choice ? ' (' + x.lunch_choice + ')' : '')), people.length > 1 ? h('td', { class: 'num' }, each(x, i)) : null);
         }))),
       h('div', { class: 'scroll' }, h('table', { class: 'rtab', style: 'margin-top:12px' }, h('tr', {}, h('th', {}, L.item), h('th', {}, L.details), h('th', { class: 'num' }, 'USD'), h('th', { class: 'num' }, L.kip)),
@@ -587,7 +587,7 @@
       var n = people.children.length + 1;
       people.appendChild(h('div', { class: 'trav' }, h('strong', {}, 'Traveller ' + n), h('div', { class: 'grid', style: 'margin-top:8px' },
         field('First name', input('first', '')), field('Last name', input('last', '')), field('Nationality', input('nat', '')),
-        field('Food', select('food', FOODS, 'Regular')), field('Passport no', input('pass', '')))));
+        field('Food', select('food', FOODS, 'Regular')), field('Food request', input('foodNote', '', { maxlength: 120, placeholder: 'e.g. no egg' })), field('Passport no', input('pass', '')))));
     }
     addPerson();
     var pasted = h('textarea', { rows: 6, placeholder: 'Hello! I would like to book: …' });
@@ -994,6 +994,7 @@
       });
     }, function () {});
 
+    main.appendChild(websiteContact());
     main.appendChild(websitePhotos());
 
     var textCard = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Website text')), list = h('div', {});
@@ -1051,6 +1052,30 @@
     return file;
   }
   // Website > Website photos: every place on the site with a photo; a new photo, back to the built-in one, gallery photos off or on.
+  // The website's Contact section (sheet 0020). A new WhatsApp number also changes every WhatsApp button on the website and the
+  // number the booking form sends to. An empty line is taken off the website.
+  function websiteContact() {
+    var rows = [['WhatsApp / phone (with the country code)', 'contact_whatsapp', '+856 20 5897 5057'], ['Email', 'contact_email', 'name@gmail.com'],
+      ['Instagram (what the website shows)', 'contact_instagram', '@noynongkhiaw'], ['Instagram link', 'contact_instagram_link', 'https://www.instagram.com/…'],
+      ['Facebook (what the website shows)', 'contact_facebook', 'Nong Khiaw Laos Eco Trail'], ['Facebook link', 'contact_facebook_link', 'https://www.facebook.com/…'],
+      ['YouTube (what the website shows)', 'contact_youtube', '@NoyNongKhiaw'], ['YouTube link', 'contact_youtube_link', 'https://www.youtube.com/…'],
+      ['Website (what the website shows)', 'contact_website', 'nongkhiawlaos.com'], ['Website link', 'contact_website_link', 'https://nongkhiawlaos.com'],
+      ['Location: "Open map" link', 'contact_map_link', 'https://maps.app.goo.gl/…']];
+    var card = h('div', { class: 'card contact-card' }, h('h2', { style: 'margin-top:0' }, 'Website contact'),
+      h('p', { class: 'muted' }, 'The Contact part of the website (next to the booking form) and the Instagram, Facebook and YouTube links at the bottom of the page. A new WhatsApp number also changes every WhatsApp button on the website and the number the booking form sends to. Leave a line empty to take it off the website. Links start with https:// (copy them from the address bar). The place name ("Nong Khiaw, Laos") is in Website text below, part "10. Booking form & contact", because it is translated. The FAQ answer that gives the WhatsApp number follows the new number by itself. Changes appear on the website within a minute (on a phone, reload the page).'));
+    var g = h('div', { class: 'grid' });
+    card.appendChild(g);
+    api('settings').then(function (d) {
+      var s = d.settings;
+      rows.forEach(function (r) { g.appendChild(field(r[0], input(r[1], s[r[1]], { placeholder: r[2], maxlength: 200 }))); });
+      card.appendChild(h('p', {}, h('button', { class: 'btn small', onclick: function () {
+        var f = changed(g, s);
+        if (!Object.keys(f).length) { toast('Nothing changed'); return; }
+        api('settings_save', { settings: f }).then(function () { toast('Saved: the website shows it within a minute'); Object.assign(s, f); }, function () {});
+      } }, 'Save contact')));
+    }, function () {});
+    return card;
+  }
   function websitePhotos() {
     var card = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Website photos'),
       h('p', { class: 'muted' }, 'Choose a new photo for any place on the website. It is made smaller here before it is sent. "Back to the built-in photo" undoes it. Gallery photos can also be taken off the website, and you can add more. Changes appear on the website within a minute (on a phone, reload the page).')),

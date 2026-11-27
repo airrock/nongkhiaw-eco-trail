@@ -24,7 +24,7 @@
       if (k === 'kip2') return fmtNum(CONFIG.kip.round);
       if (k === 'kipTrain') return fmtNum(CONFIG.kip.train);
       return String(CONFIG.prices[k.slice(1)]);
-    });
+    }).split(BUILT_WA).join(waText());   // the FAQ answer names the WhatsApp number
   }
   function t(key) {
     var d = DICT[current] || {};
@@ -67,6 +67,11 @@
   // photos the team changed in the dashboard (Website > Website photos): by place (data-photo), gallery photos taken off,
   // gallery photos added. Only https addresses are used.
   var PHOTOS = {}, PHOTO_HIDDEN = [], GALLERY_ADDED = [];
+  // the Contact section as saved in the dashboard (Website > Website contact): a line saved empty is taken off the site;
+  // a line the config does not name keeps what the page has built in
+  var BUILT_WA = '+856 20 5897 5057', CONTACT = {};
+  function waText() { return CONTACT.whatsapp || BUILT_WA; }
+  function waDigits() { return waText().replace(/\D/g, ''); }
   function webUrl(u) { return typeof u === 'string' && /^https:\/\/[^\s"'<>]+$/.test(u) ? u : ''; }
   function applyConfig(cfg) {
     if (!cfg || typeof cfg !== 'object') return;
@@ -86,6 +91,16 @@
     if (cfg.photos && typeof cfg.photos === 'object') { PHOTOS = {}; Object.keys(cfg.photos).forEach(function (k) { var u = webUrl(cfg.photos[k]); if (u) PHOTOS[k] = u; }); }
     if (Array.isArray(cfg.hidden)) PHOTO_HIDDEN = cfg.hidden.map(String);
     if (Array.isArray(cfg.gallery)) GALLERY_ADDED = cfg.gallery.map(webUrl).filter(Boolean).slice(0, 40);
+    if (cfg.contact && typeof cfg.contact === 'object') {
+      CONTACT = {};
+      Object.keys(cfg.contact).forEach(function (k) {
+        var v = typeof cfg.contact[k] === 'string' ? cfg.contact[k].trim().slice(0, 200) : '';
+        if (/_link$/.test(k)) v = webUrl(v);
+        else if (k === 'email' && v && !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(v)) v = '';
+        else if (k === 'whatsapp') { var d = v.replace(/\D/g, ''); if (!/^\+?[\d\s().-]+$/.test(v) || d.length < 8 || d.length > 15) return; }
+        CONTACT[k] = v;
+      });
+    }
     if (cfg.kip) ['one', 'round', 'train'].forEach(function (k) { var n = Number(cfg.kip[k]); if (n > 0) CONFIG.kip[k] = n; });
     if (cfg.content) Object.keys(cfg.content).forEach(function (lang) {
       if (!DICT[lang]) return;
@@ -164,12 +179,45 @@
     });
   }
 
+  var SOCIAL = ['instagram', 'facebook', 'youtube'];   // the links at the bottom of the page, in this order
+  function applyContact() {
+    var digits = waDigits();
+    $$('a[href^="https://wa.me/"]').forEach(function (a) { a.setAttribute('href', a.getAttribute('href').replace(/^https:\/\/wa\.me\/\d+/, 'https://wa.me/' + digits)); });
+    $$('[data-contact]').forEach(function (li) {
+      var k = li.getAttribute('data-contact'), a = $('a', li);
+      if (!(k in CONTACT) || !a) return;
+      var v = CONTACT[k], href = k === 'whatsapp' ? 'https://wa.me/' + digits : k === 'email' ? 'mailto:' + v : CONTACT[k + '_link'];
+      li.hidden = !v;
+      a.textContent = v;
+      if (href) a.setAttribute('href', href); else a.removeAttribute('href');
+    });
+    var map = $('[data-contact-map]');
+    if (map && 'map_link' in CONTACT) { map.hidden = !CONTACT.map_link; if (CONTACT.map_link) map.setAttribute('href', CONTACT.map_link); }
+    var foot = document.getElementById('footSocial');
+    if (!foot) return;
+    var links = $$('a', foot);
+    links.forEach(function (a, i) {
+      var k = SOCIAL[i];
+      if (!k || !((k + '_link') in CONTACT)) return;
+      var link = CONTACT[k + '_link'];
+      a.hidden = !link || (k in CONTACT && !CONTACT[k]);
+      if (link) a.setAttribute('href', link);
+    });
+    // the dots between the links that are left: built again each time
+    foot.textContent = '';
+    links.forEach(function (a) {
+      if (!a.hidden && foot.querySelector('a:not([hidden])')) foot.appendChild(document.createTextNode(' \u00b7 '));
+      foot.appendChild(a);
+    });
+  }
+
   function applyLang(code) {
     if (!DICT[code]) code = 'en';
     current = code;
     document.documentElement.lang = code;
     renderExtraTours();
     applyPhotos();
+    applyContact();
 
     $$('.price-num[data-price]').forEach(function (el) { el.textContent = 'USD ' + CONFIG.prices[el.getAttribute('data-price')]; });
     $$('[data-i18n]').forEach(function (el) {
@@ -363,7 +411,6 @@
   });
 
   /* ---------- booking form -> WhatsApp ---------- */
-  var WA = '8562058975057';
   // Google Apps Script web app that saves submissions to the bookings sheet (apps-script/Code.gs); '' = off
   var SHEET_URL = 'https://app.nongkhiawlaos.com/api/exec.php';
   function saveToSheet(data) {
@@ -697,7 +744,7 @@
       (lunchKip ? '\n\nLunch before the tour total: ' + String(lunchKip).replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
         ' kip (not included in the tour price, paid separately)' : '') +
       (note ? '\n\nNote: ' + note : '');
-    window.open('https://wa.me/' + WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+    window.open('https://wa.me/' + waDigits() + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
   });
 
   // Issue date not in the future, expiry after issue, and passport still valid on the tour date (dates are yyyy-mm-dd).
@@ -742,7 +789,7 @@
       tour: tour, question: question, source: $('#qSource').value });
     var msg = 'Hello! I have a question' + (tour ? ' about ' + tourLabel(tour) : '') + ':\n' + question +
       '\n\nName: ' + name + '\nContact: ' + contact;
-    window.open('https://wa.me/' + WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+    window.open('https://wa.me/' + waDigits() + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
   });
 
   function loadConfig() {
@@ -784,7 +831,7 @@
   /* ---------- copy phone number ---------- */
   var copyBtn = $('#copyBtn');
   copyBtn.addEventListener('click', function () {
-    var num = '+856 20 5897 5057';
+    var num = waText();
     function done() {
       copyBtn.textContent = t('copied');
       setTimeout(function () { copyBtn.textContent = t('copy'); }, 1800);

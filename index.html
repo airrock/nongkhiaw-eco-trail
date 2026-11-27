@@ -380,23 +380,23 @@
       <h2 class="reveal" data-i18n="book_h">Tell us when you&rsquo;re coming.</h2>
       <p class="reveal" data-i18n="book_p">Fill in the short form and it opens WhatsApp with your message ready to send. Nothing is sent until you press send there.</p>
       <ul class="contact reveal">
-        <li>
+        <li data-contact="whatsapp">
           <span data-i18n="c_wa">WhatsApp / phone</span>
           <div class="contact-row">
             <a href="https://wa.me/8562058975057" target="_blank" rel="noopener">+856 20 5897 5057</a>
             <button type="button" class="copy" id="copyBtn" data-i18n="copy">Copy</button>
           </div>
         </li>
-        <li><span data-i18n="c_ig">Instagram</span><a href="https://www.instagram.com/noynongkhiaw/" target="_blank" rel="noopener">@noynongkhiaw</a></li>
-        <li><span data-i18n="c_email">Email</span><a href="mailto:nongkhiawlaos@gmail.com">nongkhiawlaos@gmail.com</a></li>
-        <li><span>Facebook</span><a href="https://www.facebook.com/profile.php?id=61571539602130" target="_blank" rel="noopener">Nong Khiaw Laos Eco Trail</a></li>
-        <li><span>YouTube</span><a href="https://www.youtube.com/@NoyNongKhiaw" target="_blank" rel="noopener">@NoyNongKhiaw</a></li>
-        <li><span data-i18n="c_web">Website</span><a href="https://nongkhiawlaos.com">nongkhiawlaos.com</a></li>
+        <li data-contact="instagram"><span data-i18n="c_ig">Instagram</span><a href="https://www.instagram.com/noynongkhiaw/" target="_blank" rel="noopener">@noynongkhiaw</a></li>
+        <li data-contact="email"><span data-i18n="c_email">Email</span><a href="mailto:nongkhiawlaos@gmail.com">nongkhiawlaos@gmail.com</a></li>
+        <li data-contact="facebook"><span>Facebook</span><a href="https://www.facebook.com/profile.php?id=61571539602130" target="_blank" rel="noopener">Nong Khiaw Laos Eco Trail</a></li>
+        <li data-contact="youtube"><span>YouTube</span><a href="https://www.youtube.com/@NoyNongKhiaw" target="_blank" rel="noopener">@NoyNongKhiaw</a></li>
+        <li data-contact="website"><span data-i18n="c_web">Website</span><a href="https://nongkhiawlaos.com">nongkhiawlaos.com</a></li>
         <li>
           <span data-i18n="c_loc">Location</span>
           <div class="contact-row">
             <strong class="loc" data-i18n="loc_val">Nong Khiaw, Laos</strong>
-            <a class="copy" href="https://www.google.com/maps/search/?api=1&amp;query=Nong+Khiaw+Laos" target="_blank" rel="noopener" data-i18n="map_open">Open map</a>
+            <a class="copy" data-contact-map href="https://www.google.com/maps/search/?api=1&amp;query=Nong+Khiaw+Laos" target="_blank" rel="noopener" data-i18n="map_open">Open map</a>
           </div>
         </li>
       </ul>
@@ -532,7 +532,7 @@
   </div>
   <div class="wrap foot-bottom">
     <span>&copy; <span id="year">2026</span> Nong Khiaw Eco-Trail</span>
-    <span class="social"><a href="https://www.instagram.com/noynongkhiaw/" target="_blank" rel="noopener">Instagram</a> · <a href="https://www.facebook.com/profile.php?id=61571539602130" target="_blank" rel="noopener">Facebook</a> · <a href="https://www.youtube.com/@NoyNongKhiaw" target="_blank" rel="noopener">YouTube</a></span>
+    <span class="social" id="footSocial"><a href="https://www.instagram.com/noynongkhiaw/" target="_blank" rel="noopener">Instagram</a> · <a href="https://www.facebook.com/profile.php?id=61571539602130" target="_blank" rel="noopener">Facebook</a> · <a href="https://www.youtube.com/@NoyNongKhiaw" target="_blank" rel="noopener">YouTube</a></span>
   </div>
   <p class="wrap credit">Website by <strong>Jeevesh</strong></p>
 </footer>

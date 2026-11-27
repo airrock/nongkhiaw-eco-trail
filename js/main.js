@@ -17,7 +17,8 @@
     return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, sep);
   }
   function fill(v) {
-    return v.replace(/\{(p101|p102|p103|p001|pmin|kip1|kip2|kipTrain)\}/g, function (m, k) {
+    return v.replace(/\{(p101|p102|p103|p001|pmin|kip1|kip2|kipTrain|ntours)\}/g, function (m, k) {
+      if (k === 'ntours') return String(4 + EXTRA_TOURS.length);   // the four built-in tours and the ones the team added
       if (k === 'pmin') return String(Math.min.apply(null, Object.keys(CONFIG.prices).map(function (c) { return CONFIG.prices[c]; })));
       if (k === 'kip1') return fmtNum(CONFIG.kip.one);
       if (k === 'kip2') return fmtNum(CONFIG.kip.round);
@@ -63,6 +64,10 @@
 
   var EXTRA_TOURS = [];
   var BUILT_IN = null;
+  // photos the team changed in the dashboard (Website > Website photos): by place (data-photo), gallery photos taken off,
+  // gallery photos added. Only https addresses are used.
+  var PHOTOS = {}, PHOTO_HIDDEN = [], GALLERY_ADDED = [];
+  function webUrl(u) { return typeof u === 'string' && /^https:\/\/[^\s"'<>]+$/.test(u) ? u : ''; }
   function applyConfig(cfg) {
     if (!cfg || typeof cfg !== 'object') return;
     // start again from the built-in text each time: a text set back to built-in in the dashboard must not stay changed
@@ -78,6 +83,9 @@
     if (Array.isArray(cfg.tours)) EXTRA_TOURS = cfg.tours.filter(function (x) {
       return x && /^[A-Za-z0-9]{1,5}$/.test(String(x.code)) && ['101', '102', '103', '001', 'T00'].indexOf(String(x.code)) === -1 && Number(x.price) > 0;
     }).slice(0, 30);
+    if (cfg.photos && typeof cfg.photos === 'object') { PHOTOS = {}; Object.keys(cfg.photos).forEach(function (k) { var u = webUrl(cfg.photos[k]); if (u) PHOTOS[k] = u; }); }
+    if (Array.isArray(cfg.hidden)) PHOTO_HIDDEN = cfg.hidden.map(String);
+    if (Array.isArray(cfg.gallery)) GALLERY_ADDED = cfg.gallery.map(webUrl).filter(Boolean).slice(0, 40);
     if (cfg.kip) ['one', 'round', 'train'].forEach(function (k) { var n = Number(cfg.kip[k]); if (n > 0) CONFIG.kip[k] = n; });
     if (cfg.content) Object.keys(cfg.content).forEach(function (lang) {
       if (!DICT[lang]) return;
@@ -133,11 +141,35 @@
     Object.keys(keep).forEach(function (id) { var sel = document.getElementById(id); if (sel.querySelector('option[value="' + keep[id] + '"]')) sel.value = keep[id]; });
   }
 
+  // Each place with a photo keeps its built-in photo (data-orig) so a photo set back to built-in in the dashboard shows again.
+  // A place with no built-in photo (private tour, private minivan) stays hidden until the team adds one.
+  function applyPhotos() {
+    $$('[data-photo]').forEach(function (el) {
+      var slot = el.getAttribute('data-photo'), img = el.tagName === 'IMG' ? el : el.querySelector('img');
+      if (!img) return;
+      if (!img.hasAttribute('data-orig')) { img.setAttribute('data-orig', img.getAttribute('src') || ''); img.setAttribute('data-pos', img.style.objectPosition || ''); }
+      var url = PHOTOS[slot] || '', orig = img.getAttribute('data-orig');
+      var want = url || orig;
+      if (want && img.getAttribute('src') !== want) img.setAttribute('src', want);
+      img.style.objectPosition = url ? '' : img.getAttribute('data-pos');   // the built-in photo's own framing only
+      if (el.classList.contains('g')) { el.setAttribute('data-full', want); el.hidden = PHOTO_HIDDEN.indexOf(slot) !== -1; }
+      else el.hidden = !want;
+    });
+    var box = document.getElementById('masonry'); if (!box) return;
+    $$('[data-gadded]', box).forEach(function (n) { n.parentNode.removeChild(n); });
+    GALLERY_ADDED.forEach(function (u) {
+      var b = document.createElement('button'), im = document.createElement('img');
+      b.type = 'button'; b.className = 'g'; b.setAttribute('data-full', u); b.setAttribute('data-gadded', '');
+      im.src = u; im.alt = 'Photo from Nong Khiaw Eco-Trail'; im.loading = 'lazy'; b.appendChild(im); box.appendChild(b);
+    });
+  }
+
   function applyLang(code) {
     if (!DICT[code]) code = 'en';
     current = code;
     document.documentElement.lang = code;
     renderExtraTours();
+    applyPhotos();
 
     $$('.price-num[data-price]').forEach(function (el) { el.textContent = 'USD ' + CONFIG.prices[el.getAttribute('data-price')]; });
     $$('[data-i18n]').forEach(function (el) {
@@ -147,6 +179,7 @@
     $$('[data-i18n-html]').forEach(function (el) {
       var v = t(el.getAttribute('data-i18n-html'));
       if (v) el.innerHTML = safeHtml(v);
+      if (el.hasAttribute('data-optional')) { if (!v) el.textContent = ''; el.hidden = !v; }   // a text the team may add later
     });
     $$('[data-i18n-ph]').forEach(function (el) {
       var v = t(el.getAttribute('data-i18n-ph'));
@@ -247,7 +280,8 @@
   }
 
   /* ---------- lightbox ---------- */
-  var items = $$('.g'), lb = $('#lightbox'), lbImg = $('#lbImg'), idx = 0, lastFocus = null;
+  // the gallery can change after the page loads (photos from the dashboard), so the list is read on each open
+  var items = [], lb = $('#lightbox'), lbImg = $('#lbImg'), idx = 0, lastFocus = null;
   function show(i) {
     idx = (i + items.length) % items.length;
     lbImg.src = items[idx].getAttribute('data-full');
@@ -255,7 +289,12 @@
   }
   function openLb(i) { lastFocus = document.activeElement; show(i); lb.hidden = false; document.body.style.overflow = 'hidden'; $('#lbClose').focus(); }
   function closeLb() { lb.hidden = true; lbImg.src = ''; document.body.style.overflow = ''; if (lastFocus) lastFocus.focus(); }
-  items.forEach(function (b, i) { b.addEventListener('click', function () { openLb(i); }); });
+  var masonry = $('#masonry');
+  if (masonry) masonry.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.g') : null; if (!b) return;
+    items = $$('.g', masonry).filter(function (x) { return !x.hidden; });
+    var i = items.indexOf(b); if (i !== -1) openLb(i);
+  });
   $('#lbClose').addEventListener('click', closeLb);
   $('#lbPrev').addEventListener('click', function () { show(idx - 1); });
   $('#lbNext').addEventListener('click', function () { show(idx + 1); });

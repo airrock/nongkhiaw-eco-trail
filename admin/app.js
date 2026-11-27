@@ -159,7 +159,11 @@
       // a search looks through every booking, whatever the dates say
       api('bookings', Object.assign({ deleted: deleted.checked }, state.filters, q.value.trim() ? { from: '', to: '' } : {})).then(function (d) {
         list.textContent = '';
-        count.textContent = d.bookings.length + (d.bookings.length === 500 ? '+ (first 500 shown: narrow the dates)' : '') + ' booking' + (d.bookings.length === 1 ? '' : 's');
+        // pax: the guests who come, so cancelled and no-show bookings and guests are not counted; transport-only riders apart
+        var pax = 0, ride = 0;
+        d.bookings.forEach(function (b) { if (b.status === 'Cancelled' || b.status === 'No-show') return; if (b.tour === 'T00') ride += Number(b.pax) || 0; else pax += Number(b.pax) || 0; });
+        count.textContent = d.bookings.length + (d.bookings.length === 500 ? '+ (first 500 shown: narrow the dates)' : '') + ' booking' + (d.bookings.length === 1 ? '' : 's') +
+          ' · ' + pax + ' pax' + (ride ? ' on tours · ' + ride + ' transport only' : '') + ' (cancelled and no-show not counted)';
         d.bookings.forEach(function (b) {
           list.appendChild(h('li', {}, h('button', { class: 'item', onclick: function () { state.tab = 'booking'; state.id = b.id; render(); } },
             h('strong', {}, (b.lead_name || '(no name)') + (b.people > 1 ? ' + ' + (b.people - 1) : '')), h('span', { class: 'pill ' + b.status }, b.status),
@@ -308,6 +312,8 @@
     api('booking', { id: state.id }).then(function (d) { drawBooking(main, d); }, function () { state.tab = 'bookings'; render(); });
   }
   // dates that do not fit the tour: shown, never blocking (staff may know better)
+  // 2026-11-27 -> 27-11-26 (passport dates, as the team asked); anything not a full date is shown as it is
+  function ppDate(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? m[3] + '-' + m[2] + '-' + m[1].slice(2) : (v || ''); }
   function checkBox(list) {
     return h('div', { class: 'card noprint', style: 'border-color:#c0392b;background:#fdf1ef' }, h('strong', { class: 'red' }, 'Check the minivan dates'),
       h('ul', { style: 'margin:6px 0 0;padding-left:20px' }, list.map(function (x) { return h('li', {}, x); })));
@@ -318,6 +324,7 @@
     function redraw(x) { toast('Saved'); drawBooking(main, x); }
     main.appendChild(h('p', { class: 'noprint' }, h('button', { class: 'btn ghost small', onclick: function () { state.tab = 'bookings'; render(); } }, '← All bookings')));
     if (d.checks && d.checks.length) main.appendChild(checkBox(d.checks));
+    if (d.price_check) main.appendChild(h('div', { class: 'card noprint', style: 'border-color:#c0392b;background:#fdf1ef' }, h('strong', { class: 'red' }, 'Check the tour amount'), h('p', { style: 'margin:6px 0 0' }, d.price_check)));
 
     // details
     var form = h('div', { class: 'grid' },
@@ -377,11 +384,13 @@
         choiceSel.value = cs.indexOf(keep) !== -1 ? keep : ''; choiceSel.disabled = !cs.length;
       };
       fillChoices(tr.lunch_choice); dishSel.addEventListener('change', function () { fillChoices(''); });
+      // passport dates are shown day first (27-11-26); the server stores them as yyyy-mm-dd
+      var trv = Object.assign({}, tr, { passport_issued: ppDate(tr.passport_issued), passport_expires: ppDate(tr.passport_expires) });
       var g = h('div', { class: 'grid', style: 'margin-top:8px' },
         field('First name', input('first_name', tr.first_name)), field('Last name', input('last_name', tr.last_name)),
         field('Full name', input('full_name', tr.full_name)), field('Nationality', input('country', tr.country)),
         field('Gender', input('gender', tr.gender)), field('Passport no', input('passport_no', tr.passport_no)),
-        field('Passport issued', input('passport_issued', tr.passport_issued)), field('Passport expires', input('passport_expires', tr.passport_expires)),
+        field('Passport issued (DD-MM-YY)', input('passport_issued', trv.passport_issued, { placeholder: 'DD-MM-YY' })), field('Passport expires (DD-MM-YY)', input('passport_expires', trv.passport_expires, { placeholder: 'DD-MM-YY' })),
         field('Food', select('food', [''].concat(FOODS), tr.food)),
         field('Pickup place (or "No transfer")', input('pickup_place', tr.pickup_place, { list: 'placelist' })), field('Pickup map', input('pickup_map', tr.pickup_map)),
         field('Lunch before the tour starts', dishSel), field('Lunch choice', choiceSel),
@@ -390,7 +399,7 @@
         h('summary', {}, tr.n + '. ' + (tr.full_name || '(no name)') + (tr.status ? ' · ' + tr.status : '') + (signed ? ' · agreement signed' : '')),
         g, gone ? null : h('div', { class: 'bar', style: 'margin-top:10px' },
           h('button', { class: 'btn small', onclick: function () {
-            var f = changed(g, tr);
+            var f = changed(g, trv);
             if (!Object.keys(f).length) { toast('Nothing changed'); return; }
             if ('lunch_choice' in f && !('lunch_dish' in f)) f.lunch_dish = g.querySelector('[name=lunch_dish]').value;
             if ('lunch_dish' in f) f.lunch_choice = g.querySelector('[name=lunch_choice]').value;
@@ -911,7 +920,7 @@
         costs.forEach(addCost); addCost();
         var ad = input('addon', addon.addon), adDay = input('addon_day', addon.starts_day, { type: 'number', min: 1, style: 'width:90px' });
         var builtIn = ['101', '102', '103', '001'].indexOf(t.code) !== -1, web, saveWeb = null;
-        if (builtIn) web = h('p', { class: 'muted' }, 'On the website: this is one of the four original tours. Its text is under Website > Website text, its price under Prices and settings.');
+        if (builtIn) web = h('p', { class: 'muted' }, 'On the website: this is one of the four original tours. Its text is under Website > Website text (part of the site "3. Tour ' + t.code + ' card"), its photo under Website > Website photos, its price under Prices and settings.');
         else {
           var show = h('input', { type: 'checkbox' }); show.checked = !!Number(t.web_show);
           var wt = input('title', t.web_title, { placeholder: t.name }), wd = input('duration', t.web_duration, { placeholder: '2 days · 1 night' }), wl = select('level', ['', 'Easy', 'Moderate', 'Hard'], t.web_level);
@@ -985,6 +994,8 @@
       });
     }, function () {});
 
+    main.appendChild(websitePhotos());
+
     var textCard = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Website text')), list = h('div', {});
     main.appendChild(textCard);
     api('content').then(function (d) {
@@ -1016,10 +1027,66 @@
         if (shown > 120) list.appendChild(h('p', { class: 'muted' }, 'Showing the first 120. Narrow the search to see the rest.'));
       }
       [lang, place].forEach(function (x) { x.addEventListener('change', draw); }); find.addEventListener('input', draw);
-      textCard.appendChild(h('p', { class: 'muted' }, 'Each language is edited on its own: changing the English text does not change the translations. A saved text appears on the website within a minute. Empty a text to go back to the built-in one.'));
+      textCard.appendChild(h('p', { class: 'muted' }, 'Every text on the website is here: pick the part of the site (a tour card, Private tour, Transport only, Our story, Gallery, FAQ, Booking form & contact...) or search for a word. Each language is edited on its own: changing the English text does not change the translations. A saved text appears on the website within a minute. Empty a text to go back to the built-in one. {ntours} is replaced by the number of tours on the website.'));
       textCard.appendChild(h('div', { class: 'bar' }, field('Language', lang), field('Part of the site', place), h('div', { style: 'flex:1 1 180px' }, field('Search all parts', find))));
       textCard.appendChild(list); draw();
     }, function () {});
+  }
+
+  // A file field that turns the chosen photo into a smaller JPEG (1600 px at most, so a phone photo uploads fast) and hands it on.
+  function photoPicker(onData) {
+    var file = h('input', { type: 'file', accept: 'image/*' });
+    file.addEventListener('change', function () {
+      if (!file.files[0]) return;
+      var pic = new Image(), url = URL.createObjectURL(file.files[0]);
+      pic.onload = function () {
+        var k = Math.min(1, 1600 / Math.max(pic.width, pic.height)), c = h('canvas', { width: Math.round(pic.width * k), height: Math.round(pic.height * k) });
+        var cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height); cx.drawImage(pic, 0, 0, c.width, c.height);   // see-through parts white
+        URL.revokeObjectURL(url); file.value = '';
+        onData(c.toDataURL('image/jpeg', 0.82));
+      };
+      pic.onerror = function () { file.value = ''; toast('That file is not a photo.', true); };
+      pic.src = url;
+    });
+    return file;
+  }
+  // Website > Website photos: every place on the site with a photo; a new photo, back to the built-in one, gallery photos off or on.
+  function websitePhotos() {
+    var card = h('div', { class: 'card' }, h('h2', { style: 'margin-top:0' }, 'Website photos'),
+      h('p', { class: 'muted' }, 'Choose a new photo for any place on the website. It is made smaller here before it is sent. "Back to the built-in photo" undoes it. Gallery photos can also be taken off the website, and you can add more. Changes appear on the website within a minute (on a phone, reload the page).')),
+      box = h('div', { class: 'photo-grid' });
+    card.appendChild(box);
+    function draw() {
+      api('site_photos').then(function (d) {
+        box.textContent = '';
+        d.photos.forEach(function (p) {
+          var src = p.url || (p.built_in ? guestSite() + p.built_in : '');
+          var img = src ? h('img', { src: src, alt: '', loading: 'lazy' }) : h('div', { class: 'photo-none' }, 'No photo yet: this place shows on the website once you add one');
+          var tags = [p.url ? h('span', { class: 'pill Confirmed' }, p.added ? 'Added' : 'Changed') : h('span', { class: 'pill' }, p.built_in ? 'Built-in' : 'Empty'),
+            p.hidden ? h('span', { class: 'pill Cancelled' }, 'Off the website') : null];
+          var gallery = /^gallery_/.test(p.slot);
+          box.appendChild(h('div', { class: 'photo-slot' + (p.hidden ? ' off' : '') }, img,
+            h('div', { class: 'bar', style: 'margin:6px 0' }, h('strong', {}, p.label), tags),
+            h('label', { class: 'f' }, p.added ? 'Replace this photo' : 'New photo', photoPicker(function (data) {
+              api('site_photo', { slot: p.slot, data: data }).then(function () { toast('Photo saved'); draw(); }, function () {});
+            })),
+            h('p', { style: 'margin:6px 0 0' },
+              p.url ? h('button', { class: 'btn ghost small' + (p.added ? ' danger' : ''), onclick: function () {
+                if (p.added && !confirm('Delete this gallery photo?')) return;
+                api('site_photo_reset', { slot: p.slot }).then(function () { toast(p.added ? 'Deleted' : 'Back to the built-in photo'); draw(); }, function () {});
+              } }, p.added ? 'Delete' : (p.built_in ? 'Back to the built-in photo' : 'Remove the photo')) : null, ' ',
+              gallery ? h('button', { class: 'btn ghost small', onclick: function () {
+                api('site_photo_hide', { slot: p.slot, hidden: p.hidden ? 0 : 1 }).then(function () { toast(p.hidden ? 'Back on the website' : 'Taken off the website'); draw(); }, function () {});
+              } }, p.hidden ? 'Show on the website' : 'Take off the website') : null)));
+        });
+        box.appendChild(h('div', { class: 'photo-slot' }, h('div', { class: 'photo-none' }, '+ Add a photo to the gallery'),
+          h('label', { class: 'f' }, 'New gallery photo', photoPicker(function (data) {
+            api('site_photo', { slot: 'gallery_new', data: data }).then(function () { toast('Photo added to the gallery'); draw(); }, function () {});
+          }))));
+      }, function () {});
+    }
+    draw();
+    return card;
   }
 
   /* ---------- agreements ---------- */

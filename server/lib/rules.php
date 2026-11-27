@@ -20,11 +20,31 @@ function recount_booking(string $id): void {
   q('UPDATE bookings SET est_transfer_kip = ? WHERE id = ?', [transfer_kip($b['transfer'], (bool) $b['train_dropoff'], riders($id)), $id]);
   sync_paid_status($id);
 }
-// One traveller more (+1) or fewer (-1): the tour amount keeps the booking's own price per person.
+// One traveller more (+1) or fewer (-1). A booking at the price list (a whole number of people at the tour's list price) stays
+// at the list price for the new number of people, so an amount that missed an earlier change (before 25/11/2026 adding a
+// guest did not raise it) is not halved later (bug 007). Any other amount (a private tour, a discount) keeps its own price
+// per person.
 function scale_tour(string $id, int $delta): void {
   $people = (int) val("SELECT COUNT(*) FROM travellers WHERE booking_id = ? AND status <> 'Cancelled'", [$id]);
-  $usd = (float) val('SELECT est_tour_usd FROM bookings WHERE id = ?', [$id]);
-  if ($people > 0 && $people + $delta >= 0) q('UPDATE bookings SET est_tour_usd = ? WHERE id = ?', [round($usd / $people * ($people + $delta), 2), $id]);
+  $b = one('SELECT est_tour_usd, private_tour, tour FROM bookings WHERE id = ?', [$id]);
+  if (!$b || $people + $delta < 0) return;
+  $usd = (float) $b['est_tour_usd'];
+  $list = (float) val('SELECT price_usd FROM tours WHERE code = ?', [$b['tour']]);
+  if (!(int) $b['private_tour'] && $list > 0 && $usd > 0 && abs($usd / $list - round($usd / $list)) < 0.0001) $new = $list * ($people + $delta);
+  elseif ($people > 0) $new = round($usd / $people * ($people + $delta), 2);
+  else return;
+  q('UPDATE bookings SET est_tour_usd = ? WHERE id = ?', [$new, $id]);
+}
+// A tour amount that is not the price list for the guests on the booking (not for a private tour): shown on the booking so
+// staff can look, never changed by itself (a discount is a choice).
+function price_check(array $b): string {
+  if ((int) $b['private_tour'] || in_array($b['status'], ['Cancelled', 'No-show'], true)) return '';
+  $list = (float) val('SELECT price_usd FROM tours WHERE code = ?', [$b['tour']]);
+  $people = (int) val("SELECT COUNT(*) FROM travellers WHERE booking_id = ? AND status <> 'Cancelled'", [$b['id']]);   // a no-show still pays
+  $usd = (float) $b['est_tour_usd'];
+  if ($list <= 0 || $people < 1 || abs($usd - $list * $people) < 0.005) return '';
+  $f = fn ($n) => rtrim(rtrim(number_format($n, 2, '.', ','), '0'), '.');
+  return 'Tour amount is USD ' . $f($usd) . '; the price list gives ' . $people . ' guest' . ($people === 1 ? '' : 's') . ' × USD ' . $f($list) . ' = USD ' . $f($list * $people) . '. If that is wrong, change "Tour amount USD" and save.';
 }
 function goes_up(string $t): bool { return (bool) preg_match('/round/i', $t) || (preg_match('/one way/i', $t) && !preg_match('/luang prabang/i', $t)); }
 function goes_down(string $t): bool { return (bool) preg_match('/round/i', $t) || (bool) preg_match('/to luang prabang/i', $t); }
@@ -222,9 +242,60 @@ function config_json(): array {
       'level' => $r['web_level'], 'included' => $r['web_included'], 'photo' => $r['web_photo'] !== '' ? upload_url($r['web_photo']) : '', 'price' => (float) $r['price_usd'],
       'days' => array_column(all('SELECT plan FROM tour_days WHERE tour = ? ORDER BY day', [$r['code']]), 'plan')];
   }
-  return ['content' => (object) $content, 'prices' => (object) $prices, 'tours' => $tours,
+  return ['content' => (object) $content, 'prices' => (object) $prices, 'tours' => $tours] + site_photos_json() + [
     'kip' => ['one' => $one, 'round' => setting_num('transfer_round_kip', $one * 2), 'train' => setting_num('train_extra_kip', 70000)],
     'menu' => lunch_menu_json()];
+}
+// Places on the website that have a photo the team can change (Website > Website photos): slot => [what it is, built-in photo
+// on the website ('' = no photo until one is uploaded)]. The website marks each place with data-photo="<slot>".
+const SITE_PHOTOS = [
+  'hero' => ['Top of the page (the big photo)', 'images/bridge-aerial.jpg'],
+  'tour_101' => ['Tour 101 card', 'images/camp-sea-of-clouds.jpg'],
+  'tour_102' => ['Tour 102 card', 'images/sunset-tents.jpg'],
+  'tour_103' => ['Tour 103 card', 'images/village-house.jpg'],
+  'tour_001' => ['Tour 001 card (1-day boat trip)', 'images/tad-mok-waterfall.jpg'],
+  'private' => ['Private tour', ''],
+  'transport_private' => ['Private minivan (Transport only)', ''],
+  'story' => ['Our story (background)', 'images/mountain-panorama.jpg'],
+  'gallery_01' => ['Gallery photo 1', 'images/sunset-valley.jpg'],
+  'gallery_02' => ['Gallery photo 2', 'images/camp-sea-of-clouds.jpg'],
+  'gallery_03' => ['Gallery photo 3', 'images/boat-view.jpg'],
+  'gallery_04' => ['Gallery photo 4', 'images/nong-khiaw-aerial.jpg'],
+  'gallery_05' => ['Gallery photo 5', 'images/sunset-tent.jpg'],
+  'gallery_06' => ['Gallery photo 6', 'images/weaving.jpg'],
+  'gallery_07' => ['Gallery photo 7', 'images/river-boat.jpg'],
+  'gallery_08' => ['Gallery photo 8', 'images/lao-flag-clouds.jpg'],
+  'gallery_09' => ['Gallery photo 9', 'images/photographer-clouds.jpg'],
+  'gallery_10' => ['Gallery photo 10', 'images/mountain-panorama.jpg'],
+  'gallery_11' => ['Gallery photo 11', 'images/sunset-camp-friends.jpg'],
+  'gallery_12' => ['Gallery photo 12', 'images/trail-walkers.jpg'],
+  'gallery_13' => ['Gallery photo 13', 'images/camp-clouds-wide.jpg'],
+  'gallery_14' => ['Gallery photo 14', 'images/night-dinner.jpg'],
+  'gallery_15' => ['Gallery photo 15', 'images/sunset-tents.jpg'],
+  'gallery_16' => ['Gallery photo 16', 'images/village-house.jpg'],
+];
+const GALLERY_ADDED = '/^gallery_x[a-f0-9]{12}$/';
+// The photos part of the website's config: changed photos by slot, gallery photos taken off, gallery photos the team added.
+function site_photos_json(): array {
+  $photos = []; $hidden = []; $added = [];
+  foreach (all('SELECT slot, file, hidden FROM site_photos ORDER BY updated_at, slot') as $r) {
+    if (preg_match(GALLERY_ADDED, $r['slot'])) { if ($r['file'] !== '' && !(int) $r['hidden']) $added[] = upload_url($r['file']); continue; }
+    if (!isset(SITE_PHOTOS[$r['slot']])) continue;
+    if ((int) $r['hidden']) $hidden[] = $r['slot'];
+    elseif ($r['file'] !== '') $photos[$r['slot']] = upload_url($r['file']);
+  }
+  return ['photos' => (object) $photos, 'hidden' => $hidden, 'gallery' => $added];
+}
+// A JPEG the dashboard sent (already made smaller there), checked and written to the uploads folder under a name made here.
+function save_upload_jpeg(string $data, string $prefix, string $dir): string {
+  $raw = base64_decode(preg_replace('/^data:image\/jpeg;base64,/', '', $data), true);
+  if ($raw === false || strlen($raw) < 100 || strlen($raw) > 3000000) throw new Refused('The photo is missing or too large (3 MB at most).');
+  $info = @getimagesizefromstring($raw);
+  if (!$info || $info[2] !== IMAGETYPE_JPEG || $info[0] > 4000 || $info[1] > 4000) throw new Refused('That file is not a JPEG photo.');
+  if (!is_dir($dir) && !mkdir($dir, 0755, true)) throw new RuntimeException('cannot create the uploads folder');
+  $file = $prefix . '-' . bin2hex(random_bytes(6)) . '.jpg';
+  if (file_put_contents("$dir/$file", $raw) === false) throw new RuntimeException('cannot write the photo');
+  return $file;
 }
 // Address of a file in the uploads folder (next to api/), as the website on the other domain needs it.
 function upload_url(string $file): string {
@@ -335,6 +406,17 @@ function add_payment(string $bookingId, $amount, string $currency, string $metho
 function key_receipt($key): ?array {
   if (!is_string($key) || !preg_match('/^[a-f0-9]{16}$/', $key)) return null;
   return one('SELECT r.* FROM receipts r JOIN bookings b ON b.id = r.booking_id WHERE r.form_key = ? AND b.deleted_at IS NULL', [$key]);
+}
+// A passport date typed day first (27-11-26, 27/11/2026, 27.11.26) is stored as yyyy-mm-dd; a two-digit year is 20yy.
+// Anything else (an empty field, a partial date) is kept as typed.
+function passport_date($v): string {
+  $v = clean((string) $v, 20);
+  if (date_or_null($v)) return $v;
+  if (preg_match('/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/', $v, $m)) {
+    $y = strlen($m[3]) === 2 ? 2000 + (int) $m[3] : (int) $m[3];
+    if (checkdate((int) $m[2], (int) $m[1], $y)) return sprintf('%04d-%02d-%02d', $y, (int) $m[2], (int) $m[1]);
+  }
+  return $v;
 }
 function lao_day(?string $ymd): string { return $ymd ? substr($ymd, 8, 2) . '/' . substr($ymd, 5, 2) . '/' . substr($ymd, 0, 4) : ''; }
 

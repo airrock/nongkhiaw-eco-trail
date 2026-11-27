@@ -91,7 +91,7 @@ function booking_full(string $id, array $user): array {
     if (!$day) continue;
     foreach (transport_day($day, $id)[$dir] as $x) $minivan[] = ['dir' => $dir, 'date' => $day, 'wa' => $x['wa'], 'guest' => $x['guest'], 'place' => $x['place'], 'stop' => $x['stop'], 'vehicle' => $x['vehicle'], 'team' => $x['team']];
   }
-  return ['booking' => $b, 'checks' => $checks, 'minivan' => $minivan, 'tour_days' => tour_length((string) $b['tour']), 'travellers' => $trav, 'summary' => booking_summary($id, $trav), 'totals' => booking_totals($id),
+  return ['booking' => $b, 'checks' => $checks, 'price_check' => $b['deleted_at'] ? '' : price_check($b), 'minivan' => $minivan, 'tour_days' => tour_length((string) $b['tour']), 'travellers' => $trav, 'summary' => booking_summary($id, $trav), 'totals' => booking_totals($id),
     'payments' => all('SELECT * FROM payments WHERE booking_id = ? ORDER BY paid_on, id', [$id]),
     'receipt' => one('SELECT * FROM receipts WHERE booking_id = ?', [$id]),
     'agreements' => all('SELECT * FROM agreements WHERE booking_id = ? ORDER BY n', [$id])];
@@ -122,7 +122,7 @@ try {
   if ($user['must_change_password']) out(['error' => 'Choose your own password first.'], 403);   // signed in with a temporary password
   $admin = $user['role'] === 'admin';
   $adminOnly = ['booking_delete', 'booking_restore', 'payment_edit', 'payment_delete', 'settings_save', 'tour_save', 'tour_delete',
-    'tour_web', 'tour_photo', 'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'arrange', 'account_save', 'accounts', 'agency', 'agency_save', 'agency_delete',
+    'tour_web', 'tour_photo', 'site_photos', 'site_photo', 'site_photo_reset', 'site_photo_hide', 'menu_save', 'menu_delete', 'users', 'user_add', 'user_save', 'user_password', 'arrange', 'account_save', 'accounts', 'agency', 'agency_save', 'agency_delete',
     'agreement_delete', 'inquiry_delete', 'reviews', 'review_save', 'review_delete', 'plans', 'plan_save', 'overview', 'content', 'content_save'];
   if (in_array($action, $adminOnly, true) && !$admin) out(['error' => 'Only an admin can do this.'], 403);
 
@@ -142,6 +142,7 @@ try {
       $rows = all('SELECT b.id, b.tour_date, b.tour, b.tour_name, b.transfer, b.status, b.whatsapp, b.est_tour_usd, b.est_transfer_kip, b.private_tour,
           b.submitted_at, COALESCE(r.no, NULLIF(b.receipt_ref, \'\')) AS receipt_no,
           (SELECT COUNT(*) FROM travellers t WHERE t.booking_id = b.id) AS people,
+          (SELECT COUNT(*) FROM travellers t WHERE t.booking_id = b.id AND t.status = \'\') AS pax,
           (SELECT t.full_name FROM travellers t WHERE t.booking_id = b.id ORDER BY t.n LIMIT 1) AS lead_name,
           (SELECT COALESCE(SUM(p.amount_usd), 0) FROM payments p WHERE p.booking_id = b.id) AS paid_usd
         FROM bookings b LEFT JOIN receipts r ON r.booking_id = b.id WHERE ' . implode(' AND ', $w) . ' ORDER BY b.tour_date IS NULL, b.tour_date, b.submitted_at LIMIT 500', $a);
@@ -215,6 +216,7 @@ try {
       if (isset($f['status']) && !in_array($f['status'], ['', 'Cancelled', 'No-show'], true)) throw new Refused('Unknown status.');
       if (isset($f['pickup_place']) && strcasecmp(trim((string) $f['pickup_place']), 'No transfer') === 0) $f['pickup_place'] = 'No transfer';
       if (isset($f['passport_no']) && is_string($f['passport_no'])) $f['passport_no'] = mb_strtoupper(trim($f['passport_no']));
+      foreach (['passport_issued', 'passport_expires'] as $k) if (isset($f[$k])) $f[$k] = passport_date($f[$k]);
       if (array_key_exists('lunch_dish', $f) && ($dish = clean($f['lunch_dish'], 80)) !== '') {
         $item = lunch_map()[$dish] ?? null;
         if (!$item) throw new Refused('That dish is not on the menu.');
@@ -247,6 +249,7 @@ try {
         q('INSERT INTO travellers (booking_id, n, pickup_place, pickup_map) VALUES (?,?,?,?)', [$id, $n, $first['pickup_place'], $first['pickup_map']]);
         log_change('travellers', "$id #$n", 'insert', null, null, $user);
         $tf = (array) ($in['fields'] ?? []);
+        foreach (['passport_issued', 'passport_expires'] as $k) if (isset($tf[$k])) $tf[$k] = passport_date($tf[$k]);
         if (!isset($tf['full_name']) && (isset($tf['first_name']) || isset($tf['last_name']))) $tf['full_name'] = trim(trim((string) ($tf['first_name'] ?? '')) . ' ' . trim((string) ($tf['last_name'] ?? '')));
         update_row('travellers', 'booking_id = ? AND n = ?', [$id, $n], TRAVELLER_FIELDS, $tf, "$id #$n", $user);
         recount_booking($id);
@@ -362,19 +365,61 @@ try {
     case 'tour_photo': {
       $code = clean($in['code'] ?? '', 5);
       if (!preg_match('/^[A-Za-z0-9]{1,5}$/', $code) || !val('SELECT 1 FROM tours WHERE code = ?', [$code])) throw new Refused('Unknown tour.');
-      $raw = base64_decode(preg_replace('/^data:image\/jpeg;base64,/', '', (string) ($in['data'] ?? '')), true);
-      if ($raw === false || strlen($raw) < 100 || strlen($raw) > 3000000) throw new Refused('The photo is missing or too large (3 MB at most).');
-      $info = @getimagesizefromstring($raw);
-      if (!$info || $info[2] !== IMAGETYPE_JPEG || $info[0] > 4000 || $info[1] > 4000) throw new Refused('That file is not a JPEG photo.');
       $dir = dirname(__DIR__) . '/uploads';
-      if (!is_dir($dir) && !mkdir($dir, 0755, true)) throw new RuntimeException('cannot create the uploads folder');
-      $file = 'tour-' . strtolower($code) . '-' . bin2hex(random_bytes(6)) . '.jpg';
-      if (file_put_contents("$dir/$file", $raw) === false) throw new RuntimeException('cannot write the photo');
+      $file = save_upload_jpeg((string) ($in['data'] ?? ''), 'tour-' . strtolower($code), $dir);
       $old = (string) val('SELECT web_photo FROM tours WHERE code = ?', [$code]);
       q('UPDATE tours SET web_photo = ? WHERE code = ?', [$file, $code]);
       if (preg_match('/^tour-[a-z0-9]+-[a-f0-9]{12}\.jpg$/', $old) && is_file("$dir/$old")) unlink("$dir/$old");
       log_change('tours', $code, 'update', null, ['web_photo' => $file], $user);
       out(['ok' => true, 'photo' => upload_url($file)]);
+    }
+    /* ----- website photos (Website > Website photos) ----- */
+    case 'site_photos': {
+      $rows = [];
+      foreach (all('SELECT slot, file, hidden FROM site_photos') as $r) $rows[$r['slot']] = $r;
+      $list = [];
+      foreach (SITE_PHOTOS as $slot => [$label, $builtIn]) {
+        $r = $rows[$slot] ?? null;
+        $list[] = ['slot' => $slot, 'label' => $label, 'built_in' => $builtIn, 'url' => $r && $r['file'] !== '' ? upload_url($r['file']) : '', 'hidden' => $r ? (int) $r['hidden'] : 0, 'added' => 0];
+      }
+      foreach ($rows as $slot => $r) if (preg_match(GALLERY_ADDED, $slot) && $r['file'] !== '')
+        $list[] = ['slot' => $slot, 'label' => 'Gallery photo you added', 'built_in' => '', 'url' => upload_url($r['file']), 'hidden' => (int) $r['hidden'], 'added' => 1];
+      out(['photos' => $list]);
+    }
+    // a new photo for a place on the site (slot), or a new gallery photo (slot 'gallery_new')
+    case 'site_photo': {
+      $slot = (string) ($in['slot'] ?? '');
+      if ($slot === 'gallery_new') {
+        if ((int) val("SELECT COUNT(*) FROM site_photos WHERE slot LIKE 'gallery\\_x%'") >= 40) throw new Refused('The gallery has 40 added photos already. Delete one first.');
+        $slot = 'gallery_x' . bin2hex(random_bytes(6));
+      } elseif (!isset(SITE_PHOTOS[$slot])) throw new Refused('Unknown place on the website.');
+      $dir = dirname(__DIR__) . '/uploads';
+      $file = save_upload_jpeg((string) ($in['data'] ?? ''), 'site-' . str_replace('_', '-', $slot), $dir);
+      $old = (string) val('SELECT file FROM site_photos WHERE slot = ?', [$slot]);
+      q('INSERT INTO site_photos (slot, file, hidden) VALUES (?, ?, 0) ON DUPLICATE KEY UPDATE file = VALUES(file), hidden = 0', [$slot, $file]);
+      if ($old !== '' && preg_match('/^site-[a-z0-9-]+-[a-f0-9]{12}\.jpg$/', $old) && is_file("$dir/$old")) unlink("$dir/$old");
+      log_change('site_photos', $slot, 'update', $old !== '' ? ['file' => $old] : null, ['file' => $file], $user);
+      out(['ok' => true, 'slot' => $slot, 'url' => upload_url($file)]);
+    }
+    // back to the built-in photo (a gallery photo the team added is deleted)
+    case 'site_photo_reset': {
+      $slot = (string) ($in['slot'] ?? '');
+      if (!isset(SITE_PHOTOS[$slot]) && !preg_match(GALLERY_ADDED, $slot)) throw new Refused('Unknown place on the website.');
+      $dir = dirname(__DIR__) . '/uploads';
+      $old = (string) val('SELECT file FROM site_photos WHERE slot = ?', [$slot]);
+      q('DELETE FROM site_photos WHERE slot = ?', [$slot]);
+      if ($old !== '' && preg_match('/^site-[a-z0-9-]+-[a-f0-9]{12}\.jpg$/', $old) && is_file("$dir/$old")) unlink("$dir/$old");
+      log_change('site_photos', $slot, 'delete', $old !== '' ? ['file' => $old] : null, null, $user);
+      out(['ok' => true]);
+    }
+    // a gallery photo off the website (or back on), without losing it
+    case 'site_photo_hide': {
+      $slot = (string) ($in['slot'] ?? '');
+      if (!(preg_match('/^gallery_\d{2}$/', $slot) && isset(SITE_PHOTOS[$slot])) && !preg_match(GALLERY_ADDED, $slot)) throw new Refused('Only gallery photos can be taken off the website.');
+      $h = !empty($in['hidden']) ? 1 : 0;
+      q('INSERT INTO site_photos (slot, file, hidden) VALUES (?, \'\', ?) ON DUPLICATE KEY UPDATE hidden = VALUES(hidden)', [$slot, $h]);
+      log_change('site_photos', $slot, 'update', null, ['hidden' => $h], $user);
+      out(['ok' => true]);
     }
     case 'tour_delete': {
       $code = (string) ($in['code'] ?? '');

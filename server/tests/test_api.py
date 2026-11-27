@@ -45,7 +45,7 @@ def refused(res, what, code=None):
     assert res[0] >= 400 and (code is None or res[0] == code), f'FAILED {what}: was allowed {res}'
 
 sql("SET FOREIGN_KEY_CHECKS=0; TRUNCATE travellers; TRUNCATE payments; TRUNCATE receipts; TRUNCATE agreements; TRUNCATE bookings; TRUNCATE inquiries;"
-    "TRUNCATE change_log; TRUNCATE users; TRUNCATE lunch_menu; TRUNCATE country_aliases; TRUNCATE tour_addons; TRUNCATE agency_share; TRUNCATE tour_accounts; TRUNCATE day_guides; SET FOREIGN_KEY_CHECKS=1;"
+    "TRUNCATE change_log; TRUNCATE users; TRUNCATE lunch_menu; TRUNCATE country_aliases; TRUNCATE tour_addons; TRUNCATE agency_share; TRUNCATE tour_accounts; TRUNCATE day_guides; TRUNCATE site_photos; SET FOREIGN_KEY_CHECKS=1;"
     "UPDATE settings SET value='1' WHERE `key`='receipt_next'; UPDATE settings SET value='22500' WHERE `key`='kip_per_usd';"
     "INSERT INTO lunch_menu (dish, choices, price_kip) VALUES ('Fried rice','Chicken, Tofu',40000),('Hidden','',0);"
     "INSERT INTO tour_addons VALUES ('102','Kayak',2); INSERT INTO country_aliases VALUES ('netherlands','Netherlands');")
@@ -484,4 +484,55 @@ eq(any('during the tour' in c for c in chk(tour='103', returnDate='2034-01-11')[
 admin.ok('plan_save', tour='102', days=[x['plan'] for x in admin.ok('plans')['days'] if x['tour'] == '102'], back_slot='afternoon')
 eq(admin.ok('booking', id=chk(returnDate='2034-01-11')[0])['booking']['return_time'], '3:30 - 4:30 PM', 'Tour plans can change a tour to the afternoon minivan')
 admin.ok('plan_save', tour='102', days=[x['plan'] for x in admin.ok('plans')['days'] if x['tour'] == '102'], back_slot='next')
+
+# ---------- sheet round of 27/11/2026: bug 007, features 0015 - 0019 ----------
+# bug 007: two guests but the amount of one (a guest added before 25/11 did not raise it); removing a guest must not halve it
+admin.ok('booking_new', booking=nb(id='SELFTEST-B7', travellers=[{"first": "SELFTEST-B7a"}, {"first": "SELFTEST-B7b"}]))
+sql("UPDATE bookings SET est_tour_usd = 30 WHERE id = 'SELFTEST-B7'")
+eq('2 guests × USD 30 = USD 60' in admin.ok('booking', id='SELFTEST-B7')['price_check'], True, 'an amount that is not the price list is shown on the booking')
+g = admin.ok('traveller_remove', booking_id='SELFTEST-B7', n=2)
+eq((g['totals']['tour_usd'], g['price_check']), (30.0, ''), 'bug 007: one guest left pays the list price (30), not half of it')
+g = admin.ok('traveller_add', booking_id='SELFTEST-B7', fields={'first_name': 'SELFTEST-B7c'})
+eq(g['totals']['tour_usd'], 60.0, 'a guest added: 2 x 30')
+admin.ok('booking_save', id='SELFTEST-B7', fields={'est_tour_usd': 50})
+eq(admin.ok('booking', id='SELFTEST-B7')['price_check'] != '', True, 'a discount is shown too (staff can leave it)')
+g = admin.ok('traveller_remove', booking_id='SELFTEST-B7', n=2)
+eq(g['totals']['tour_usd'], 25.0, 'a discounted amount keeps its own price per person')
+admin.ok('booking_save', id='SELFTEST-B7', fields={'private_tour': 1})
+eq(admin.ok('booking', id='SELFTEST-B7')['price_check'], '', 'a private tour has its own price: nothing to check')
+
+# 0017: guests (pax) per booking in the bookings list, cancelled guests not counted
+admin.ok('traveller_add', booking_id='SELFTEST-B7', fields={'first_name': 'SELFTEST-B7d'})
+admin.ok('traveller_save', booking_id='SELFTEST-B7', n=2, fields={'status': 'Cancelled'})
+row = [b for b in admin.ok('bookings', q='SELFTEST-B7')['bookings'] if b['id'] == 'SELFTEST-B7'][0]
+eq((int(row['people']), int(row['pax'])), (2, 1), 'bookings list: 2 travellers, 1 pax (one cancelled)')
+
+# 0019: passport dates typed day first are stored as yyyy-mm-dd
+pp = lambda v: (admin.ok('traveller_save', booking_id='SELFTEST-B7', n=1, fields={'passport_issued': v}), sqlval("SELECT passport_issued FROM travellers WHERE booking_id='SELFTEST-B7' AND n=1"))[1]
+eq([pp('27-11-26'), pp('9/1/2036'), pp('09.01.2026'), pp('2025-05-04'), pp('31-02-26'), pp('May 2020')],
+   ['2026-11-27', '2036-01-09', '2026-01-09', '2025-05-04', '31-02-26', 'May 2020'], 'passport dates: day first in, yyyy-mm-dd stored, other text kept as typed')
+
+# 0016: the number of tours on the website is counted, not typed
+seed = {r[0]: r for r in admin.ok('content')['seed']}
+eq(('{ntours}' in seed['f3s'][2], '{ntours}' in seed['tours_sub'][2], seed['prv_body'][1], seed['trn_private_body'][2]), (True, True, '4a. Private tour', ''), 'tour count placeholder and the new private texts')
+
+# 0015 / 0018: website photos
+refused(office.call('site_photos'), 'office cannot change website photos', 403)
+ps = admin.ok('site_photos')['photos']
+eq((len(ps), ps[0]['slot'], ps[0]['built_in'], [p['slot'] for p in ps if not p['built_in']]), (24, 'hero', 'images/bridge-aerial.jpg', ['private', 'transport_private']), 'the places on the website with a photo')
+refused(admin.call('site_photo', slot='nowhere', data=JPEG), 'unknown place refused')
+refused(admin.call('site_photo', slot='hero', data='data:image/jpeg;base64,' + 'iVBORw0KGgo' * 20), 'not a JPEG refused')
+hero = admin.ok('site_photo', slot='hero', data='data:image/jpeg;base64,' + JPEG)['url']
+prv = admin.ok('site_photo', slot='private', data=JPEG)['url']
+admin.ok('site_photo_hide', slot='gallery_03', hidden=1)
+refused(admin.call('site_photo_hide', slot='hero', hidden=1), 'only gallery photos can be taken off')
+added = admin.ok('site_photo', slot='gallery_new', data=JPEG)
+c = site(query='?config=1')[1]
+eq((c['photos']['hero'], c['photos']['private'], c['hidden'], c['gallery'], urllib.request.urlopen(hero).status), (hero, prv, ['gallery_03'], [added['url']], 200), 'config: changed photos, a gallery photo off, an added one')
+hero2 = admin.ok('site_photo', slot='hero', data=JPEG)['url']
+eq((hero2 != hero, os.path.exists(os.path.join(HERE, '..', 'public', 'uploads', hero.rsplit('/', 1)[1]))), (True, False), 'a new photo replaces the old file')
+admin.ok('site_photo_reset', slot='hero'); admin.ok('site_photo_reset', slot=added['slot']); admin.ok('site_photo_hide', slot='gallery_03', hidden=0)
+c = site(query='?config=1')[1]
+eq((dict(c['photos']), c['hidden'], c['gallery']), ({'private': prv}, [], []), 'back to the built-in photo, added photo deleted, gallery photo back on')
+admin.ok('site_photo_reset', slot='private')
 print(f'all {n} checks passed')
